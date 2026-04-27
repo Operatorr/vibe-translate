@@ -1,0 +1,2 @@
+-- Initial migration mirrors db/schema.sql for fresh environments.
+-- Copy changes here when moving from bootstrap schema to incremental deploys.
