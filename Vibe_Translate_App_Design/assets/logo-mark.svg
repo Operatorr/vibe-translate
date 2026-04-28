@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  
+  <defs>
+    <mask id="vt-notch">
+      <rect width="64" height="64" fill="white"></rect>
+      <circle cx="44" cy="22" r="14" fill="black"></circle>
+    </mask>
+  </defs>
+  <circle cx="32" cy="32" r="28" fill="currentColor" mask="url(#vt-notch)"></circle>
+  <circle cx="44" cy="22" r="6" fill="#1f7aff"></circle>
+</svg>

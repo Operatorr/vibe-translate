@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8"/>
+<title>Vibe Translate · Prototype</title>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<link rel="stylesheet" href="styles/site.css"/>
+</head>
+<body>
+<div id="root"></div>
+
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/lucide@latest"></script>
+
+<script src="js/data.js"></script>
+
+<!-- UI kit pieces (forked from /projects/.../ui_kits/web_app/) -->
+<script type="text/babel" src="js/CommandPalette.jsx"></script>
+
+<script type="text/babel" src="js/SiteNav.jsx"></script>
+<script type="text/babel" src="js/Landing.jsx"></script>
+<script type="text/babel" src="js/Pricing.jsx"></script>
+<script type="text/babel" src="js/AppPage.jsx"></script>
+
+<script type="text/babel">
+function App() {
+  const parseRoute = () => {
+    const h = window.location.hash.replace(/^#/, '') || '/';
+    if (h.startsWith('/pricing')) return '/pricing';
+    if (h.startsWith('/app')) return '/app';
+    return '/';
+  };
+  const [route, setRoute] = React.useState(parseRoute());
+  const [theme, setTheme] = React.useState('dark');
+  const [paletteOpen, setPaletteOpen] = React.useState(false);
+
+  React.useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme);
+  }, [theme]);
+
+  React.useEffect(() => {
+    const onHash = () => setRoute(parseRoute());
+    window.addEventListener('hashchange', onHash);
+    return () => window.removeEventListener('hashchange', onHash);
+  }, []);
+
+  React.useEffect(() => {
+    window.scrollTo(0, 0);
+  }, [route]);
+
+  React.useEffect(() => {
+    const onKey = (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); setPaletteOpen(o => !o); }
+      if (e.key === 'Escape') setPaletteOpen(false);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+
+  React.useEffect(() => {
+    setTimeout(() => { if (window.lucide) window.lucide.createIcons({attrs:{"stroke-width":1.5}}); }, 50);
+  }, [route, theme]);
+
+  const navigate = (path) => {
+    window.location.hash = path;
+    setRoute(path);
+  };
+
+  const toggleTheme = () => setTheme(t => t === 'dark' ? 'light' : 'dark');
+
+  const isApp = route === '/app';
+
+  return (
+    <div className={isApp ? '' : 'site'} style={isApp ? {height:'100vh', display:'grid', gridTemplateRows:'56px 1fr'} : null}>
+      <SiteNav theme={theme} onToggleTheme={toggleTheme} route={route} onNavigate={navigate} onOpenPalette={() => setPaletteOpen(true)} />
+      {route === '/' && <Landing onNavigate={navigate} />}
+      {route === '/pricing' && <Pricing onNavigate={navigate} />}
+      {route === '/app' && <AppPage paletteOpen={paletteOpen} setPaletteOpen={setPaletteOpen} theme={theme} onToggleTheme={toggleTheme} onNavigate={navigate} />}
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+</script>
+</body>
+</html>

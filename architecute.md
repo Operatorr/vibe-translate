@@ -42,7 +42,7 @@
 
 - **Frontend folder conventions**
   - `app/components/ui/` contains reusable low-level UI primitives, mostly Radix-based.
-  - `app/components/app/` contains authenticated product UI such as task list, sidebar, calendar, onboarding, filters, and task detail.
+  - `app/components/app/` contains authenticated product UI such as task list, sidebar, onboarding, filters, and task detail.
   - `app/components/marketing/` contains public marketing layout pieces.
   - `app/components/landing/` contains interactive landing-page demo components.
   - `app/hooks/` contains React Query hooks, interaction hooks, keyboard shortcuts, animation helpers, and auth-aware data hooks.

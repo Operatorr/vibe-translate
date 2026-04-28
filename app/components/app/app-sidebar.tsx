@@ -1,9 +1,8 @@
 import { Link } from '@tanstack/react-router'
-import { CalendarDays, Languages, Settings } from 'lucide-react'
+import { Languages, Settings } from 'lucide-react'
 
 const items = [
   { label: 'Chats', icon: Languages, to: '/app' as never },
-  { label: 'Calendar', icon: CalendarDays, to: '/app' as never },
   { label: 'Settings', icon: Settings, to: '/app' as never },
 ] as const
 

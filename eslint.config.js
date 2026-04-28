@@ -5,7 +5,14 @@ import globals from 'globals'
 import tseslint from 'typescript-eslint'
 
 export default [
-  { ignores: ['dist', '.wrangler', 'app/routeTree.gen.ts'] },
+  {
+    ignores: [
+      'dist',
+      '.wrangler',
+      'app/routeTree.gen.ts',
+      'Vibe_Translate_App_Design',
+    ],
+  },
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {
@@ -27,7 +34,10 @@ export default [
     },
     rules: {
       ...reactHooks.configs.recommended.rules,
-      'react-refresh/only-export-components': ['warn', { allowConstantExport: true }],
+      'react-refresh/only-export-components': [
+        'warn',
+        { allowConstantExport: true },
+      ],
     },
   },
 ]

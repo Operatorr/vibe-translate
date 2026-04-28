@@ -1,0 +1,381 @@
+/* =========================================================================
+   Vibe Translate Design System — Tokens
+   Two themes (dark = true black, light = true white) + 12 accent hues.
+   ========================================================================= */
+
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@300;400;500;600;700&family=IBM+Plex+Serif:wght@400;500;600;700&display=swap');
+
+:root,
+[data-theme="dark"] {
+  color-scheme: dark;
+
+  /* ---- Neutral scale (dark theme: bg = true black) ---------------------- */
+  --neutral-0:   #000000;   /* page bg */
+  --neutral-50:  #0a0a0a;   /* cards / nav */
+  --neutral-100: #141414;   /* hover surface */
+  --neutral-200: #1f1f1f;   /* borders default */
+  --neutral-300: #2a2a2a;   /* borders strong */
+  --neutral-400: #3a3a3a;   /* dividers */
+  --neutral-500: #6b6b6b;   /* placeholder / disabled */
+  --neutral-600: #909090;   /* tertiary text */
+  --neutral-700: #b8b8b8;   /* secondary text */
+  --neutral-800: #d6d6d6;   /* primary text-low */
+  --neutral-900: #ededed;   /* primary text */
+  --neutral-1000: #ffffff;  /* loud text */
+
+  /* Semantic surface tokens */
+  --bg:         var(--neutral-0);
+  --bg-elev-1:  var(--neutral-50);
+  --bg-elev-2:  var(--neutral-100);
+  --bg-hover:   var(--neutral-100);
+  --bg-active:  var(--neutral-200);
+  --border:     var(--neutral-200);
+  --border-strong: var(--neutral-300);
+  --fg:         var(--neutral-900);
+  --fg-muted:   var(--neutral-700);
+  --fg-subtle:  var(--neutral-600);
+  --fg-disabled: var(--neutral-500);
+  --fg-inverse: var(--neutral-0);
+}
+
+[data-theme="light"] {
+  color-scheme: light;
+
+  /* ---- Neutral scale (light theme: bg = true white) --------------------- */
+  --neutral-0:   #ffffff;
+  --neutral-50:  #fafafa;
+  --neutral-100: #f4f4f4;
+  --neutral-200: #e6e6e6;
+  --neutral-300: #d4d4d4;
+  --neutral-400: #b8b8b8;
+  --neutral-500: #8a8a8a;
+  --neutral-600: #6b6b6b;
+  --neutral-700: #4a4a4a;
+  --neutral-800: #2a2a2a;
+  --neutral-900: #141414;
+  --neutral-1000: #000000;
+
+  --bg:         var(--neutral-0);
+  --bg-elev-1:  var(--neutral-50);
+  --bg-elev-2:  var(--neutral-100);
+  --bg-hover:   var(--neutral-100);
+  --bg-active:  var(--neutral-200);
+  --border:     var(--neutral-200);
+  --border-strong: var(--neutral-300);
+  --fg:         var(--neutral-900);
+  --fg-muted:   var(--neutral-700);
+  --fg-subtle:  var(--neutral-600);
+  --fg-disabled: var(--neutral-500);
+  --fg-inverse: var(--neutral-0);
+}
+
+/* =========================================================================
+   Accent palette — 12 hues × 5 stops. Same values in both themes.
+   Use accent-{hue}-600 for primary surfaces, -400 for hover, -800 for press.
+   ========================================================================= */
+:root {
+  /* Cobalt */
+  --cobalt-50:  #d6e0ff;
+  --cobalt-200: #6e8cff;
+  --cobalt-400: #3057ff;
+  --cobalt-600: #1c3fd9;
+  --cobalt-800: #0e2280;
+
+  /* Blue */
+  --blue-50:  #cfe6ff;
+  --blue-200: #5fa8ff;
+  --blue-400: #1f7aff;
+  --blue-600: #0a5cd1;
+  --blue-800: #073579;
+
+  /* Cyan */
+  --cyan-50:  #c6f1ff;
+  --cyan-200: #4ecaff;
+  --cyan-400: #00a8ff;
+  --cyan-600: #007fc4;
+  --cyan-800: #004870;
+
+  /* Teal */
+  --teal-50:  #c2f5ee;
+  --teal-200: #44d6c2;
+  --teal-400: #06b39a;
+  --teal-600: #028575;
+  --teal-800: #014c43;
+
+  /* Turquoise */
+  --turq-50:  #c6f7e9;
+  --turq-200: #4ce0b8;
+  --turq-400: #10c594;
+  --turq-600: #07946e;
+  --turq-800: #04553f;
+
+  /* Green */
+  --green-50:  #d4f5c2;
+  --green-200: #7adc52;
+  --green-400: #3fb91d;
+  --green-600: #2c8a13;
+  --green-800: #174d09;
+
+  /* Lime */
+  --lime-50:  #ebf5b8;
+  --lime-200: #c4dc3a;
+  --lime-400: #9cb500;
+  --lime-600: #6f8000;
+  --lime-800: #3e4700;
+
+  /* Yellow */
+  --yellow-50:  #fff3b3;
+  --yellow-200: #ffd83d;
+  --yellow-400: #f5b800;
+  --yellow-600: #b88800;
+  --yellow-800: #6b4d00;
+
+  /* Amber */
+  --amber-50:  #ffe3b3;
+  --amber-200: #ffb13d;
+  --amber-400: #ff8a00;
+  --amber-600: #c46500;
+  --amber-800: #6e3700;
+
+  /* Orange */
+  --orange-50:  #ffd6c2;
+  --orange-200: #ff855c;
+  --orange-400: #ff5722;
+  --orange-600: #c83a0d;
+  --orange-800: #701c00;
+
+  /* Red */
+  --red-50:  #ffd0d0;
+  --red-200: #ff6e6e;
+  --red-400: #ff2e2e;
+  --red-600: #c41616;
+  --red-800: #6e0606;
+
+  /* Magenta */
+  --magenta-50:  #ffd0ee;
+  --magenta-200: #ff66c4;
+  --magenta-400: #ff1f9d;
+  --magenta-600: #c4007a;
+  --magenta-800: #6e0044;
+
+  /* ---- Semantic accent assignments -------------------------------------- */
+  --accent-primary:        var(--blue-400);
+  --accent-primary-hover:  var(--blue-200);
+  --accent-primary-press:  var(--blue-600);
+  --accent-success:        var(--turq-400);
+  --accent-warning:        var(--yellow-400);
+  --accent-danger:         var(--red-400);
+  --accent-info:           var(--cyan-400);
+  --accent-new:            var(--magenta-400);
+
+  /* Status text colors that pop on both themes */
+  --status-success: var(--turq-400);
+  --status-warning: var(--amber-400);
+  --status-danger:  var(--red-400);
+  --status-info:    var(--cyan-400);
+}
+
+/* =========================================================================
+   Typography
+   ========================================================================= */
+:root {
+  --font-sans:  'IBM Plex Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-mono:  'IBM Plex Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+  --font-serif: 'IBM Plex Serif', Georgia, 'Times New Roman', serif;
+
+  /* Modular scale, 1.125 ratio, anchored at 16px */
+  --fs-xs:   12px;
+  --fs-sm:   14px;
+  --fs-base: 16px;
+  --fs-md:   18px;
+  --fs-lg:   20px;
+  --fs-xl:   24px;
+  --fs-2xl:  32px;
+  --fs-3xl:  42px;
+  --fs-4xl:  56px;
+  --fs-5xl:  72px;
+  --fs-6xl:  96px;
+
+  /* Line heights */
+  --lh-tight:    1.1;
+  --lh-snug:     1.25;
+  --lh-normal:   1.55;
+  --lh-loose:    1.75;
+  --lh-mono:     1.45;
+
+  /* Letter spacing */
+  --ls-tight:   -0.02em;
+  --ls-normal:  0;
+  --ls-wide:    0.04em;
+  --ls-eyebrow: 0.12em;
+
+  /* Weights */
+  --fw-light:    300;
+  --fw-regular:  400;
+  --fw-medium:   500;
+  --fw-semibold: 600;
+  --fw-bold:     700;
+}
+
+/* Semantic type roles. Apply via class. */
+.t-display-lg { font: var(--fw-semibold) var(--fs-6xl)/var(--lh-tight) var(--font-sans); letter-spacing: var(--ls-tight); }
+.t-display    { font: var(--fw-semibold) var(--fs-5xl)/var(--lh-tight) var(--font-sans); letter-spacing: var(--ls-tight); }
+.t-h1         { font: var(--fw-semibold) var(--fs-4xl)/var(--lh-tight) var(--font-sans); letter-spacing: var(--ls-tight); }
+.t-h2         { font: var(--fw-semibold) var(--fs-3xl)/var(--lh-tight) var(--font-sans); letter-spacing: var(--ls-tight); }
+.t-h3         { font: var(--fw-semibold) var(--fs-2xl)/var(--lh-snug)  var(--font-sans); }
+.t-h4         { font: var(--fw-semibold) var(--fs-xl)/var(--lh-snug)   var(--font-sans); }
+.t-h5         { font: var(--fw-semibold) var(--fs-lg)/var(--lh-snug)   var(--font-sans); }
+.t-body-lg    { font: var(--fw-regular)  var(--fs-md)/var(--lh-normal) var(--font-sans); }
+.t-body       { font: var(--fw-regular)  var(--fs-base)/var(--lh-normal) var(--font-sans); }
+.t-body-sm    { font: var(--fw-regular)  var(--fs-sm)/var(--lh-normal) var(--font-sans); }
+.t-caption    { font: var(--fw-regular)  var(--fs-xs)/var(--lh-normal) var(--font-sans); color: var(--fg-muted); }
+.t-eyebrow    { font: var(--fw-medium)   var(--fs-xs)/var(--lh-snug)   var(--font-mono); letter-spacing: var(--ls-eyebrow); text-transform: uppercase; color: var(--fg-muted); }
+.t-mono       { font: var(--fw-regular)  var(--fs-sm)/var(--lh-mono)   var(--font-mono); }
+.t-mono-lg    { font: var(--fw-regular)  var(--fs-base)/var(--lh-mono) var(--font-mono); }
+.t-code       { font: var(--fw-regular)  0.92em/var(--lh-mono)        var(--font-mono); background: var(--bg-elev-1); border: 1px solid var(--border); padding: 1px 6px; }
+.t-serif      { font: var(--fw-regular)  var(--fs-md)/var(--lh-loose) var(--font-serif); }
+
+/* =========================================================================
+   Spacing — 4px base grid
+   ========================================================================= */
+:root {
+  --space-0:  0;
+  --space-1:  4px;
+  --space-2:  8px;
+  --space-3:  12px;
+  --space-4:  16px;
+  --space-5:  24px;
+  --space-6:  32px;
+  --space-7:  48px;
+  --space-8:  64px;
+  --space-9:  96px;
+  --space-10: 128px;
+}
+
+/* =========================================================================
+   Radius — square by default, sm for tags/badges, md for marketing only
+   ========================================================================= */
+:root {
+  --radius-0:    0;
+  --radius-sm:   4px;
+  --radius-md:   8px;
+  --radius-lg:   12px;
+  --radius-full: 9999px;
+}
+
+/* =========================================================================
+   Shadow / elevation
+   Dark: borders + accent glow. Light: soft drop shadows.
+   ========================================================================= */
+:root {
+  --shadow-1: 0 1px 2px rgba(0,0,0,0.06), 0 2px 6px rgba(0,0,0,0.04);
+  --shadow-2: 0 4px 12px rgba(0,0,0,0.08), 0 8px 24px rgba(0,0,0,0.06);
+  --shadow-3: 0 12px 32px rgba(0,0,0,0.12), 0 24px 60px rgba(0,0,0,0.10);
+
+  --glow-blue:    0 0 0 1px var(--blue-400),    0 0 24px -2px rgba(31,122,255,0.55);
+  --glow-cyan:    0 0 0 1px var(--cyan-400),    0 0 24px -2px rgba(0,168,255,0.55);
+  --glow-turq:    0 0 0 1px var(--turq-400),    0 0 24px -2px rgba(16,197,148,0.55);
+  --glow-magenta: 0 0 0 1px var(--magenta-400), 0 0 24px -2px rgba(255,31,157,0.55);
+  --glow-orange:  0 0 0 1px var(--orange-400),  0 0 24px -2px rgba(255,87,34,0.55);
+  --glow-red:     0 0 0 1px var(--red-400),     0 0 24px -2px rgba(255,46,46,0.55);
+}
+[data-theme="dark"] {
+  --shadow-1: none;
+  --shadow-2: 0 0 0 1px var(--border);
+  --shadow-3: 0 0 0 1px var(--border-strong);
+}
+
+/* =========================================================================
+   Motion
+   ========================================================================= */
+:root {
+  --ease-productive: cubic-bezier(0.2, 0, 0, 1);
+  --ease-expressive: cubic-bezier(0.4, 0.14, 0.3, 1);
+  --ease-linear:     linear;
+
+  --dur-fast: 120ms;
+  --dur-base: 240ms;
+  --dur-slow: 480ms;
+  --dur-halo: 16s;
+}
+
+/* =========================================================================
+   Hero — the "dark side of the moon" rainbow halo
+   Only place gradients live in this system.
+   ========================================================================= */
+.hero-rainbow {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  background: var(--bg);
+}
+.hero-rainbow::before {
+  content: '';
+  position: absolute;
+  inset: -40%;
+  z-index: 0;
+  background: conic-gradient(
+    from 0deg,
+    #1f7aff,   /* blue */
+    #00a8ff,   /* cyan */
+    #10c594,   /* turquoise */
+    #3fb91d,   /* green */
+    #f5b800,   /* yellow */
+    #ff8a00,   /* amber */
+    #ff5722,   /* orange */
+    #ff2e2e,   /* red */
+    #ff1f9d,   /* magenta */
+    #3057ff,   /* cobalt */
+    #1f7aff    /* loop back */
+  );
+  filter: blur(80px) saturate(1.15);
+  opacity: 0.85;
+  animation: hero-halo-rotate var(--dur-halo) linear infinite;
+}
+.hero-rainbow::after {
+  /* the moon — a black disc that occludes the center of the halo */
+  content: '';
+  position: absolute;
+  left: 50%; top: 50%;
+  transform: translate(-50%, -50%);
+  width: 64%; aspect-ratio: 1;
+  border-radius: 50%;
+  background: var(--bg);
+  z-index: 1;
+  box-shadow: 0 0 80px 40px var(--bg);
+}
+.hero-rainbow > * { position: relative; z-index: 2; }
+
+@keyframes hero-halo-rotate {
+  to { transform: rotate(360deg); }
+}
+
+/* Reduced motion: kill the halo rotation */
+@media (prefers-reduced-motion: reduce) {
+  .hero-rainbow::before { animation: none; }
+}
+
+/* =========================================================================
+   Base resets
+   ========================================================================= */
+*, *::before, *::after { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font: var(--fw-regular) var(--fs-base)/var(--lh-normal) var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+a { color: var(--accent-primary); text-decoration: none; }
+a:hover { color: var(--accent-primary-hover); text-decoration: underline; text-underline-offset: 2px; }
+
+/* Selection */
+::selection { background: var(--blue-400); color: var(--neutral-1000); }
+[data-theme="light"] ::selection { background: var(--blue-200); color: var(--neutral-1000); }
+
+/* Focus ring (Carbon-style: 2px solid, 2px offset, square) */
+:focus-visible {
+  outline: 2px solid var(--accent-primary);
+  outline-offset: 2px;
+}
