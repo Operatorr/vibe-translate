@@ -9,12 +9,20 @@ export type Bindings = {
   DODO_API_KEY?: string
   DODO_WEBHOOK_SECRET?: string
   OPENROUTER_API_KEY?: string
+  ELEVENLABS_API_KEY?: string
+  ELEVENLABS_MODEL_ID?: string
+  ELEVENLABS_VOICE_YAKUZA?: string
+  ELEVENLABS_VOICE_FRIEND?: string
+  ELEVENLABS_VOICE_CASUAL?: string
+  ELEVENLABS_VOICE_KEIGO?: string
+  ELEVENLABS_VOICE_KEIGOPLUS?: string
+  ELEVENLABS_VOICE_EMPEROR?: string
 }
 
 export type Variables = {
   userId: string
   email: string | null
-  databaseUrl: string
+  databaseUrl?: string
 }
 
 export type AppEnv = {

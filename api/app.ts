@@ -13,6 +13,7 @@ import {
   chatUpdateSchema,
   translationCreateSchema,
   translationUpdateSchema,
+  textToSpeechSchema,
   userUpdateSchema,
   waitlistSchema,
 } from './_lib/schemas'
@@ -76,7 +77,7 @@ app.use('/api/users/*', auth())
 app.use('/api/chats/*', auth())
 app.use('/api/translations/*', auth())
 app.use('/api/activity/*', auth())
-app.use('/api/ai/*', auth())
+app.use('/api/ai/dictation', auth())
 app.use('/api/billing/*', auth())
 app.use('/api/export', auth())
 
@@ -191,6 +192,127 @@ app.post('/api/ai/dictation', async (c) => {
     targetLanguage: 'English',
     tone: 'natural',
     instructions: String(body.prompt ?? ''),
+  })
+})
+
+function getProviderErrorMessage(status: number, body: string) {
+  if (!body.trim()) return `Text-to-speech provider request failed (${status})`
+
+  try {
+    const payload = JSON.parse(body) as {
+      detail?:
+        | string
+        | Array<{ msg?: string; message?: string; type?: string }>
+        | { message?: string; status?: string; code?: string; request_id?: string }
+      message?: string
+    }
+    const detail = payload.detail
+    const message =
+      payload.message ??
+      (typeof detail === 'string'
+        ? detail
+        : Array.isArray(detail)
+          ? (detail[0]?.msg ?? detail[0]?.message ?? detail[0]?.type)
+          : (detail?.message ?? detail?.status ?? detail?.code))
+    const requestId = !Array.isArray(detail) && typeof detail === 'object' ? detail?.request_id : undefined
+
+    if (message) {
+      return [
+        `Text-to-speech provider request failed (${status})`,
+        message,
+        requestId ? `request_id: ${requestId}` : null,
+      ]
+        .filter(Boolean)
+        .join(': ')
+    }
+  } catch {
+    // Fall through to a short text fallback below.
+  }
+
+  return `Text-to-speech provider request failed (${status}): ${body.slice(0, 240)}`
+}
+
+const toElevenLabsLanguageCode = (languageCode?: string) =>
+  languageCode?.split('-')[0]
+
+app.post('/api/ai/text-to-speech', zValidator('json', textToSpeechSchema), async (c) => {
+  const { text, vibe, languageCode } = c.req.valid('json')
+  const apiKey = c.env.ELEVENLABS_API_KEY?.trim()
+  const voiceIds = {
+    yakuza: c.env.ELEVENLABS_VOICE_YAKUZA,
+    friend: c.env.ELEVENLABS_VOICE_FRIEND,
+    casual: c.env.ELEVENLABS_VOICE_CASUAL,
+    keigo: c.env.ELEVENLABS_VOICE_KEIGO,
+    keigoplus: c.env.ELEVENLABS_VOICE_KEIGOPLUS,
+    emperor: c.env.ELEVENLABS_VOICE_EMPEROR,
+  } satisfies Record<typeof vibe, string | undefined>
+  const voiceId = voiceIds[vibe]?.trim()
+  const modelId = c.env.ELEVENLABS_MODEL_ID?.trim() || 'eleven_multilingual_v2'
+
+  if (!apiKey) {
+    throw new HTTPException(503, { message: 'Text-to-speech is not configured' })
+  }
+
+  if (!voiceId) {
+    throw new HTTPException(503, {
+      message: 'Text-to-speech voice is not configured for this vibe',
+    })
+  }
+
+  let response: Response
+  const elevenLabsLanguageCode = toElevenLabsLanguageCode(languageCode)
+  const supportsLanguageTextNormalization = elevenLabsLanguageCode === 'ja'
+
+  try {
+    response = await fetch(
+      `https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(
+        voiceId,
+      )}?output_format=mp3_44100_128`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'xi-api-key': apiKey,
+        },
+        body: JSON.stringify({
+          text,
+          model_id: modelId,
+          apply_text_normalization: 'auto',
+          ...(elevenLabsLanguageCode
+            ? { language_code: elevenLabsLanguageCode }
+            : {}),
+          ...(supportsLanguageTextNormalization
+            ? { apply_language_text_normalization: true }
+            : {}),
+        }),
+      },
+    )
+  } catch {
+    throw new HTTPException(502, {
+      message: 'Text-to-speech provider is unreachable',
+    })
+  }
+
+  if (!response.ok) {
+    const providerErrorBody = await response.text().catch(() => '')
+
+    throw new HTTPException(502, {
+      message: getProviderErrorMessage(response.status, providerErrorBody),
+    })
+  }
+
+  if (!response.body) {
+    throw new HTTPException(502, {
+      message: 'Text-to-speech provider returned an empty response',
+    })
+  }
+
+  return new Response(response.body, {
+    status: 200,
+    headers: {
+      'Cache-Control': 'no-store',
+      'Content-Type': 'audio/mpeg',
+    },
   })
 })
 

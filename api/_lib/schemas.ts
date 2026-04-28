@@ -38,3 +38,16 @@ export const waitlistSchema = z.object({
 export const checkoutSchema = z.object({
   plan: z.enum(['pro', 'team']),
 })
+
+export const textToSpeechSchema = z.object({
+  text: z.string().trim().min(1).max(1000),
+  vibe: z.enum(['yakuza', 'friend', 'casual', 'keigo', 'keigoplus', 'emperor']),
+  languageCode: z
+    .string()
+    .trim()
+    .min(2)
+    .max(12)
+    .regex(/^[a-z]{2,3}(-[a-z0-9]{2,8})?$/i)
+    .transform((value) => value.toLowerCase())
+    .optional(),
+})

@@ -1640,6 +1640,9 @@ body,
   display: flex;
   flex-direction: column;
 }
+.demo__pane--output {
+  gap: 10px;
+}
 .demo__textarea {
   flex: 1;
   background: transparent;
@@ -1659,6 +1662,41 @@ body,
 }
 .demo__output--empty {
   color: var(--fg-subtle);
+}
+.demo__output-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+  min-height: 32px;
+}
+.demo__icon-btn {
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  background: transparent;
+  border: 0;
+  color: var(--fg-subtle);
+  cursor: pointer;
+}
+.demo__icon-btn:hover:not(:disabled),
+.demo__icon-btn.is-active {
+  color: var(--turq-400);
+}
+.demo__icon-btn:focus-visible {
+  outline: 2px solid var(--blue-400);
+  outline-offset: 2px;
+}
+.demo__icon-btn:disabled {
+  color: var(--fg-disabled);
+  cursor: not-allowed;
+}
+.demo__icon-btn i {
+  width: 17px;
+  height: 17px;
+}
+.demo__icon-btn.is-busy i {
+  animation: vt-spin 1.2s linear infinite;
 }
 
 .demo__ctrls {

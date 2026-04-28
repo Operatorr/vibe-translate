@@ -4,7 +4,9 @@ import * as React from 'react'
 import * as Icons from 'lucide-react'
 import type { CSSProperties } from 'react'
 import type { LucideIcon } from 'lucide-react'
+import { toast } from 'sonner'
 
+import { apiFetch } from '@/lib/api'
 import {
   DEMO_PAIRS_JA,
   EXPLAIN_DEMO_S3,
@@ -17,6 +19,13 @@ import {
 } from './design-data'
 
 type VibeRoute = '/' | '/pricing' | '/app'
+type DemoVibe =
+  | 'yakuza'
+  | 'friend'
+  | 'casual'
+  | 'keigo'
+  | 'keigoplus'
+  | 'emperor'
 type CSSVars = CSSProperties &
   Record<`--${string}`, string | number | undefined>
 type NavigateFn = (path: VibeRoute) => void
@@ -342,13 +351,38 @@ const LandingDemo = () => {
   const [vibeIdx, setVibeIdx] = React.useState(3) // keigo
   const [out, setOut] = React.useState('')
   const [busy, setBusy] = React.useState(false)
+  const [copied, setCopied] = React.useState(false)
+  const [audioStatus, setAudioStatus] = React.useState<
+    'idle' | 'loading' | 'playing'
+  >('idle')
+  const copyTimerRef = React.useRef<number | null>(null)
+  const audioRef = React.useRef<HTMLAudioElement | null>(null)
+  const audioUrlRef = React.useRef<string | null>(null)
 
   const vibes = VIBE_PRESETS['ja-JP']
   const activeVibe = vibes[vibeIdx]
   const target = DEMO_PAIRS[activeVibe.id] || '...'
+  const canUseOutput = out.trim().length > 0 && !busy
+  const isAudioBusy = audioStatus !== 'idle'
+
+  const releaseAudio = React.useCallback(() => {
+    if (audioRef.current) {
+      audioRef.current.pause()
+      audioRef.current.onended = null
+      audioRef.current.onerror = null
+      audioRef.current = null
+    }
+
+    if (audioUrlRef.current) {
+      URL.revokeObjectURL(audioUrlRef.current)
+      audioUrlRef.current = null
+    }
+  }, [])
 
   const run = () => {
     if (busy) return
+    releaseAudio()
+    setAudioStatus('idle')
     setBusy(true)
     setOut('')
     let i = 0
@@ -365,9 +399,72 @@ const LandingDemo = () => {
     tick()
   }
 
+  const copyOutput = async () => {
+    if (!canUseOutput) return
+
+    try {
+      await navigator.clipboard.writeText(out)
+      setCopied(true)
+      toast.success('Copied translation.')
+
+      if (copyTimerRef.current) window.clearTimeout(copyTimerRef.current)
+      copyTimerRef.current = window.setTimeout(() => setCopied(false), 1400)
+    } catch {
+      toast.error('Copy failed.')
+    }
+  }
+
+  const playOutput = async () => {
+    if (!canUseOutput || isAudioBusy) return
+
+    setAudioStatus('loading')
+
+    try {
+      const blob = await apiFetch<Blob>('/api/ai/text-to-speech', {
+        method: 'POST',
+        responseType: 'blob',
+        body: JSON.stringify({
+          text: out,
+          vibe: activeVibe.id as DemoVibe,
+          languageCode: 'ja-JP',
+        }),
+      })
+      releaseAudio()
+
+      const url = URL.createObjectURL(blob)
+      const audio = new Audio(url)
+
+      audioUrlRef.current = url
+      audioRef.current = audio
+      audio.onended = () => {
+        releaseAudio()
+        setAudioStatus('idle')
+      }
+      audio.onerror = () => {
+        releaseAudio()
+        setAudioStatus('idle')
+        toast.error('Audio playback failed.')
+      }
+
+      setAudioStatus('playing')
+      await audio.play()
+    } catch (error) {
+      releaseAudio()
+      setAudioStatus('idle')
+      toast.error(error instanceof Error ? error.message : 'Audio failed.')
+    }
+  }
+
   React.useEffect(() => {
     run()
   }, [vibeIdx]) // eslint-disable-line react-hooks/exhaustive-deps -- designer run loop is tied only to vibe changes.
+
+  React.useEffect(() => {
+    return () => {
+      if (copyTimerRef.current) window.clearTimeout(copyTimerRef.current)
+      releaseAudio()
+    }
+  }, [releaseAudio])
 
   return (
     <section className="demo">
@@ -431,7 +528,7 @@ const LandingDemo = () => {
               />
             </div>
             <div className="demo__divider"></div>
-            <div className="demo__pane">
+            <div className="demo__pane demo__pane--output">
               <div
                 className="demo__output"
                 style={{ fontSize: 22, lineHeight: 1.6 }}
@@ -442,6 +539,32 @@ const LandingDemo = () => {
                   </span>
                 )}
                 {busy && <span className="vt-cursor"></span>}
+              </div>
+              <div className="demo__output-actions" aria-label="Output actions">
+                <button
+                  className={
+                    'demo__icon-btn ' +
+                    (audioStatus === 'loading' ? 'is-busy ' : '') +
+                    (audioStatus === 'playing' ? 'is-active' : '')
+                  }
+                  onClick={playOutput}
+                  disabled={!canUseOutput || isAudioBusy}
+                  aria-label="Play translated audio"
+                  title="Play audio"
+                >
+                  <Icon
+                    name={audioStatus === 'loading' ? 'loader' : 'volume-2'}
+                  />
+                </button>
+                <button
+                  className={'demo__icon-btn ' + (copied ? 'is-active' : '')}
+                  onClick={copyOutput}
+                  disabled={!canUseOutput}
+                  aria-label="Copy translated text"
+                  title="Copy text"
+                >
+                  <Icon name={copied ? 'check' : 'copy'} />
+                </button>
               </div>
             </div>
           </div>

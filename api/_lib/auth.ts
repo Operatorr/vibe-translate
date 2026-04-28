@@ -7,13 +7,18 @@ import type { AppEnv } from './env'
 
 export function auth(): MiddlewareHandler<AppEnv> {
   return async (c, next) => {
-    const secretKey = c.env.CLERK_SECRET_KEY
+    const secretKey = c.env.CLERK_SECRET_KEY?.trim()
+    const publishableKey = c.env.CLERK_PUBLISHABLE_KEY?.trim()
 
     if (!secretKey) {
       throw new HTTPException(500, { message: 'CLERK_SECRET_KEY is not configured' })
     }
 
-    const clerk = createClerkClient({ secretKey })
+    if (!publishableKey) {
+      throw new HTTPException(500, { message: 'CLERK_PUBLISHABLE_KEY is not configured' })
+    }
+
+    const clerk = createClerkClient({ secretKey, publishableKey })
     const authorization = c.req.header('authorization')
     const bearerToken = authorization?.startsWith('Bearer ') ? authorization.slice(7) : undefined
     const sessionToken = bearerToken ?? getCookie(c, '__session')
@@ -22,7 +27,10 @@ export function auth(): MiddlewareHandler<AppEnv> {
       throw new HTTPException(401, { message: 'Authentication required' })
     }
 
-    const requestState = await clerk.authenticateRequest(c.req.raw, { secretKey })
+    const requestState = await clerk.authenticateRequest(c.req.raw, {
+      secretKey,
+      publishableKey,
+    })
 
     if (!requestState.isSignedIn) {
       throw new HTTPException(401, { message: 'Invalid session' })
@@ -38,13 +46,9 @@ export function auth(): MiddlewareHandler<AppEnv> {
     const email = user.primaryEmailAddress?.emailAddress ?? null
     const databaseUrl = c.env.HYPERDRIVE?.connectionString ?? c.env.DATABASE_URL
 
-    if (!databaseUrl) {
-      throw new HTTPException(500, { message: 'Database connection string is not configured' })
-    }
-
     c.set('userId', userId)
     c.set('email', email)
-    c.set('databaseUrl', databaseUrl)
+    if (databaseUrl) c.set('databaseUrl', databaseUrl)
 
     await next()
   }

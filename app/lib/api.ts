@@ -11,10 +11,11 @@ export class ApiError extends Error {
 
 type ApiFetchOptions = RequestInit & {
   getToken?: () => Promise<string | null>
+  responseType?: 'json' | 'blob'
 }
 
 export async function apiFetch<TData>(path: string, options: ApiFetchOptions = {}): Promise<TData> {
-  const { getToken, headers, ...init } = options
+  const { getToken, headers, responseType = 'json', ...init } = options
   const token = await getToken?.()
   const requestHeaders = new Headers(headers)
 
@@ -39,6 +40,10 @@ export async function apiFetch<TData>(path: string, options: ApiFetchOptions = {
 
   if (!response.ok) {
     throw new ApiError(payload?.error?.message ?? 'Request failed', response.status, payload)
+  }
+
+  if (responseType === 'blob') {
+    return (await response.blob()) as TData
   }
 
   return payload as TData
