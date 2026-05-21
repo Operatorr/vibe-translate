@@ -38,6 +38,16 @@ export default [
         'warn',
         { allowConstantExport: true },
       ],
+      // Underscore-prefixed identifiers are intentionally unused (e.g. stubbed
+      // provider params awaiting wiring, ignored callback args).
+      '@typescript-eslint/no-unused-vars': [
+        'error',
+        {
+          argsIgnorePattern: '^_',
+          varsIgnorePattern: '^_',
+          caughtErrorsIgnorePattern: '^_',
+        },
+      ],
     },
   },
 ]

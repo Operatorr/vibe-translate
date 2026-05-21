@@ -8,15 +8,23 @@ import { createDbClient } from './_lib/db'
 import type { AppEnv } from './_lib/env'
 import { formatError } from './_lib/errors'
 import {
+  byokModelsSchema,
+  byokSetSchema,
+  characterCreateSchema,
+  characterReorderSchema,
+  characterUpdateSchema,
   checkoutSchema,
-  chatCreateSchema,
-  chatUpdateSchema,
-  translationCreateSchema,
-  translationUpdateSchema,
+  memorySearchSchema,
+  onboardingDictateSchema,
+  segmentCreateSchema,
+  segmentUpdateSchema,
   textToSpeechSchema,
+  threadCreateSchema,
+  threadUpdateSchema,
   userUpdateSchema,
   waitlistSchema,
 } from './_lib/schemas'
+import { EXPLAIN_PAYLOAD_VERSION } from './_lib/explain'
 import { tierLimits } from './_lib/tier'
 
 const app = new Hono<AppEnv>()
@@ -74,10 +82,14 @@ app.post('/api/waitlist', zValidator('json', waitlistSchema), async (c) => {
 })
 
 app.use('/api/users/*', auth())
-app.use('/api/chats/*', auth())
-app.use('/api/translations/*', auth())
+app.use('/api/characters/*', auth())
+app.use('/api/threads/*', auth())
+app.use('/api/segments/*', auth())
+app.use('/api/memory', auth())
 app.use('/api/activity/*', auth())
+app.use('/api/onboarding/*', auth())
 app.use('/api/ai/dictation', auth())
+app.use('/api/ai/text-to-speech', auth())
 app.use('/api/billing/*', auth())
 app.use('/api/export', auth())
 
@@ -90,6 +102,8 @@ app.get('/api/users/me', (c) => {
     email,
     tier: 'free',
     limits: tierLimits.free,
+    credits: { balance: 0, refilledAt: null },
+    byok: { configured: false, last4: null, translateModelId: null, explainModelId: null },
     onboardingComplete: false,
   })
 })
@@ -104,27 +118,65 @@ app.patch('/api/users/me', zValidator('json', userUpdateSchema), (c) => {
   })
 })
 
-app.get('/api/chats', (c) => {
+// Set or replace the user's BYOK OpenRouter key. Plaintext over TLS only;
+// stored as AES-GCM ciphertext via api/_lib/secrets.ts. Response includes
+// `last4` only; the full key is never returned to the client.
+app.put('/api/users/me/byok', zValidator('json', byokSetSchema), (c) => {
+  const payload = c.req.valid('json')
+  return c.json({
+    ok: true,
+    configured: true,
+    last4: payload.apiKey.slice(-4),
+  })
+})
+
+app.delete('/api/users/me/byok', (c) => {
+  return c.json({ ok: true, configured: false, userId: c.get('userId') })
+})
+
+// Optional per-task BYOK model override. `null` clears.
+app.patch('/api/users/me/byok/models', zValidator('json', byokModelsSchema), (c) => {
+  return c.json({ ok: true, ...c.req.valid('json') })
+})
+
+// ---- Characters ----------------------------------------------------------
+
+app.get('/api/characters', (c) => {
   return c.json([])
 })
 
-app.get('/api/chats/:chatId', (c) => {
+app.get('/api/characters/:characterId', (c) => {
   return c.json({
-    id: c.req.param('chatId'),
-    title: 'Example chat',
-    sourceLanguage: 'English',
-    targetLanguage: 'Thai',
+    id: c.req.param('characterId'),
+    name: 'Oba-chan',
+    initials: 'お',
+    color: 'magenta-400',
+    sourceLanguage: 'en-US',
+    targetLanguage: 'ja-JP',
+    defaultVibe: 'casual',
+    temperature: 0.4,
+    persona: {
+      age: '60s',
+      region: 'Osaka',
+      formality: 'warm but blunt',
+      traits: ['warm', 'direct', 'uses 〜やん', 'dialect: kansai-ben'],
+    },
+    instructions: 'Your maternal grandmother in Osaka. Warm but blunt. Uses Kansai-ben.',
+    sortOrder: 0,
+    archivedAt: null,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   })
 })
 
-app.post('/api/chats', zValidator('json', chatCreateSchema), (c) => {
+app.post('/api/characters', zValidator('json', characterCreateSchema), (c) => {
   const payload = c.req.valid('json')
   return c.json(
     {
       id: crypto.randomUUID(),
       ...payload,
+      sortOrder: 0,
+      archivedAt: null,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     },
@@ -132,31 +184,47 @@ app.post('/api/chats', zValidator('json', chatCreateSchema), (c) => {
   )
 })
 
-app.patch('/api/chats/:chatId', zValidator('json', chatUpdateSchema), (c) => {
+app.patch('/api/characters/:characterId', zValidator('json', characterUpdateSchema), (c) => {
   return c.json({
-    id: c.req.param('chatId'),
+    id: c.req.param('characterId'),
     ...c.req.valid('json'),
     updatedAt: new Date().toISOString(),
   })
 })
 
-app.delete('/api/chats/:chatId', (c) => {
-  return c.json({ ok: true, id: c.req.param('chatId') })
+app.delete('/api/characters/:characterId', (c) => {
+  return c.json({ ok: true, id: c.req.param('characterId') })
 })
 
-app.post('/api/chats/reorder', (c) => {
-  return c.json({ ok: true, userId: c.get('userId') })
+app.post('/api/characters/reorder', zValidator('json', characterReorderSchema), (c) => {
+  return c.json({ ok: true, userId: c.get('userId'), characterIds: c.req.valid('json').characterIds })
 })
 
-app.get('/api/translations', (c) => {
+// ---- Threads -------------------------------------------------------------
+
+app.get('/api/threads', (c) => {
+  // Optional ?characterId= filter; resolved server-side once DB wiring lands.
   return c.json([])
 })
 
-app.post('/api/translations', zValidator('json', translationCreateSchema), (c) => {
+app.get('/api/threads/:threadId', (c) => {
+  return c.json({
+    id: c.req.param('threadId'),
+    characterId: crypto.randomUUID(),
+    title: 'Asking for grandma\'s recipe',
+    archivedAt: null,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  })
+})
+
+app.post('/api/threads', zValidator('json', threadCreateSchema), (c) => {
+  const payload = c.req.valid('json')
   return c.json(
     {
       id: crypto.randomUUID(),
-      ...c.req.valid('json'),
+      ...payload,
+      archivedAt: null,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     },
@@ -164,34 +232,121 @@ app.post('/api/translations', zValidator('json', translationCreateSchema), (c) =
   )
 })
 
-app.patch('/api/translations/:translationId', zValidator('json', translationUpdateSchema), (c) => {
+app.patch('/api/threads/:threadId', zValidator('json', threadUpdateSchema), (c) => {
   return c.json({
-    id: c.req.param('translationId'),
+    id: c.req.param('threadId'),
     ...c.req.valid('json'),
     updatedAt: new Date().toISOString(),
   })
 })
 
-app.delete('/api/translations/:translationId', (c) => {
-  return c.json({ ok: true, id: c.req.param('translationId') })
+app.delete('/api/threads/:threadId', (c) => {
+  return c.json({ ok: true, id: c.req.param('threadId') })
+})
+
+// ---- Segments ------------------------------------------------------------
+
+app.get('/api/segments', (c) => {
+  return c.json([])
+})
+
+// Sync translate-and-return. Client supplies `{ threadId, sourceText, vibe? }`;
+// the worker resolves the Character (default_vibe, temperature, persona,
+// source/target language), calls the translation provider, and writes the
+// Segment with server-produced `targetText` and `tokenAlignment`.
+app.post('/api/segments', zValidator('json', segmentCreateSchema), (c) => {
+  const payload = c.req.valid('json')
+  return c.json(
+    {
+      id: crypto.randomUUID(),
+      threadId: payload.threadId,
+      sourceText: payload.sourceText,
+      // Server-produced — placeholder until translateSegment() is wired to OpenRouter.
+      targetText: '',
+      vibe: payload.vibe ?? null,
+      tokenAlignment: [],
+      tokenUsage: {},
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    },
+    201,
+  )
+})
+
+app.patch('/api/segments/:segmentId', zValidator('json', segmentUpdateSchema), (c) => {
+  return c.json({
+    id: c.req.param('segmentId'),
+    ...c.req.valid('json'),
+    updatedAt: new Date().toISOString(),
+  })
+})
+
+app.delete('/api/segments/:segmentId', (c) => {
+  return c.json({ ok: true, id: c.req.param('segmentId') })
+})
+
+// Generate-on-miss, cache-in-DB Explain. Lookup order:
+//   1) explains where (segment_id, version = EXPLAIN_PAYLOAD_VERSION)
+//   2) explains where (user_id, target_language, target_text_hash, version)
+//      — cross-segment reuse for repeated target text
+//   3) generate via api/_lib/explain.ts, insert, return
+app.get('/api/segments/:segmentId/explain', (c) => {
+  return c.json({
+    segmentId: c.req.param('segmentId'),
+    version: EXPLAIN_PAYLOAD_VERSION,
+    body: null,
+    cached: false,
+  })
+})
+
+// Translation Memory search. Embeds `q`, runs cosine similarity against the
+// user's segments.source_embedding (optionally scoped to a character or
+// target language), returns top-K with similarity scores.
+app.get('/api/memory', zValidator('query', memorySearchSchema), (c) => {
+  const params = c.req.valid('query')
+  return c.json({
+    query: params.q,
+    characterId: params.characterId ?? null,
+    targetLanguage: params.targetLanguage ?? null,
+    hits: [] as Array<{ segmentId: string; similarity: number }>,
+  })
 })
 
 app.get('/api/activity', (c) => {
   return c.json([])
 })
 
-app.post('/api/ai/dictation', async (c) => {
-  const body = await c.req.json().catch(() => null)
-
-  if (!body) {
-    throw new HTTPException(400, { message: 'JSON body is required' })
-  }
-
+// Free, one-shot onboarding dictation. Parses a free-form description into a
+// Character draft for the confirmation form. `ok: false` → client falls back to
+// the empty form. Does not charge credits; should be rate-limited per user and
+// only served while onboarding_complete = false.
+app.post('/api/onboarding/dictate', zValidator('json', onboardingDictateSchema), (c) => {
   return c.json({
-    sourceLanguage: 'auto',
-    targetLanguage: 'English',
-    tone: 'natural',
-    instructions: String(body.prompt ?? ''),
+    ok: true,
+    name: null,
+    sourceLanguage: null,
+    targetLanguage: null,
+    defaultVibe: null,
+    temperature: null,
+    persona: null,
+    instructions: null,
+    prompt: c.req.valid('json').prompt,
+  })
+})
+
+// In-app dictation (Pro+, credit-charged). Same parse, used to spin up
+// additional Characters by voice after onboarding.
+app.post('/api/ai/dictation', zValidator('json', onboardingDictateSchema), (c) => {
+  return c.json({
+    ok: true,
+    name: null,
+    sourceLanguage: null,
+    targetLanguage: null,
+    defaultVibe: null,
+    temperature: null,
+    persona: null,
+    instructions: null,
+    prompt: c.req.valid('json').prompt,
   })
 })
 
@@ -338,8 +493,9 @@ app.post('/api/billing/webhooks/dodo', async (c) => {
 app.get('/api/export', (c) => {
   return c.json({
     userId: c.get('userId'),
-    chats: [],
-    translations: [],
+    characters: [],
+    threads: [],
+    segments: [],
     activity: [],
   })
 })

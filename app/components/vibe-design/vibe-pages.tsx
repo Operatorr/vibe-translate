@@ -6,7 +6,6 @@ import type { CSSProperties } from 'react'
 import type { LucideIcon } from 'lucide-react'
 import { toast } from 'sonner'
 
-import { apiFetch } from '@/lib/api'
 import {
   DEMO_PAIRS_JA,
   EXPLAIN_DEMO_S3,
@@ -19,13 +18,6 @@ import {
 } from './design-data'
 
 type VibeRoute = '/' | '/pricing' | '/app'
-type DemoVibe =
-  | 'yakuza'
-  | 'friend'
-  | 'casual'
-  | 'keigo'
-  | 'keigoplus'
-  | 'emperor'
 type CSSVars = CSSProperties &
   Record<`--${string}`, string | number | undefined>
 type NavigateFn = (path: VibeRoute) => void
@@ -357,7 +349,6 @@ const LandingDemo = () => {
   >('idle')
   const copyTimerRef = React.useRef<number | null>(null)
   const audioRef = React.useRef<HTMLAudioElement | null>(null)
-  const audioUrlRef = React.useRef<string | null>(null)
 
   const vibes = VIBE_PRESETS['ja-JP']
   const activeVibe = vibes[vibeIdx]
@@ -371,11 +362,6 @@ const LandingDemo = () => {
       audioRef.current.onended = null
       audioRef.current.onerror = null
       audioRef.current = null
-    }
-
-    if (audioUrlRef.current) {
-      URL.revokeObjectURL(audioUrlRef.current)
-      audioUrlRef.current = null
     }
   }, [])
 
@@ -414,27 +400,18 @@ const LandingDemo = () => {
     }
   }
 
+  // The landing demo plays pre-rendered, per-vibe sample clips from /public/demo
+  // rather than the live (now authenticated, metered) TTS endpoint. See
+  // public/demo/README.md and docs/SECURITY.md.
   const playOutput = async () => {
     if (!canUseOutput || isAudioBusy) return
 
     setAudioStatus('loading')
 
     try {
-      const blob = await apiFetch<Blob>('/api/ai/text-to-speech', {
-        method: 'POST',
-        responseType: 'blob',
-        body: JSON.stringify({
-          text: out,
-          vibe: activeVibe.id as DemoVibe,
-          languageCode: 'ja-JP',
-        }),
-      })
       releaseAudio()
 
-      const url = URL.createObjectURL(blob)
-      const audio = new Audio(url)
-
-      audioUrlRef.current = url
+      const audio = new Audio(`/demo/vibe-${activeVibe.id}.mp3`)
       audioRef.current = audio
       audio.onended = () => {
         releaseAudio()

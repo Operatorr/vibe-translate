@@ -3,16 +3,21 @@ main = "functions/api/[[route]].ts"
 compatibility_date = "2025-01-21"
 compatibility_flags = ["nodejs_compat"]
 
+# This committed config is the PRODUCTION deployment (two-env model: Local + Production).
+# Local dev overrides these via .dev.vars (e.g. APP_ENV=development, DATABASE_URL
+# pointing at the local Neon database). See docs/DEPLOYMENT.md.
+[vars]
+APP_ENV = "production"
+
 [assets]
 directory = "./dist"
 binding = "ASSETS"
 not_found_handling = "single-page-application"
 
-[vars]
-APP_ENV = "development"
-
-# Bind Hyperdrive in deployed environments:
+# Production binds Hyperdrive to the production Neon database. Uncomment and set
+# the real Hyperdrive id before `wrangler deploy`. Local dev does not need this —
+# api/_lib/db.ts falls back to DATABASE_URL from .dev.vars when HYPERDRIVE is absent.
 # [[hyperdrive]]
 # binding = "HYPERDRIVE"
-# id = "your-hyperdrive-id"
+# id = "your-production-hyperdrive-id"
 # localConnectionString = "postgres://user:password@localhost:5432/vibe_translate"

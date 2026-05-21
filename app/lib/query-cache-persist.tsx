@@ -3,7 +3,7 @@ import { get, set } from 'idb-keyval'
 import { useEffect } from 'react'
 
 const CACHE_KEY = 'vibe-translate:query-cache'
-const PERSISTED_KEYS = new Set(['chats', 'translations', 'activity'])
+const PERSISTED_KEYS = new Set(['characters', 'threads', 'segments', 'activity'])
 
 type CacheHydratorProps = {
   queryClient: QueryClient

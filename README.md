@@ -1,7 +1,8 @@
 # VibeTranslate
 
-Single-page React app with a Cloudflare Workers API, following the architecture in
-`architecute.md`.
+Single-page React app with a Cloudflare Workers API. The knowledge base lives in
+[`AGENTS.md`](./AGENTS.md) (table of contents) → [`ARCHITECTURE.md`](./ARCHITECTURE.md)
+and [`docs/`](./docs).
 
 ## Quick Start
 
