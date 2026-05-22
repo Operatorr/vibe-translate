@@ -34,16 +34,25 @@ export function createOpenRouterClient(apiKey: string): OpenAI {
 // identical to that module's ChatMessage, so builders there pass straight in.
 export type ChatMessage = { role: 'system' | 'user'; content: string }
 
-// OpenRouter reasoning/thinking effort. Sent as `reasoning: { effort }`; a no-op
-// on models that don't support reasoning.
-export type ReasoningEffort = 'low' | 'medium' | 'high'
+// OpenRouter reasoning/thinking control. `none` disables reasoning entirely
+// (`reasoning: { enabled: false }`); `minimal`/`low`/`medium`/`high` set the
+// effort. Undefined leaves the model's default. Disabling is a no-op (or maps to
+// the model's floor) on models that always reason.
+export type ReasoningEffort = 'none' | 'minimal' | 'low' | 'medium' | 'high'
 
-const REASONING_EFFORTS: readonly string[] = ['low', 'medium', 'high']
+const REASONING_EFFORTS: readonly string[] = ['none', 'minimal', 'low', 'medium', 'high']
 
-// Validate a free-form env value into a ReasoningEffort, or undefined.
+// Validate a free-form value into a ReasoningEffort, or undefined.
 export function parseReasoningEffort(value: string | undefined): ReasoningEffort | undefined {
   const v = value?.trim().toLowerCase()
   return v && REASONING_EFFORTS.includes(v) ? (v as ReasoningEffort) : undefined
+}
+
+// The OpenRouter request fragment for a reasoning setting.
+function reasoningParam(reasoning: ReasoningEffort | undefined): Record<string, unknown> {
+  if (!reasoning) return {}
+  if (reasoning === 'none') return { reasoning: { enabled: false } }
+  return { reasoning: { effort: reasoning } }
 }
 
 export type TokenUsage = {
@@ -120,7 +129,11 @@ export async function chatJson<T>(
       completion = await client.chat.completions.create(
         {
           model: args.model,
-          temperature: args.temperature,
+          // Reasoning models commonly reject `temperature` alongside strict
+          // structured output under provider.require_parameters (OpenRouter 404
+          // "no endpoints found"). Drop temperature whenever a reasoning setting
+          // is in play; reasoning models largely ignore it anyway.
+          ...(args.reasoning ? {} : { temperature: args.temperature }),
           messages,
           response_format: {
             type: 'json_schema',
@@ -130,7 +143,7 @@ export async function chatJson<T>(
           // response_format json_schema, and return token counts + cost.
           provider: { require_parameters: true },
           usage: { include: true },
-          ...(args.reasoning ? { reasoning: { effort: args.reasoning } } : {}),
+          ...reasoningParam(args.reasoning),
         } as unknown as OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming,
         requestHeaders ? { headers: requestHeaders } : undefined,
       )

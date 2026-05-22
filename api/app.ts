@@ -680,9 +680,22 @@ app.post('/api/segments', zValidator('json', segmentCreateSchema), (c) => {
       { apiKey: target.apiKey, modelId: target.modelId, appUrl: c.env.APP_URL, reasoning: target.reasoning },
     )
 
-    // Embeddings are always platform-owned (BYOK never applies). See adr/0003.
-    const embed = await embedText({ text: payload.sourceText, apiKey: c.env.OPENROUTER_API_KEY ?? '' })
-    const row = await insertSeg(result.targetText, result.tokenAlignment, result.tokenUsage, embed.vector)
+    // Embeddings are always platform-owned (BYOK never applies; see adr/0003)
+    // and best-effort: a failed embedding (provider down, or a BYOK-only deploy
+    // with no platform key) must not discard an already-generated, paid-for
+    // translation. Store source_embedding null — the Segment is simply excluded
+    // from Translation memory search until a backfill (adr/0002, adr/0006).
+    let embedding: number[] | null = null
+    try {
+      const embed = await embedText({
+        text: payload.sourceText,
+        apiKey: c.env.OPENROUTER_API_KEY ?? '',
+      })
+      embedding = embed.vector
+    } catch {
+      await logActivity(db, userId, 'segment.embed_failed', { threadId: payload.threadId })
+    }
+    const row = await insertSeg(result.targetText, result.tokenAlignment, result.tokenUsage, embedding)
 
     if (canonical && fp) {
       await upsertCache(db, fp, {
@@ -693,7 +706,7 @@ app.post('/api/segments', zValidator('json', segmentCreateSchema), (c) => {
         modelId: result.tokenUsage.modelId,
         targetText: result.targetText,
         tokenAlignment: result.tokenAlignment,
-        sourceEmbedding: embed.vector,
+        sourceEmbedding: embedding,
       })
     }
 
