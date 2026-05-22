@@ -46,12 +46,14 @@ Onboarding dictation is free and costs tokens, so it's bounded three ways: only 
 
 ## Webhook signatures {#webhook-signatures}
 
-- `POST /api/billing/webhooks/dodo` is unauthenticated by design (Dodo calls it) but **must verify the Dodo signature** using `DODO_WEBHOOK_SECRET` before trusting the body. Verification belongs in `api/_lib/payments.ts` and must run on the raw body before JSON parsing. (Currently stubbed — wiring this is a launch blocker.)
-- If signature verification fails, return `400` and do not mutate state.
+- `POST /api/billing/webhooks/dodo` is unauthenticated by design (Dodo calls it) and is therefore **exempted from the Clerk `auth()` middleware** — only `/checkout`, `/cancel`, and `/switch-plan` under `/api/billing/*` are authenticated.
+- It **verifies the Dodo signature** using `DODO_WEBHOOK_SECRET` before trusting the body. Dodo follows the [Standard Webhooks](https://www.standardwebhooks.com/) spec: `verifyDodoSignature` in `api/_lib/payments.ts` runs on the **raw body before any JSON parsing**, computing `HMAC-SHA256` over `${webhook-id}.${webhook-timestamp}.${rawBody}` with the base64-decoded secret and comparing (constant-time) against each `v1,<sig>` entry in the `webhook-signature` header.
+- If signature verification fails, the route returns `400` and **does not parse or mutate state**. A missing `DODO_WEBHOOK_SECRET` fails closed with `500`.
+- **Replay protection** is twofold: the timestamp must be within a ±5-minute window, and every accepted event is recorded in `webhook_events` (keyed by `webhook-id`). The dedupe insert and the tier/credit mutation share **one transaction**, so redelivered events are a no-op and a mid-flight failure rolls back cleanly for the provider's retry.
 
 ## Input validation
 
-- Every mutation route validates its body with a **Zod** schema (`api/_lib/schemas.ts`) via `@hono/zod-validator`. No handler calls `c.req.json()` without a schema.
+- Every mutation route validates its body with a **Zod** schema (`api/_lib/schemas.ts`) via `@hono/zod-validator`. No handler calls `c.req.json()` without a schema. The Dodo webhook is the one deliberate exception: it reads the **raw** body with `c.req.text()` and verifies the signature *before* `JSON.parse`, so a Zod middleware (which would parse first) cannot front it.
 - Locale fields are constrained to BCP-47 shape; BYOK model IDs to `provider/model` shape; the OpenRouter key to the `sk-` prefix.
 - Validation failures return `422` with `error.flatten()` details; they never reach the database.
 
@@ -68,7 +70,7 @@ Onboarding dictation is free and costs tokens, so it's bounded three ways: only 
 
 ## Open items (launch blockers marked ⚠)
 
-- ⚠ Dodo webhook signature verification (`payments.ts` stub).
+- ✅ Dodo webhook signature verification — wired in `api/_lib/payments.ts` (`verifyDodoSignature`), with `webhook_events` dedupe + a ±5-min replay window. See [adr/0005](./adr/0005-commerce-checkout-and-webhook-idempotency.md).
 - ⚠ `CREDENTIALS_ENCRYPTION_KEY` provisioned in every deployed environment before BYOK ships.
 - Retention prune job (scheduled worker / cron).
 - BYOK key rotation runbook + optional dual-key grace window.

@@ -1,10 +1,13 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
+import { useAuth } from '@clerk/react'
 import { useNavigate } from '@tanstack/react-router'
 import * as React from 'react'
 import * as Icons from 'lucide-react'
 import type { CSSProperties } from 'react'
 import type { LucideIcon } from 'lucide-react'
 import { toast } from 'sonner'
+
+import { apiFetch } from '@/lib/api'
 
 import {
   DEMO_PAIRS_JA,
@@ -1280,8 +1283,31 @@ const LandingContent = ({ onNavigate }: { onNavigate: NavigateFn }) => {
 
 const PricingContent = ({ onNavigate }: { onNavigate: NavigateFn }) => {
   const [annual, setAnnual] = React.useState(true)
+  const { getToken, isSignedIn } = useAuth()
+  const [pendingPlan, setPendingPlan] = React.useState<'pro' | 'team' | null>(null)
 
   const price = (m: number, y: number) => (annual ? `$${y}` : `$${m}`)
+
+  // Pro → backend `pro`; Linguist → backend `team` (checkoutSchema plans).
+  const startCheckout = async (plan: 'pro' | 'team') => {
+    // Checkout requires an authenticated user — route guests through sign-in.
+    if (!isSignedIn) {
+      onNavigate('/app')
+      return
+    }
+    setPendingPlan(plan)
+    try {
+      const { checkoutUrl } = await apiFetch<{ checkoutUrl: string }>('/api/billing/checkout', {
+        method: 'POST',
+        body: JSON.stringify({ plan, billingPeriod: annual ? 'annual' : 'monthly' }),
+        getToken,
+      })
+      window.location.assign(checkoutUrl)
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Could not start checkout.')
+      setPendingPlan(null)
+    }
+  }
 
   return (
     <main className="site-main">
@@ -1398,9 +1424,10 @@ const PricingContent = ({ onNavigate }: { onNavigate: NavigateFn }) => {
               </div>
               <button
                 className="vt-btn vt-btn--primary vt-btn--block"
-                onClick={() => onNavigate('/app')}
+                onClick={() => startCheckout('pro')}
+                disabled={pendingPlan !== null}
               >
-                Start 14-day trial
+                {pendingPlan === 'pro' ? 'Starting…' : 'Start 14-day trial'}
               </button>
               <div className="tier__features">
                 <div className="tier__features-h">EVERYTHING IN FREE, PLUS</div>
@@ -1461,9 +1488,10 @@ const PricingContent = ({ onNavigate }: { onNavigate: NavigateFn }) => {
               </div>
               <button
                 className="vt-btn vt-btn--ghost vt-btn--block"
-                onClick={() => onNavigate('/app')}
+                onClick={() => startCheckout('team')}
+                disabled={pendingPlan !== null}
               >
-                Start 14-day trial
+                {pendingPlan === 'team' ? 'Starting…' : 'Start 14-day trial'}
               </button>
               <div className="tier__features">
                 <div className="tier__features-h">EVERYTHING IN PRO, PLUS</div>

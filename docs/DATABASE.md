@@ -42,7 +42,7 @@ Provisioned on first authenticated request by `api/_lib/auth.ts`. Keyed by the C
 | `clerk_user_id` | text unique | the FK target for everything user-scoped |
 | `email`, `display_name`, `locale` | text | mirrored from Clerk |
 | `tier` | text check (`free`/`pro`/`team`) | gates feature access in `api/_lib/tier.ts` |
-| `subscription_id` | text | Dodo Payments subscription id |
+| `subscription_id` | text nullable | Dodo Payments subscription id; partial-unique (`where subscription_id is not null`) so lifecycle webhooks can resolve the owning user. Set/cleared by the Dodo webhook. |
 | `onboarding_complete` | boolean | gates the `/app` shell |
 | `credits_balance` | int | spendable on the platform-key path; debited per token spend |
 | `credits_refilled_at` | timestamptz | last monthly grant; drives the refill scheduler |
@@ -153,7 +153,7 @@ Indexes: unique `(task) where is_default`, unique `(task, provider, provider_mod
 | translate | `openrouter / deepseek/deepseek-v4-pro` | — |
 | explain | `openrouter / xiaomi/mimo-v2.5-pro` | — |
 | dictation | `openrouter / google/gemini-2.5-flash` | — |
-| embed | `openai / text-embedding-3-large` | 3072 |
+| embed | `openrouter / openai/text-embedding-3-small` | 1536 |
 
 `dictation` is its own task so operators can point onboarding parsing at a cheap, fast, structured-output model independent of the translate model.
 
@@ -166,8 +166,8 @@ Append-only audit log. Every credit grant (signup, monthly refill, manual adjust
 | `id` | uuid pk | |
 | `user_id` | text fk → `users.clerk_user_id` on delete cascade | |
 | `delta` | int | positive = grant, negative = spend |
-| `reason` | text | enum-shaped (`grant.signup`, `grant.monthly`, `spend.translate`, `spend.explain`, `grant.adjustment`) |
-| `reference_id` | uuid nullable | e.g. the `segments.id` or `explains.id` the spend was for |
+| `reason` | text | enum-shaped (`grant.signup`, `grant.monthly`, `grant.subscription`, `grant.adjustment`, `spend.translate`, `spend.explain`, `spend.dictation`) |
+| `reference_id` | uuid nullable | e.g. the `segments.id` or `explains.id` the spend was for; `null` for in-app dictation |
 | `metadata` | jsonb default `{}` | model id, token breakdown |
 | `created_at` | timestamptz | |
 
@@ -186,7 +186,7 @@ Shared, cross-user cache of **canonical** translations (no persona, no instructi
 | `model_id` | text | which translate model produced it (part of the key) |
 | `source_text`, `target_text` | text | the cached mapping |
 | `token_alignment` | jsonb | copied into the per-user Segment on a hit |
-| `source_embedding` | `vector(3072)` nullable | copied into the per-user Segment on a hit, avoiding a re-embed |
+| `source_embedding` | `vector(1536)` nullable | copied into the per-user Segment on a hit, avoiding a re-embed |
 | `hits` | int | incremented per lookup; supports eviction |
 | `created_at`, `last_used_at` | timestamptz | |
 
@@ -200,6 +200,19 @@ Per-user audit trail. Action strings are free-form for now (e.g. `character.crea
 
 Pre-launch signups, keyed by unique email.
 
+#### `webhook_events`
+
+Append-only dedupe ledger for provider webhooks (Dodo Payments). Keyed by the provider's event id — Dodo's Standard-Webhooks `webhook-id` header. The webhook handler inserts a row **inside the same transaction** as the tier/credit mutation, so a redelivered event is dropped before any grant runs. See [adr/0005](./adr/0005-commerce-checkout-and-webhook-idempotency.md).
+
+| column | type | notes |
+| --- | --- | --- |
+| `event_id` | text pk | provider event id (Dodo `webhook-id`) |
+| `source` | text default `'dodo'` | provider namespace, for future webhook sources |
+| `event_type` | text nullable | e.g. `subscription.active` — informational |
+| `received_at` | timestamptz | |
+
+Derived/operational data — not user-scoped, no cascade.
+
 ## Invariants
 
 - **Per-user scoping.** Every row in `characters`, `threads`, `segments`, `activity_log` is scoped by `user_id = clerk_user_id`. All queries must include the user filter — see [SECURITY.md](./SECURITY.md#per-user-scoping).
@@ -208,7 +221,7 @@ Pre-launch signups, keyed by unique email.
 - **`token_alignment` shape** is the same as the design prototype's `target` arrays in `data.js` (each entry `{ t, src }`). This is the contract between the model output and the frontend hover-alignment renderer.
 - **Embeddings are derived data.** Source-of-truth is `source_text` (and for explains, `target_text` + `body`). Re-embedding is always safe; never trust the embedding vector over the underlying text.
 - **Explain payload versioning.** Bumping `EXPLAIN_PAYLOAD_VERSION` in `api/_lib/explain.ts` invalidates older `explains` rows. The next read on those segments triggers re-generation. Old rows are retained as a fallback only — they should never be served above a newer one.
-- **`segments.source_embedding` dimension must equal `models.embedding_dimensions` for the default embed row.** Today both are 3072. A future embed model swap requires (a) an `alter table` to change the vector dimension, (b) re-embedding every existing Segment, (c) updating the default `models` row. There is no migration shortcut.
+- **`segments.source_embedding` dimension must equal `models.embedding_dimensions` for the default embed row.** Today both are 1536 (`text-embedding-3-small`), which keeps the column within pgvector's 2,000-dim HNSW index limit. A future embed model swap requires (a) an `alter table` to change the vector dimension, (b) re-embedding every existing Segment, (c) updating the default `models` row. There is no migration shortcut.
 - **Credit-balance invariant.** `users.credits_balance = sum(credit_ledger.delta)` per user. Spend and grant writes happen inside a transaction so the two never drift.
 
 ## Migrations

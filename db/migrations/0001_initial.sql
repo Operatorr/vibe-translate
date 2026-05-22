@@ -58,7 +58,7 @@ values
   ('translate', 'openrouter', 'deepseek/deepseek-v4-pro', 'DeepSeek v4 Pro', true, null),
   ('explain',   'openrouter', 'xiaomi/mimo-v2.5-pro',     'Xiaomi MiMo v2.5 Pro', true, null),
   ('dictation', 'openrouter', 'google/gemini-2.5-flash',  'Gemini 2.5 Flash', true, null),
-  ('embed',     'openai',     'text-embedding-3-large',   'OpenAI Embedding 3 Large', true, 3072)
+  ('embed',     'openai',     'text-embedding-3-small',   'OpenAI Embedding 3 Small', true, 1536)
 on conflict (task, provider, provider_model_id) do nothing;
 
 create table if not exists credit_ledger (
@@ -109,7 +109,7 @@ create table if not exists segments (
   token_alignment jsonb not null default '[]'::jsonb,
   token_usage jsonb not null default '{}'::jsonb,
   metadata jsonb not null default '{}'::jsonb,
-  source_embedding vector(3072),
+  source_embedding vector(1536),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -137,7 +137,7 @@ create table if not exists translation_cache (
   source_text text not null,
   target_text text not null,
   token_alignment jsonb not null default '[]'::jsonb,
-  source_embedding vector(3072),
+  source_embedding vector(1536),
   hits integer not null default 0,
   created_at timestamptz not null default now(),
   last_used_at timestamptz not null default now()

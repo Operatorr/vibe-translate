@@ -100,9 +100,11 @@ A **Character** is the primary navigation surface.
 
 ### Billing
 
-- `POST /api/billing/checkout` → `checkoutSchema` (`plan: 'pro' | 'team'`) → returns a Dodo checkout URL.
-- `POST /api/billing/cancel`, `POST /api/billing/switch-plan`.
-- `POST /api/billing/webhooks/dodo` → unauthenticated; Dodo signature verification owned in `api/_lib/payments.ts` (see [SECURITY.md](./SECURITY.md#webhook-signatures)).
+- `POST /api/billing/checkout` → `checkoutSchema` (`plan: 'pro' | 'team'`, `billingPeriod: 'monthly' | 'annual'` default `monthly`) → `{ checkoutUrl, plan }`. Creates a Dodo checkout session stamped with `metadata.clerk_user_id`; the client redirects to `checkoutUrl`. `503` if Dodo / the plan's product id is unconfigured, `502` on a Dodo error.
+- `POST /api/billing/switch-plan` → `checkoutSchema` → `{ ok, plan }`. Calls Dodo change-plan (prorated immediately) on the user's `subscription_id`. `409` if the user has no active subscription.
+- `POST /api/billing/cancel` → `{ ok }`. Cancels at end of the billing period (`cancel_at_next_billing_date`). `409` if no active subscription.
+- Cancel and switch-plan do **not** mutate `users.tier` directly — the resulting `subscription.cancelled` / `subscription.plan_changed` webhook is the single source of truth (see [adr/0005](./adr/0005-commerce-checkout-and-webhook-idempotency.md)).
+- `POST /api/billing/webhooks/dodo` → **unauthenticated by design** (exempt from `auth()`); verifies the Standard Webhooks signature on the raw body, is idempotent via `webhook_events`, and applies tier/credit changes. Owned in `api/_lib/payments.ts` (see [SECURITY.md](./SECURITY.md#webhook-signatures)).
 
 ### Utility
 

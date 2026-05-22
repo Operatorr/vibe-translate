@@ -15,9 +15,11 @@ export type CreditCost = {
 export type LedgerReason =
   | 'grant.signup'
   | 'grant.monthly'
+  | 'grant.subscription'
   | 'grant.adjustment'
   | 'spend.translate'
   | 'spend.explain'
+  | 'spend.dictation'
 
 export async function getBalance(db: Client, userId: string): Promise<number> {
   const result = await db.query<{ credits_balance: number }>(
@@ -34,8 +36,8 @@ export async function recordSpend(
   db: Client,
   userId: string,
   cost: CreditCost,
-  reason: Extract<LedgerReason, 'spend.translate' | 'spend.explain'>,
-  referenceId: string,
+  reason: Extract<LedgerReason, 'spend.translate' | 'spend.explain' | 'spend.dictation'>,
+  referenceId: string | null,
 ): Promise<number> {
   await db.query('begin')
   try {

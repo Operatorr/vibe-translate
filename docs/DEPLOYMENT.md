@@ -83,6 +83,6 @@ Use Cloudflare's version history: `wrangler rollback` (or pin a prior version vi
 - [ ] Production Neon DB created, `pgvector` enabled, `0001_initial.sql` applied.
 - [ ] Hyperdrive configured against the prod Neon DB; binding uncommented in `wrangler.toml`.
 - [ ] All production secrets set via `wrangler secret put` (esp. `CREDENTIALS_ENCRYPTION_KEY` before BYOK is usable).
-- [ ] Dodo webhook signature verification wired (see [SECURITY.md](./SECURITY.md#webhook-signatures)) — launch blocker.
+- [x] Dodo webhook signature verification wired (see [SECURITY.md](./SECURITY.md#webhook-signatures)) — launch blocker. Set `DODO_WEBHOOK_SECRET` (and the `DODO_PRODUCT_*` ids) before go-live.
 - [ ] Six `public/demo/vibe-*.mp3` clips rendered (see [public/demo/README.md](../public/demo/README.md)).
 - [ ] Custom domain route mapped; `APP_URL` set to match.
