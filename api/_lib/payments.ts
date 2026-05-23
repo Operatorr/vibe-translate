@@ -47,10 +47,11 @@ async function dodoFetch(env: Bindings, path: string, init: RequestInit): Promis
 }
 
 async function dodoErrorMessage(res: Response, action: string): Promise<never> {
+  // Log the upstream detail server-side; return only a generic message + status
+  // to the client so provider internals aren't surfaced in API responses.
   const detail = await res.text().catch(() => '')
-  throw new HTTPException(502, {
-    message: `Dodo ${action} failed (${res.status})${detail ? `: ${detail.slice(0, 200)}` : ''}`,
-  })
+  if (detail) console.error(`dodo ${action} failed`, { status: res.status, detail: detail.slice(0, 500) })
+  throw new HTTPException(502, { message: `Dodo ${action} failed (${res.status})` })
 }
 
 // ---------------------------------------------------------------------------
@@ -279,6 +280,17 @@ async function applySubscriptionGrant(
   isRenewal: boolean,
 ): Promise<void> {
   const credits = tierLimits[plan].credits
+  // Guarantee the FK target exists before the credit_ledger insert below: a user
+  // can reach checkout (and thus this webhook) before any authenticated DB route
+  // has lazily created their row via getOrCreateUser. We can't call
+  // getOrCreateUser here — it opens its own transaction (recordGrant), and we're
+  // already inside the webhook's transaction — so insert the bare row directly.
+  // No signup grant is applied; getOrCreateUser stays the single owner of that.
+  await db.query(
+    `insert into users (clerk_user_id) values ($1)
+     on conflict (clerk_user_id) do nothing`,
+    [userId],
+  )
   await db.query(
     `update users
         set tier = $2,
@@ -331,12 +343,35 @@ async function handleDodoEvent(
         plan,
         subscriptionId,
       })
-      return { status: 'processed', userId, plan, activated: !isRenewal }
+      // `activated` drives the one-time confirmation email: only first
+      // activation, not renewals or plan changes (which would re-send an
+      // "activated" email on every upgrade/downgrade).
+      return { status: 'processed', userId, plan, activated: event.type === 'subscription.active' }
+    }
+
+    case 'subscription.failed': {
+      // A failed charge is often transient (dunning / provider retry). Drop the
+      // user to free, but KEEP subscription_id so a later recovery event that
+      // lacks checkout metadata can still resolve them via resolveUserId. Only
+      // terminal teardown (cancelled/expired) clears subscription_id. See adr/0005.
+      const userId = await resolveUserId(db, data, subscriptionId)
+      if (!userId) {
+        console.warn('dodo webhook: could not resolve user for payment failure', {
+          type: event.type,
+          subscriptionId,
+        })
+        return { status: 'ignored' }
+      }
+      await db.query(
+        `update users set tier = 'free', updated_at = now() where clerk_user_id = $1`,
+        [userId],
+      )
+      await logActivity(db, userId, 'tier.downgraded', { reason: event.type, subscriptionId })
+      return { status: 'processed', userId, plan: 'free', activated: false }
     }
 
     case 'subscription.cancelled':
-    case 'subscription.expired':
-    case 'subscription.failed': {
+    case 'subscription.expired': {
       const userId = await resolveUserId(db, data, subscriptionId)
       if (!userId) {
         console.warn('dodo webhook: could not resolve user for termination', {

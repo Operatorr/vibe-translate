@@ -31,10 +31,19 @@ Because the dedupe insert and the mutation share a transaction, a redelivery is 
 
 The grant is written **inline** (an additive `credit_ledger` row plus a `users.credits_balance` update) rather than via `credits.recordGrant`, because `recordGrant` opens its own transaction and Postgres has no nested transactions. The inline accounting mirrors `recordGrant` exactly and preserves the `sum(credit_ledger.delta) = users.credits_balance` invariant. Activation grants are recorded as `grant.subscription`; renewals reuse `grant.monthly` and refresh `credits_refilled_at`.
 
+The grant first runs `insert into users (clerk_user_id) values ($1) on conflict do nothing` so the `credit_ledger` foreign key always resolves. A user can reach checkout — and therefore this webhook — before any authenticated DB route has lazily created their local row via `getOrCreateUser`; without the guard the ledger insert would raise a foreign-key violation, roll back the whole transaction (including the `webhook_events` dedupe row), and leave the provider retrying a paid event forever. We do **not** call `getOrCreateUser` here because it opens its own transaction (via `recordGrant`); the bare insert adds no signup grant, which `getOrCreateUser` remains the sole owner of.
+
+## Lifecycle teardown: transient failure vs. terminal end
+
+A failed charge (`subscription.failed`) is often transient — Dodo retries via dunning. So it downgrades the user to `free` but **keeps `subscription_id`**, so a later recovery event that omits checkout metadata can still resolve the user by subscription id. Only the terminal events (`subscription.cancelled` / `subscription.expired`) clear `subscription_id`. Neither claws back unused credits.
+
+The one-time **confirmation email** is sent only on first activation (`subscription.active`), not on renewals or plan changes — `plan_changed` would otherwise re-send an "activated" email on every upgrade/downgrade.
+
 ## Consequences
 
 - New table `webhook_events` and a partial-unique index on `users.subscription_id` (migration `0002_commerce.sql`).
 - `LedgerReason` gains `grant.subscription`.
 - Upgrades stack the new allowance on top of any remaining balance (additive, ledger-consistent). When a real monthly refill scheduler lands, it should reconcile rather than re-grant.
-- Cancellation/expiry downgrades `tier` to `free` and clears `subscription_id`; it does **not** claw back unused credits.
+- Terminal cancellation/expiry downgrades `tier` to `free` and clears `subscription_id`; a transient `subscription.failed` downgrades but keeps `subscription_id` for recovery. Neither claws back unused credits.
+- The grant ensures the local `users` row exists (`insert … on conflict do nothing`) before the ledger write, so a webhook that arrives before the user's first authenticated request still provisions cleanly.
 - `/api/billing/webhooks/dodo` is excluded from `auth()`; only `/checkout`, `/cancel`, `/switch-plan` are authenticated under `/api/billing/*`.

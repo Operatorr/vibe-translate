@@ -80,13 +80,9 @@ export async function embedText({ text, apiKey, model }: EmbedTextInput): Promis
 }
 
 function getProviderErrorMessage(status: number, body: string): string {
-  if (!body.trim()) return `Embedding provider request failed (${status})`
-  try {
-    const payload = JSON.parse(body) as { error?: { message?: string } }
-    if (payload.error?.message) return payload.error.message
-  } catch {
-    // fall through to the generic message
-  }
+  // Log the upstream body server-side; return a generic, status-only message to
+  // the client so provider internals aren't surfaced in API responses.
+  if (body.trim()) console.error('embedding provider error', { status, detail: body.slice(0, 500) })
   return `Embedding provider request failed (${status})`
 }
 

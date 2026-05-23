@@ -93,8 +93,12 @@ function buildErrorMessage(label: string, error: unknown): string {
     if (error.status === 401 || error.status === 403) {
       return `${label} provider rejected the API key (${error.status}) — check your OpenRouter key`
     }
-    const detail = typeof error.message === 'string' ? error.message.slice(0, 240) : ''
-    return `${label} provider request failed (${error.status ?? 'unknown'})${detail ? `: ${detail}` : ''}`
+    // Log the upstream detail server-side; the client gets status only, so
+    // provider/model internals aren't leaked in error responses.
+    if (error.message) {
+      console.error(`${label} provider error`, { status: error.status, detail: String(error.message).slice(0, 500) })
+    }
+    return `${label} provider request failed (${error.status ?? 'unknown'})`
   }
   return `${label} provider request failed`
 }
@@ -277,7 +281,10 @@ export async function resolveCallTarget(
           byokModelId?.trim() || envModelId || (await getDefaultModel(db, task)).providerModelId
         return { apiKey, modelId, modelRowId: null, creditCostMultiplier: 0, isByok: true, reasoning }
       } catch {
-        // Fall through to the platform path — never 500 on a bad cipher.
+        // Fall through to the platform path — never 500 on a bad cipher. Log it
+        // (without the cipher/key) so a botched CREDENTIALS_ENCRYPTION_KEY
+        // rotation is observable instead of silently charging the user credits.
+        console.warn('byok decrypt failed; falling back to platform path', { userId, task })
       }
     }
   }

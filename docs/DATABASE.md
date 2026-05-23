@@ -159,7 +159,7 @@ Indexes: unique `(task) where is_default`, unique `(task, provider, provider_mod
 
 #### `credit_ledger`
 
-Append-only audit log. Every credit grant (signup, monthly refill, manual adjustment) and every credit spend (translate, explain) writes a row. The sum of all `delta` for a user always equals `users.credits_balance` (invariant — assert in tests).
+Append-only audit log. Every credit grant (signup, monthly refill, manual adjustment) and every credit spend (translate, explain) writes a row. The sum of all `delta` for a user always equals `users.credits_balance` (invariant — assert in tests). A platform-path spend first writes a **pending** reservation row (`metadata.reservation = true`, delta = estimated hold) via `credits.reserveCredits`; `reconcileSpend` then rewrites that row's `delta`/`reference_id`/`metadata` to the real token cost, or `refundReservation` deletes it. The row is mutated in place, so the invariant holds at every step (this is the one place a `credit_ledger` row is updated/deleted rather than purely appended).
 
 | column | type | notes |
 | --- | --- | --- |
@@ -221,14 +221,15 @@ Derived/operational data — not user-scoped, no cascade.
 - **`token_alignment` shape** is the same as the design prototype's `target` arrays in `data.js` (each entry `{ t, src }`). This is the contract between the model output and the frontend hover-alignment renderer.
 - **Embeddings are derived data.** Source-of-truth is `source_text` (and for explains, `target_text` + `body`). Re-embedding is always safe; never trust the embedding vector over the underlying text.
 - **Explain payload versioning.** Bumping `EXPLAIN_PAYLOAD_VERSION` in `api/_lib/explain.ts` invalidates older `explains` rows. The next read on those segments triggers re-generation. Old rows are retained as a fallback only — they should never be served above a newer one.
-- **`segments.source_embedding` dimension must equal `models.embedding_dimensions` for the default embed row.** Today both are 1536 (`text-embedding-3-small`), which keeps the column within pgvector's 2,000-dim HNSW index limit. A future embed model swap requires (a) an `alter table` to change the vector dimension, (b) re-embedding every existing Segment, (c) updating the default `models` row. There is no migration shortcut.
+- **`segments.source_embedding` dimension must equal `models.embedding_dimensions` for the default embed row.** Today both are 1536 (`text-embedding-3-small`), which keeps the column within pgvector's 2,000-dim HNSW index limit. A future embed model swap requires (a) an `alter table` to change the vector dimension, (b) re-embedding every existing Segment, (c) updating the default `models` row. There is no migration shortcut. `db/migrations/0004_embed_dims_1536.sql` is the worked example: it drops the HNSW index, `alter`s `source_embedding` to `vector(1536)` resetting data to `null` (3072→1536 isn't convertible; rows re-embed on demand), recreates the index, and re-points the `models` embed row — all guarded so it's a no-op on an already-1536 database.
 - **Credit-balance invariant.** `users.credits_balance = sum(credit_ledger.delta)` per user. Spend and grant writes happen inside a transaction so the two never drift.
 
 ## Migrations
 
 - New incremental changes go in `db/migrations/000N_<slug>.sql`. Apply manually for now; deploy hooks land later.
 - `db/schema.sql` is the canonical bootstrap — keep it in sync with the latest migration so fresh environments are one step.
-- The `0001_initial.sql` migration establishes the Character/Thread/Segment model directly; there is no pre-character schema in production.
+- The `0001_initial.sql` migration establishes the Character/Thread/Segment model directly; there is no pre-character schema in production. Later migrations are additive: `0002_commerce.sql` (webhook idempotency + `subscription_id` index), `0003_embed_via_openrouter.sql` (embed routed via OpenRouter), `0004_embed_dims_1536.sql` (embed columns/model to 1536 for any pre-1536 DB).
+- **Never edit an applied migration in place.** Because every statement is `if not exists` / `on conflict do nothing` / type-guarded, re-running an edited file won't change existing objects — only a new forward migration reaches provisioned databases.
 
 ## Open questions
 

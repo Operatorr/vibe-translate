@@ -6,7 +6,14 @@ import { zValidator } from '@hono/zod-validator'
 import { draftCharacterFromDictation, translateSegment } from './_lib/ai'
 import { logActivity } from './_lib/activity'
 import { auth } from './_lib/auth'
-import { computeCredits, getBalance, recordSpend } from './_lib/credits'
+import {
+  computeCredits,
+  estimateCredits,
+  reconcileSpend,
+  refundReservation,
+  reserveCredits,
+  type Reservation,
+} from './_lib/credits'
 import { createDbClient, withDb } from './_lib/db'
 import { embedText, formatVector, parseVector, sha256Hex } from './_lib/embeddings'
 import { sendTransactionalEmail, subscriptionConfirmationEmail } from './_lib/email'
@@ -30,7 +37,6 @@ import {
   waitlistSchema,
 } from './_lib/schemas'
 import { EXPLAIN_PAYLOAD_VERSION, generateExplain } from './_lib/explain'
-import { getDefaultModel } from './_lib/models'
 import { resolveCallTarget } from './_lib/openrouter'
 import { assertUserOwnsResource, canUseFeature } from './_lib/permissions'
 import { encryptSecret, lastFour } from './_lib/secrets'
@@ -633,7 +639,15 @@ app.post('/api/segments', zValidator('json', segmentCreateSchema), (c) => {
     )
     if (dedup.rows[0]) return c.json(mapSegment(dedup.rows[0]), 201)
 
-    // Pre-check 2: shared canonical cache (no persona/instructions, default temperature).
+    // Miss path → resolve the call target up front so the canonical fingerprint
+    // is keyed by the model that will ACTUALLY run (BYOK model → env `*_MODEL`
+    // override → registry default), not the registry default alone. Otherwise a
+    // BYOK/override translation would be looked up and stored under a different
+    // model's cache key. See adr/0004.
+    const target = await resolveCallTarget(db, c.env, userId, 'translate')
+
+    // Pre-check 2: shared canonical cache (no persona/instructions, default
+    // temperature). Cache hits cost 0 credits, so this runs before any hold.
     const canonical = isCanonical({
       persona: character.persona,
       instructions: character.instructions ?? undefined,
@@ -641,13 +655,12 @@ app.post('/api/segments', zValidator('json', segmentCreateSchema), (c) => {
     })
     let fp: string | null = null
     if (canonical) {
-      const model = await getDefaultModel(db, 'translate')
       fp = await fingerprint({
         sourceText: payload.sourceText,
         sourceLanguage: character.source_language,
         targetLanguage: character.target_language,
         vibe: resolvedVibe,
-        modelId: model.providerModelId,
+        modelId: target.modelId,
       })
       const hit = await lookupCache(db, fp)
       if (hit) {
@@ -661,71 +674,91 @@ app.post('/api/segments', zValidator('json', segmentCreateSchema), (c) => {
       }
     }
 
-    // Miss → resolve key/model and pre-check credits on the platform path.
-    const target = await resolveCallTarget(db, c.env, userId, 'translate')
-    if (!target.isByok && (await getBalance(db, userId)) <= 0) {
-      throw new HTTPException(402, { message: 'Insufficient credits — add credits or configure BYOK' })
-    }
-
-    const result = await translateSegment(
-      {
-        sourceText: payload.sourceText,
-        sourceLanguage: character.source_language,
-        targetLanguage: character.target_language,
-        vibe: resolvedVibe,
-        temperature,
-        persona: character.persona,
-        instructions: character.instructions ?? undefined,
-      },
-      { apiKey: target.apiKey, modelId: target.modelId, appUrl: c.env.APP_URL, reasoning: target.reasoning },
-    )
-
-    // Embeddings are always platform-owned (BYOK never applies; see adr/0003)
-    // and best-effort: a failed embedding (provider down, or a BYOK-only deploy
-    // with no platform key) must not discard an already-generated, paid-for
-    // translation. Store source_embedding null — the Segment is simply excluded
-    // from Translation memory search until a backfill (adr/0002, adr/0006).
-    let embedding: number[] | null = null
-    try {
-      const embed = await embedText({
-        text: payload.sourceText,
-        apiKey: c.env.OPENROUTER_API_KEY ?? '',
-      })
-      embedding = embed.vector
-    } catch {
-      await logActivity(db, userId, 'segment.embed_failed', { threadId: payload.threadId })
-    }
-    const row = await insertSeg(result.targetText, result.tokenAlignment, result.tokenUsage, embedding)
-
-    if (canonical && fp) {
-      await upsertCache(db, fp, {
-        sourceText: payload.sourceText,
-        sourceLanguage: character.source_language,
-        targetLanguage: character.target_language,
-        vibe: resolvedVibe,
-        modelId: result.tokenUsage.modelId,
-        targetText: result.targetText,
-        tokenAlignment: result.tokenAlignment,
-        sourceEmbedding: embedding,
-      })
-    }
-
+    // Reserve an estimated credit hold before the paid model call on the
+    // platform path. The atomic reservation gates concurrent requests (a user
+    // near zero balance can't fan out many in-flight calls); it is reconciled to
+    // the real cost on success, or refunded on failure. BYOK pays OpenRouter
+    // directly and skips all credit accounting (adr/0003).
+    let reservation: Reservation | null = null
     if (!target.isByok) {
-      const cost = computeCredits(
-        result.tokenUsage.promptTokens,
-        result.tokenUsage.completionTokens,
-        result.tokenUsage.modelId,
-        target.creditCostMultiplier,
-      )
-      await recordSpend(db, userId, cost, 'spend.translate', row.id)
+      const estimate = estimateCredits(payload.sourceText, target.creditCostMultiplier)
+      reservation = await reserveCredits(db, userId, estimate, 'spend.translate')
+      if (!reservation) {
+        throw new HTTPException(402, {
+          message: 'Insufficient credits — add credits or configure BYOK',
+        })
+      }
     }
 
-    await logActivity(db, userId, 'segment.created', {
-      threadId: payload.threadId,
-      vibe: resolvedVibe,
-      byok: target.isByok,
-    })
-    return c.json(mapSegment(row), 201)
+    try {
+      const result = await translateSegment(
+        {
+          sourceText: payload.sourceText,
+          sourceLanguage: character.source_language,
+          targetLanguage: character.target_language,
+          vibe: resolvedVibe,
+          temperature,
+          persona: character.persona,
+          instructions: character.instructions ?? undefined,
+        },
+        { apiKey: target.apiKey, modelId: target.modelId, appUrl: c.env.APP_URL, reasoning: target.reasoning },
+      )
+
+      // Embeddings are always platform-owned (BYOK never applies; see adr/0003)
+      // and best-effort: a failed embedding (provider down, or a BYOK-only deploy
+      // with no platform key) must not discard an already-generated, paid-for
+      // translation. Store source_embedding null — the Segment is simply excluded
+      // from Translation memory search until a backfill (adr/0002, adr/0006).
+      let embedding: number[] | null = null
+      try {
+        const embed = await embedText({
+          text: payload.sourceText,
+          apiKey: c.env.OPENROUTER_API_KEY ?? '',
+        })
+        embedding = embed.vector
+      } catch {
+        await logActivity(db, userId, 'segment.embed_failed', { threadId: payload.threadId })
+      }
+      const row = await insertSeg(result.targetText, result.tokenAlignment, result.tokenUsage, embedding)
+
+      // Only platform-default translations seed the shared cross-user cache:
+      // BYOK output comes from a user-chosen model and must not be served to
+      // other users under the canonical fingerprint (adr/0004).
+      if (canonical && fp && !target.isByok) {
+        await upsertCache(db, fp, {
+          sourceText: payload.sourceText,
+          sourceLanguage: character.source_language,
+          targetLanguage: character.target_language,
+          vibe: resolvedVibe,
+          modelId: result.tokenUsage.modelId,
+          targetText: result.targetText,
+          tokenAlignment: result.tokenAlignment,
+          sourceEmbedding: embedding,
+        })
+      }
+
+      if (reservation) {
+        const cost = computeCredits(
+          result.tokenUsage.promptTokens,
+          result.tokenUsage.completionTokens,
+          result.tokenUsage.modelId,
+          target.creditCostMultiplier,
+        )
+        await reconcileSpend(db, userId, reservation, cost, row.id)
+        reservation = null
+      }
+
+      await logActivity(db, userId, 'segment.created', {
+        threadId: payload.threadId,
+        vibe: resolvedVibe,
+        byok: target.isByok,
+      })
+      return c.json(mapSegment(row), 201)
+    } catch (error) {
+      // Release the hold on any failure before the spend was reconciled.
+      if (reservation) await refundReservation(db, userId, reservation).catch(() => undefined)
+      throw error
+    }
   })
 })
 
@@ -833,46 +866,65 @@ app.get('/api/segments/:segmentId/explain', (c) => {
       return c.json({ segmentId, version: EXPLAIN_PAYLOAD_VERSION, body: shared.rows[0].body, cached: true })
     }
 
-    // Miss → generate, insert, charge (platform path).
+    // Miss → resolve target, reserve credits (platform path), generate, insert,
+    // reconcile. The atomic reservation gates concurrency; it is refunded if the
+    // model call fails.
     const target = await resolveCallTarget(db, c.env, userId, 'explain')
-    if (!target.isByok && (await getBalance(db, userId)) <= 0) {
-      throw new HTTPException(402, { message: 'Insufficient credits — add credits or configure BYOK' })
-    }
-    const result = await generateExplain(
-      {
-        sourceText: segment.source_text,
-        sourceLanguage: segment.source_language,
-        targetText: segment.target_text,
-        targetLanguage: segment.target_language,
-        persona: segment.persona,
-      },
-      { apiKey: target.apiKey, modelId: target.modelId, appUrl: c.env.APP_URL, reasoning: target.reasoning },
-    )
-    const inserted = await db.query<{ id: string }>(
-      `insert into explains
-         (segment_id, user_id, target_language, target_text, target_text_hash, version, body, token_usage)
-       values ($1,$2,$3,$4,$5,$6,$7,$8) returning id`,
-      [
-        segmentId,
-        userId,
-        segment.target_language,
-        segment.target_text,
-        targetHash,
-        result.version,
-        JSON.stringify(result.body),
-        JSON.stringify(result.tokenUsage),
-      ],
-    )
+    let reservation: Reservation | null = null
     if (!target.isByok) {
-      const cost = computeCredits(
-        result.tokenUsage.promptTokens,
-        result.tokenUsage.completionTokens,
-        result.tokenUsage.modelId,
+      const estimate = estimateCredits(
+        `${segment.source_text}\n${segment.target_text}`,
         target.creditCostMultiplier,
       )
-      await recordSpend(db, userId, cost, 'spend.explain', inserted.rows[0].id)
+      reservation = await reserveCredits(db, userId, estimate, 'spend.explain')
+      if (!reservation) {
+        throw new HTTPException(402, {
+          message: 'Insufficient credits — add credits or configure BYOK',
+        })
+      }
     }
-    return c.json({ segmentId, version: result.version, body: result.body, cached: false })
+
+    try {
+      const result = await generateExplain(
+        {
+          sourceText: segment.source_text,
+          sourceLanguage: segment.source_language,
+          targetText: segment.target_text,
+          targetLanguage: segment.target_language,
+          persona: segment.persona,
+        },
+        { apiKey: target.apiKey, modelId: target.modelId, appUrl: c.env.APP_URL, reasoning: target.reasoning },
+      )
+      const inserted = await db.query<{ id: string }>(
+        `insert into explains
+           (segment_id, user_id, target_language, target_text, target_text_hash, version, body, token_usage)
+         values ($1,$2,$3,$4,$5,$6,$7,$8) returning id`,
+        [
+          segmentId,
+          userId,
+          segment.target_language,
+          segment.target_text,
+          targetHash,
+          result.version,
+          JSON.stringify(result.body),
+          JSON.stringify(result.tokenUsage),
+        ],
+      )
+      if (reservation) {
+        const cost = computeCredits(
+          result.tokenUsage.promptTokens,
+          result.tokenUsage.completionTokens,
+          result.tokenUsage.modelId,
+          target.creditCostMultiplier,
+        )
+        await reconcileSpend(db, userId, reservation, cost, inserted.rows[0].id)
+        reservation = null
+      }
+      return c.json({ segmentId, version: result.version, body: result.body, cached: false })
+    } catch (error) {
+      if (reservation) await refundReservation(db, userId, reservation).catch(() => undefined)
+      throw error
+    }
   })
 })
 
@@ -993,10 +1045,17 @@ app.post('/api/ai/dictation', zValidator('json', onboardingDictateSchema), (c) =
     const user = await getOrCreateUser(db, userId, c.get('email'))
     canUseFeature(tierLimits[user.tier].aiDictation)
 
+    // Dictation is always platform-paid (never BYOK; see adr/0003). Reserve a
+    // hold before the call so concurrent requests can't bypass a stale balance
+    // read, then reconcile to the real cost — or refund when the parse degrades
+    // to the empty-form fallback and there's nothing billable.
     const target = await resolveCallTarget(db, c.env, userId, 'dictation')
-    if ((await getBalance(db, userId)) <= 0) {
+    const estimate = estimateCredits(prompt, target.creditCostMultiplier)
+    const reservation = await reserveCredits(db, userId, estimate, 'spend.dictation')
+    if (!reservation) {
       throw new HTTPException(402, { message: 'Insufficient credits — add credits to continue' })
     }
+
     const { draft, tokenUsage } = await draftCharacterFromDictation(prompt, {
       apiKey: target.apiKey,
       modelId: target.modelId,
@@ -1010,47 +1069,19 @@ app.post('/api/ai/dictation', zValidator('json', onboardingDictateSchema), (c) =
         tokenUsage.modelId,
         target.creditCostMultiplier,
       )
-      await recordSpend(db, userId, cost, 'spend.dictation', null)
+      await reconcileSpend(db, userId, reservation, cost, null)
+    } else {
+      await refundReservation(db, userId, reservation)
     }
     return c.json({ ...draft, prompt })
   })
 })
 
 function getProviderErrorMessage(status: number, body: string) {
-  if (!body.trim()) return `Text-to-speech provider request failed (${status})`
-
-  try {
-    const payload = JSON.parse(body) as {
-      detail?:
-        | string
-        | Array<{ msg?: string; message?: string; type?: string }>
-        | { message?: string; status?: string; code?: string; request_id?: string }
-      message?: string
-    }
-    const detail = payload.detail
-    const message =
-      payload.message ??
-      (typeof detail === 'string'
-        ? detail
-        : Array.isArray(detail)
-          ? (detail[0]?.msg ?? detail[0]?.message ?? detail[0]?.type)
-          : (detail?.message ?? detail?.status ?? detail?.code))
-    const requestId = !Array.isArray(detail) && typeof detail === 'object' ? detail?.request_id : undefined
-
-    if (message) {
-      return [
-        `Text-to-speech provider request failed (${status})`,
-        message,
-        requestId ? `request_id: ${requestId}` : null,
-      ]
-        .filter(Boolean)
-        .join(': ')
-    }
-  } catch {
-    // Fall through to a short text fallback below.
-  }
-
-  return `Text-to-speech provider request failed (${status}): ${body.slice(0, 240)}`
+  // Log the upstream body server-side; return a generic, status-only message so
+  // provider internals (and request ids) aren't surfaced in API responses.
+  if (body.trim()) console.error('text-to-speech provider error', { status, detail: body.slice(0, 500) })
+  return `Text-to-speech provider request failed (${status})`
 }
 
 const toElevenLabsLanguageCode = (languageCode?: string) =>

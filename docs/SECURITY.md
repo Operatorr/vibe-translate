@@ -11,7 +11,7 @@
 ## Authorization & data scoping {#per-user-scoping}
 
 - **Every per-user table** (`characters`, `threads`, `segments`, `explains`, `credit_ledger`, `activity_log`) is scoped by `user_id = clerk_user_id`. All reads and writes must filter on it.
-- `assertUserOwnsResource(row.user_id, c.get('userId'))` is the explicit guard after any single-row fetch before mutate/return.
+- `assertUserOwnsResource(row.user_id, c.get('userId'))` is the explicit guard after any single-row fetch before mutate/return. On a mismatch it raises **404** (not 403), so the API never reveals that a resource id exists but belongs to another user — matching the scoped `where id = $1 and user_id = $2` deletes/updates.
 - Cascade deletes flow user → character → thread → segment → explain. Deleting a user removes all owned data and embeddings.
 - Tier feature gates (`explain`, `translationMemory`, `aiDictation`, `customVibeStops`) are enforced server-side via `canUseFeature`; the client UI gate is cosmetic only.
 
@@ -32,7 +32,7 @@ Only these routes are intentionally public:
 Two layers (see [adr/0003](./adr/0003-credits-byok-and-model-registry.md) and CLOUDFLARE.md):
 
 1. **Edge (coarse).** Cloudflare Rate Limiting Rules / WAF on `/api/*`, per-IP. Runs before the worker, so abusive traffic never reaches metered providers. This is the first line for the public routes and for burst protection everywhere.
-2. **Application (fine).** The **credits** system is the per-user cost control on the expensive model paths (translate, explain). A request with insufficient credits and no BYOK key returns `402`. We deliberately do **not** maintain a bespoke KV/Durable-Object limiter unless edge rules prove insufficient.
+2. **Application (fine).** The **credits** system is the per-user cost control on the expensive model paths (translate, explain, dictation). Each paid call takes an **atomic credit reservation** (`reserveCredits`, a conditional `credits_balance >= estimate` decrement) *before* the model call, reconciled to the real cost afterwards. A request that can't cover the hold returns `402`. Because the reservation row-locks, concurrent requests serialize — a near-zero-balance user can't fan out many simultaneous paid calls past a single stale balance read. We deliberately do **not** maintain a bespoke KV/Durable-Object limiter unless edge rules prove insufficient.
 
 Onboarding dictation is free and costs tokens, so it's bounded three ways: only callable while `onboarding_complete = false`, a lifetime call counter in `activity_log`, and the edge rate limit.
 
@@ -56,6 +56,7 @@ Onboarding dictation is free and costs tokens, so it's bounded three ways: only 
 - Every mutation route validates its body with a **Zod** schema (`api/_lib/schemas.ts`) via `@hono/zod-validator`. No handler calls `c.req.json()` without a schema. The Dodo webhook is the one deliberate exception: it reads the **raw** body with `c.req.text()` and verifies the signature *before* `JSON.parse`, so a Zod middleware (which would parse first) cannot front it.
 - Locale fields are constrained to BCP-47 shape; BYOK model IDs to `provider/model` shape; the OpenRouter key to the `sk-` prefix.
 - Validation failures return `422` with `error.flatten()` details; they never reach the database.
+- **Upstream provider errors** (OpenRouter, Dodo, ElevenLabs, embeddings) are logged server-side; client responses carry only a generic message + HTTP status, never the raw provider response body, so provider/model internals and request ids aren't leaked. The one exception is a `401/403` from OpenRouter, surfaced as "check your OpenRouter key" so BYOK users can self-diagnose.
 
 ## Data retention & deletion
 

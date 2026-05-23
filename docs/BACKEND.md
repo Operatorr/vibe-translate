@@ -21,7 +21,7 @@
 | `permissions.ts` | `assertUserOwnsResource`, `canUseFeature` — small guard helpers. |
 | `tier.ts` | `tierLimits` for `free` / `pro` / `team` and the `Tier` type. Tier carries the monthly **Credits** allowance and feature flags. |
 | `models.ts` | Reads the active default model per task (`translate`, `explain`, `dictation`, `embed`) from the `models` table. Operators flip defaults with SQL — no deploy. |
-| `credits.ts` | Token-derived credit accounting: `computeCredits`, `recordSpend`, `recordGrant`, `getBalance`. Transactional writes keep `users.credits_balance` in sync with `credit_ledger`. |
+| `credits.ts` | Token-derived credit accounting: `estimateCredits`/`computeCredits`, the `reserveCredits` → `reconcileSpend`/`refundReservation` spend flow (atomic pre-call hold, settled to the real cost), `recordGrant`, `getBalance`. Transactional writes keep `users.credits_balance` in sync with `credit_ledger`. |
 | `secrets.ts` | AES-GCM `encryptSecret` / `decryptSecret` for at-rest BYOK keys, using `CREDENTIALS_ENCRYPTION_KEY`. Storage format: `base64(iv):base64(cipher)`. |
 | `activity.ts` | `logActivity(db, userId, action, metadata?)` — write to `activity_log`. |
 | `recurrence.ts` | `getRetentionWindow(retentionDays)` — date math for retention queries (driven by tier). |
@@ -105,21 +105,26 @@ The Segment-create path is **synchronous translate-and-return** plus an embeddin
 client POST /api/segments { threadId, sourceText, vibe? }
   └─ resolve Character (default_vibe, temperature, persona, instructions, langs)
   └─ PRE-CHECK 1: in-thread Segment for (thread, source_text, vibe)?  → return it, 0 credits
+  └─ resolve call target (BYOK key + model override → env *_MODEL → registry default)
   └─ PRE-CHECK 2: canonical request? → translation_cache fingerprint lookup
+       │   fingerprint is keyed by the RESOLVED model, so a BYOK/override
+       │   translation never collides with the platform-default cache entry
        └─ hit → copy target_text + token_alignment + source_embedding into a
                 new Segment, 0 credits, done
-  └─ MISS → resolve call target:
-       ├─ BYOK key present → decrypt, use user key + BYOK model override (or default)
-       └─ else → platform key + models[translate].default; pre-check credits_balance > 0 (else 402)
+  └─ MISS:
+       ├─ BYOK → call user key + BYOK model; no credit accounting (user pays OpenRouter)
+       └─ platform → credits.reserveCredits(estimate): atomic hold; null → 402
   ├─ ai.translateSegment(...)                    ← one OpenRouter call
-  ├─ embeddings.embedText({ text: sourceText })  ← always platform key + platform embed model
+  ├─ embeddings.embedText({ text: sourceText })  ← always platform key + platform embed model (best-effort)
   └─ insert segments (server-produced fields + source_embedding)
-  └─ if canonical → translation-cache.upsertCache(...)
-  └─ if platform-key path → credits.recordSpend(...) inside a transaction
+  └─ if canonical AND platform-default → translation-cache.upsertCache(...)  (BYOK output never seeds the shared cache)
+  └─ if platform-key path → credits.reconcileSpend(reservation, realCost)  (refund on failure)
   ← Segment row
 ```
 
 "Commit-to-translate" (the UI fires one call per intended translation, not per slider move — see [DESIGN.md](./DESIGN.md#the-vibe-slider)) plus the two pre-checks means sliding between already-generated stops is instant and free.
+
+The pre-call **reservation** (`reserveCredits`) is an atomic conditional decrement: it is the concurrency gate that stops a near-zero-balance user from fanning out many simultaneous paid calls past a single stale balance read. It is settled by `reconcileSpend` to the real token cost (or `refundReservation` if the call fails), and writes a pending `credit_ledger` row up front so the `balance == sum(ledger)` invariant holds throughout.
 
 ## Explain request flow
 
