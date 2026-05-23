@@ -22,6 +22,6 @@
       "@api/*": ["api/*"]
     }
   },
-  "include": ["app", "api", "functions", "vite.config.ts", "eslint.config.js"],
+  "include": ["app", "api", "functions", "bench", "vite.config.ts", "eslint.config.js"],
   "references": []
 }

@@ -1,0 +1,126 @@
+# Model benchmark config. Each combo runs its task's standard sample prompt
+# against the given model + reasoning setting and records latency, tokens,
+# throughput (tok/s), and price.
+#
+#   pnpm bench
+#
+# Reads OPENROUTER_API_KEY from the environment or .dev.vars. Results print as a
+# table and are saved to bench/results/.
+#
+# reasoning:  none      -> reasoning disabled (reasoning.enabled = false)
+#             minimal | low | medium | high -> reasoning effort
+#             (omit the line) -> the model's own default
+# Up to 50 combos.
+
+# Times each combo is run; latency/throughput are averaged. Default 1.
+repeat = 1
+
+# ---- translate ----------------------------------------------------------
+# [[combo]]
+# task = "translate"
+# model = "google/gemini-3-flash-preview"
+# reasoning = "medium"
+
+[[combo]]
+task = "translate"
+model = "google/gemini-3-flash-preview"
+reasoning = "none"
+
+# [[combo]]
+# task = "translate"
+# model = "google/gemini-3.1-flash-lite"
+# reasoning = "medium"
+
+[[combo]]
+task = "translate"
+model = "google/gemini-3.1-flash-lite"
+reasoning = "none"
+
+# [[combo]]
+# task = "translate"
+# model = "google/gemini-2.5-flash"
+
+# [[combo]]
+# task = "translate"
+# model = "deepseek/deepseek-v4-flash"
+# reasoning = "medium"
+
+# [[combo]]
+# task = "translate"
+# model = "deepseek/deepseek-v4-flash"
+# reasoning = "none"
+
+# [[combo]]
+# task = "translate"
+# model = "x-ai/grok-4.3"
+# reasoning = "low"
+
+[[combo]]
+task = "translate"
+model = "x-ai/grok-4.3"
+reasoning = "none"
+
+# [[combo]]
+# task = "translate"
+# model = "openai/gpt-5.4-nano"
+# reasoning = "medium"
+
+[[combo]]
+task = "translate"
+model = "openai/gpt-5.4-nano"
+reasoning = "none"
+
+# ---- explain ------------------------------------------------------------
+# [[combo]]
+# task = "explain"
+# model = "google/gemini-3-flash-preview"
+# reasoning = "medium"
+
+[[combo]]
+task = "explain"
+model = "google/gemini-3-flash-preview"
+reasoning = "none"
+
+# [[combo]]
+# task = "explain"
+# model = "google/gemini-3.1-flash-lite"
+# reasoning = "medium"
+
+[[combo]]
+task = "explain"
+model = "google/gemini-3.1-flash-lite"
+reasoning = "none"
+
+# [[combo]]
+# task = "explain"
+# model = "google/gemini-2.5-flash"
+
+# [[combo]]
+# task = "explain"
+# model = "deepseek/deepseek-v4-flash"
+# reasoning = "medium"
+
+# [[combo]]
+# task = "explain"
+# model = "deepseek/deepseek-v4-flash"
+# reasoning = "none"
+
+# [[combo]]
+# task = "explain"
+# model = "x-ai/grok-4.3"
+# reasoning = "low"
+
+[[combo]]
+task = "explain"
+model = "x-ai/grok-4.3"
+reasoning = "none"
+
+# [[combo]]
+# task = "explain"
+# model = "openai/gpt-5.4-nano"
+# reasoning = "medium"
+
+[[combo]]
+task = "explain"
+model = "openai/gpt-5.4-nano"
+reasoning = "none"

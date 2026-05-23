@@ -64,7 +64,7 @@ values
   ('translate', 'openrouter', 'deepseek/deepseek-v4-pro', 'DeepSeek v4 Pro', true, null),
   ('explain',   'openrouter', 'xiaomi/mimo-v2.5-pro',     'Xiaomi MiMo v2.5 Pro', true, null),
   ('dictation', 'openrouter', 'google/gemini-2.5-flash',  'Gemini 2.5 Flash', true, null),
-  ('embed',     'openai',     'text-embedding-3-large',   'OpenAI Embedding 3 Large', true, 3072)
+  ('embed',     'openrouter', 'openai/text-embedding-3-small', 'OpenAI Embedding 3 Small (via OpenRouter)', true, 1536)
 on conflict (task, provider, provider_model_id) do nothing;
 
 -- Append-only audit log of every credit grant and every credit spend.
@@ -123,7 +123,7 @@ create table if not exists segments (
   token_alignment jsonb not null default '[]'::jsonb,
   token_usage jsonb not null default '{}'::jsonb,
   metadata jsonb not null default '{}'::jsonb,
-  source_embedding vector(3072),
+  source_embedding vector(1536),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -155,7 +155,7 @@ create table if not exists translation_cache (
   source_text text not null,
   target_text text not null,
   token_alignment jsonb not null default '[]'::jsonb,
-  source_embedding vector(3072),
+  source_embedding vector(1536),
   hits integer not null default 0,
   created_at timestamptz not null default now(),
   last_used_at timestamptz not null default now()
@@ -176,6 +176,17 @@ create table if not exists waitlist (
   created_at timestamptz not null default now()
 );
 
+-- Append-only dedupe ledger for provider webhooks (Dodo Payments). Keyed by the
+-- provider's event id (Dodo's Standard-Webhooks `webhook-id` header). The webhook
+-- handler inserts here inside the same transaction as the tier/credit mutation,
+-- so a redelivered event is dropped before any grant runs. See adr/0005.
+create table if not exists webhook_events (
+  event_id text primary key,
+  source text not null default 'dodo',
+  event_type text,
+  received_at timestamptz not null default now()
+);
+
 create index if not exists characters_user_id_sort_order_idx on characters (user_id, sort_order);
 create index if not exists threads_character_id_updated_at_idx on threads (character_id, updated_at desc);
 create index if not exists threads_user_id_updated_at_idx on threads (user_id, updated_at desc);
@@ -190,3 +201,8 @@ create index if not exists explains_user_created_at_idx on explains (user_id, cr
 create index if not exists credit_ledger_user_id_created_at_idx on credit_ledger (user_id, created_at desc);
 create index if not exists translation_cache_last_used_at_idx on translation_cache (last_used_at desc);
 create index if not exists activity_log_user_id_created_at_idx on activity_log (user_id, created_at desc);
+
+-- Lifecycle webhooks (renewed/cancelled/expired) may lack checkout metadata;
+-- resolve the owning user by their stored Dodo subscription id. See adr/0005.
+create unique index if not exists users_subscription_id_uniq
+  on users (subscription_id) where subscription_id is not null;

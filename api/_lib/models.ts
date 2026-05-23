@@ -1,8 +1,8 @@
 import type { Client } from 'pg'
 
 // Tasks that the model registry tracks. `translate` and `explain` may be
-// BYOK-overridden by users; `embed` is fixed by the platform.
-export type ModelTask = 'translate' | 'explain' | 'embed'
+// BYOK-overridden by users; `embed` and `dictation` are fixed by the platform.
+export type ModelTask = 'translate' | 'explain' | 'embed' | 'dictation'
 
 export type ModelRow = {
   id: string
@@ -16,7 +16,7 @@ export type ModelRow = {
 }
 
 // Resolve the active default model for a task. BYOK routing happens upstream
-// (see api/_lib/credits.ts → resolveCallTarget); this helper always returns
+// (see api/_lib/openrouter.ts → resolveCallTarget); this helper always returns
 // the platform-side default.
 export async function getDefaultModel(db: Client, task: ModelTask): Promise<ModelRow> {
   const result = await db.query<{

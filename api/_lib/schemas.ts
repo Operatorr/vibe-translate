@@ -172,6 +172,7 @@ export const waitlistSchema = z.object({
 
 export const checkoutSchema = z.object({
   plan: z.enum(['pro', 'team']),
+  billingPeriod: z.enum(['monthly', 'annual']).default('monthly'),
 })
 
 export const textToSpeechSchema = z.object({
