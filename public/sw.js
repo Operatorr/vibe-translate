@@ -21,6 +21,10 @@ self.addEventListener('fetch', (event) => {
   const request = event.request
   const url = new URL(request.url)
 
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+    return
+  }
+
   if (url.pathname.startsWith('/api/')) {
     return
   }
@@ -38,8 +42,10 @@ self.addEventListener('fetch', (event) => {
         }
 
         return fetch(request).then((response) => {
-          const copy = response.clone()
-          caches.open(CACHE_NAME).then((cache) => cache.put(request, copy))
+          if (response.ok && (response.type === 'basic' || response.type === 'cors')) {
+            const copy = response.clone()
+            caches.open(CACHE_NAME).then((cache) => cache.put(request, copy))
+          }
           return response
         })
       }),

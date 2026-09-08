@@ -26,7 +26,7 @@ The committed `wrangler.toml` **is the production config**. Local dev overrides 
 ## Local development
 
 1. `pnpm install`.
-2. Copy `.env.example` → `.dev.vars` and fill in secrets (Clerk, `CREDENTIALS_ENCRYPTION_KEY`, provider keys, and `DATABASE_URL` for the **local** Neon DB). Set `APP_ENV=development`.
+2. Copy `.env.example` → `.dev.vars` and fill in secrets (Clerk, `CREDENTIALS_ENCRYPTION_KEY`, provider keys, and `DATABASE_URL` for the **local** Neon DB). Set `APP_ENV=development`. Vite reads `VITE_*` keys from `.dev.vars` (Wrangler reads the rest).
 3. Ensure the local Neon DB has the schema (see Migrations below) and `pgvector` enabled.
 4. Run `pnpm dev:full` (Wrangler worker + Vite together). `pnpm dev` is worker-only; `pnpm dev:vite` is the SPA with `/api` proxied to Wrangler on `:8787`.
 

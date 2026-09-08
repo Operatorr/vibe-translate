@@ -48,7 +48,7 @@ Domain types in `app/lib/types.ts` (`Character`, `Thread`, `Segment`, `VibeStop`
 
 ## Offline & cache {#offline--cache}
 
-- `public/sw.js` registers a PWA service worker. Static assets are cache-first; navigations are network-first with cached fallback; **`/api/*` is never cached**.
+- `public/sw.js` registers a PWA service worker in production. Static assets are cache-first; navigations are network-first with cached fallback; **`/api/*` is never cached**. In `import.meta.env.DEV` the client skips registration and unregisters any leftover worker so HMR/WebSocket is not intercepted.
 - `app/lib/query-cache-persist.tsx` persists selected query data (`characters`, `threads`, `segments`, `activity`) to IndexedDB via `idb-keyval`. Persisted cache is scoped per Clerk user ID. Optimistic temporary records are filtered before persisting. Sign-out clears Query state and the signed-in user's persisted cache.
 
 ## Vibe presets on the client
@@ -58,7 +58,7 @@ The per-language **Vibe preset table** (`VIBE_PRESETS_PER_LANG` in `app/componen
 ## Build & scripts
 
 - `pnpm dev` — Wrangler worker only.
-- `pnpm dev:vite` — Vite SPA with `/api` proxied to Wrangler on `:8787`.
+- `pnpm dev:vite` — Vite SPA with `/api` proxied to Wrangler on `:8787`. `VITE_*` comes from `.dev.vars` (and any `.env*`).
 - `pnpm dev:full` — both together (the usual local command).
 - `pnpm build` — `tsc --noEmit && vite build`.
 - `pnpm lint` / `pnpm format` — ESLint / Prettier.
