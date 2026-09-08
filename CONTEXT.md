@@ -27,7 +27,7 @@ A persistent persona the user translates *toward* — name, source/target langua
 _Avoid_: contact, profile, persona (the inner attribute), recipient
 
 **Persona**:
-The *structured* attribute block on a **Character** — age, region, formality, free-form trait list. Drives the UI chips and the deterministic onboarding form.
+The *structured* attribute block on a **Character** — age, region, formality, tone, verbosity (0–1), free-form trait list. Drives the UI chips and the deterministic onboarding form.
 _Avoid_: traits, profile
 
 **Instructions**:
@@ -43,8 +43,16 @@ Parsing a free-form spoken/typed description into a **Character draft**. Free an
 _Avoid_: voice input (dictation is the parse, not the speech-to-text)
 
 **Thread**:
-A topic-level conversation under a **Character**. Has a title and many **Segments**. Example: "Asking for grandma's recipe".
+A topic-level conversation under a **Character**. Has a title and many **Segments**; can be **starred** (pinned in the sidebar) and **shared** via a **Share link**. Example: "Asking for grandma's recipe".
 _Avoid_: chat, conversation, room
+
+**Share link**:
+A read-only public URL (`/share/<token>`) for one **Thread**. The token is the capability — anyone holding it can read the thread without an account; the owner can revoke it. At most one live link per Thread.
+_Avoid_: public thread, export link (export is the Markdown download)
+
+**Retry**:
+Re-running the translation of an existing **Segment** at its stored **Vibe stop**, replacing the target in place. A fresh sample, not a new Segment — it skips dedupe and the **Translation cache**.
+_Avoid_: regenerate, re-translate (in code)
 
 **Segment**:
 A single source-text → target-text translation inside a **Thread**, produced at one **Vibe**. Carries word-aligned tokens (each target token mapped to its source span) and a token-cost count.
@@ -105,7 +113,10 @@ _Avoid_: default translation, vanilla
 ### Voices
 
 **Voice persona**:
-The ElevenLabs voice that reads back a **Target segment**. **Locked one-to-one with the Vibe stop** — six voices total, picked by matching ID. There is no separate user-facing voice control. Voice IDs are configured per-deployment via `ELEVENLABS_VOICE_<STOP>` env vars.
+The ElevenLabs voice that reads back a **Target segment**. **Locked one-to-one with the Vibe stop** — six voices total, picked by matching ID. There is no separate user-facing voice control. Voice IDs are configured per-deployment via `ELEVENLABS_VOICE_<STOP>` env vars. Pro+ and Japanese targets only today; everyone else gets **Browser voice**.
+
+**Browser voice**:
+The free fallback read-back engine — the browser's built-in speech synthesis (`app/lib/tts.ts`), with per-**Vibe stop** rate/pitch so the six stops still sound distinct. Used on the free tier, for non-Japanese targets, on the public **Share link** page, and whenever ElevenLabs fails.
 _Avoid_: vibe (use **Vibe stop** when referring to the slider value), speaker, voice ID (an implementation detail)
 
 ## Relationships

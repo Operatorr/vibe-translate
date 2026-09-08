@@ -39,8 +39,19 @@ export function formatPersona(persona: Persona): string {
   if (persona.age) lines.push(`- Age: ${persona.age}`)
   if (persona.region) lines.push(`- Region/dialect: ${persona.region}`)
   if (persona.formality) lines.push(`- Formality: ${persona.formality}`)
+  if (persona.tone) lines.push(`- Tone: ${persona.tone}`)
+  if (typeof persona.verbosity === 'number') lines.push(`- Verbosity: ${describeVerbosity(persona.verbosity)}`)
   if (persona.traits.length > 0) lines.push(`- Traits: ${persona.traits.join(', ')}`)
   return lines.join('\n')
+}
+
+// Map the 0..1 verbosity slider onto prompt-friendly guidance. Mirrored on the
+// client in app/lib/system-prompt.ts for the live "compiled prompt" preview.
+export function describeVerbosity(value: number): string {
+  if (value < 0.25) return 'terse — say the minimum, drop filler'
+  if (value < 0.5) return 'concise — natural length, no padding'
+  if (value < 0.75) return 'balanced — natural, may add a softener or two'
+  return 'expansive — elaborate, add warmth and context'
 }
 
 export type ChatMessage = { role: 'system' | 'user'; content: string }
@@ -76,6 +87,8 @@ export function buildTranslateMessages(input: TranslateSegmentInput): ChatMessag
     `4. "src" may be "" when a target token has no source counterpart (particles,`,
     `   inflection, politeness markers).`,
     `5. Segment at word / morpheme granularity — not whole phrases or whole sentences.`,
+    `6. Anything wrapped in backticks or a \`\`\` code fence is code: copy it into`,
+    `   "targetText" verbatim (one token per code span, "src" = the same code).`,
     ``,
     `EXAMPLE (en-US → ja-JP, casual Kansai register):`,
     `source: "Could you write down your recipe so I don't forget?"`,

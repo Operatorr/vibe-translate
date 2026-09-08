@@ -29,6 +29,8 @@ export const characterFormSchema = z.object({
       age: z.string().trim().max(60).optional(),
       region: z.string().trim().max(120).optional(),
       formality: z.string().trim().max(120).optional(),
+      tone: z.string().trim().max(60).optional(),
+      verbosity: z.number().min(0).max(1).optional(),
       traits: z.array(z.string().trim().max(120)).max(20).default([]),
     })
     .strict(),

@@ -61,4 +61,4 @@ The color is consistent across all languages; only the **labels** localize (`kei
 
 - Does the light theme get the same design attention as dark, or is it a best-effort secondary?
 - Should the "ungenerated stop" cost hint show the *estimated* credit cost (requires a token estimate) or just a generic "1 translation" marker? (Current: generic.)
-- Mobile layout for the CAT-tool split (source/target side-by-side doesn't fit a phone) — stacked, or a source/target toggle?
+- ~~Mobile layout for the CAT-tool split~~ — resolved: **stacked** (source above target) under 720px; under 900px the three columns become a single pane switched by `.app-body[data-pane]` (characters → threads → workspace) with back buttons. Explain and the customize panel go full-width. See [FRONTEND.md](./FRONTEND.md#mobile--pwa).
