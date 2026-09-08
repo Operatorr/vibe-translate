@@ -123,6 +123,7 @@ app.use('/api/billing/checkout', auth())
 app.use('/api/billing/cancel', auth())
 app.use('/api/billing/switch-plan', auth())
 app.use('/api/export', auth())
+// `/api/share/:token` is intentionally unauthenticated — see the share routes.
 
 app.get('/api/users/me', (c) =>
   withDb(c.env, async (db) => {
@@ -258,16 +259,22 @@ function mapCharacter(r: CharacterDbRow) {
   }
 }
 
-const THREAD_COLUMNS = `id, character_id, user_id, title, archived_at, created_at, updated_at`
+// `segment_count` is a correlated subquery so the sidebar can show
+// "N translations" without a second round-trip. Every query using this list
+// selects `from threads` unaliased, so the bare `threads.id` reference holds.
+const THREAD_COLUMNS = `id, character_id, user_id, title, starred, archived_at, created_at, updated_at,
+  (select count(*)::int from segments s where s.thread_id = threads.id) as segment_count`
 
 type ThreadDbRow = {
   id: string
   character_id: string
   user_id: string
   title: string
+  starred: boolean
   archived_at: string | Date | null
   created_at: string | Date
   updated_at: string | Date
+  segment_count: number
 }
 
 function mapThread(r: ThreadDbRow) {
@@ -275,6 +282,8 @@ function mapThread(r: ThreadDbRow) {
     id: r.id,
     characterId: r.character_id,
     title: r.title,
+    starred: r.starred,
+    segmentCount: Number(r.segment_count ?? 0),
     archivedAt: r.archived_at ? new Date(r.archived_at).toISOString() : null,
     createdAt: new Date(r.created_at).toISOString(),
     updatedAt: new Date(r.updated_at).toISOString(),
@@ -524,9 +533,12 @@ app.patch('/api/threads/:threadId', zValidator('json', threadUpdateSchema), (c) 
     if (updates.title !== undefined) fields.push(['title', updates.title])
     if (updates.archived !== undefined)
       fields.push(['archived_at', updates.archived ? new Date().toISOString() : null])
+    if (updates.starred !== undefined) fields.push(['starred', updates.starred])
     if (fields.length > 0) {
       const setClause = fields.map(([col], idx) => `${col} = $${idx + 2}`).join(', ')
-      await db.query(`update threads set ${setClause}, updated_at = now() where id = $1`, [
+      // Starring is metadata, not activity — don't bump updated_at for it alone.
+      const touch = updates.title !== undefined || updates.archived !== undefined
+      await db.query(`update threads set ${setClause}${touch ? ', updated_at = now()' : ''} where id = $1`, [
         id,
         ...fields.map(([, value]) => value),
       ])
@@ -550,7 +562,226 @@ app.delete('/api/threads/:threadId', (c) => {
   })
 })
 
+// ---- Thread sharing ------------------------------------------------------
+//
+// One read-only public link per Thread. POST mints (or returns the live)
+// token; DELETE revokes it. The public resolver lives under /api/share/:token
+// (unauthenticated) and returns a redacted payload: no user ids, no credit or
+// token-usage data. See docs/SECURITY.md#the-unauthenticated-surface.
+
+function mintShareToken(): string {
+  const bytes = new Uint8Array(24)
+  crypto.getRandomValues(bytes)
+  return btoa(String.fromCharCode(...bytes))
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/, '')
+}
+
+const shareUrlFor = (env: AppEnv['Bindings'], token: string) =>
+  `${(env.APP_URL ?? 'http://localhost:5173').replace(/\/$/, '')}/share/${token}`
+
+app.get('/api/threads/:threadId/share', (c) => {
+  const userId = c.get('userId')
+  const threadId = c.req.param('threadId')
+  return withDb(c.env, async (db) => {
+    await getOrCreateUser(db, userId, c.get('email'))
+    const res = await db.query<{ token: string; created_at: string | Date }>(
+      `select token, created_at from thread_shares
+        where thread_id = $1 and user_id = $2 and revoked_at is null
+        order by created_at desc limit 1`,
+      [threadId, userId],
+    )
+    const row = res.rows[0]
+    if (!row) return c.json({ shared: false, url: null, token: null })
+    return c.json({ shared: true, token: row.token, url: shareUrlFor(c.env, row.token) })
+  })
+})
+
+app.post('/api/threads/:threadId/share', (c) => {
+  const userId = c.get('userId')
+  const threadId = c.req.param('threadId')
+  return withDb(c.env, async (db) => {
+    await getOrCreateUser(db, userId, c.get('email'))
+    const owner = await db.query<{ user_id: string }>(`select user_id from threads where id = $1`, [
+      threadId,
+    ])
+    if (!owner.rows[0]) throw new HTTPException(404, { message: 'Thread not found' })
+    assertUserOwnsResource(owner.rows[0].user_id, userId)
+
+    const existing = await db.query<{ token: string }>(
+      `select token from thread_shares
+        where thread_id = $1 and revoked_at is null order by created_at desc limit 1`,
+      [threadId],
+    )
+    let token = existing.rows[0]?.token
+    if (!token) {
+      token = mintShareToken()
+      await db.query(`insert into thread_shares (thread_id, user_id, token) values ($1,$2,$3)`, [
+        threadId,
+        userId,
+        token,
+      ])
+      await logActivity(db, userId, 'thread.shared', { threadId })
+    }
+    return c.json({ shared: true, token, url: shareUrlFor(c.env, token) }, 201)
+  })
+})
+
+app.delete('/api/threads/:threadId/share', (c) => {
+  const userId = c.get('userId')
+  const threadId = c.req.param('threadId')
+  return withDb(c.env, async (db) => {
+    await getOrCreateUser(db, userId, c.get('email'))
+    await db.query(
+      `update thread_shares set revoked_at = now()
+        where thread_id = $1 and user_id = $2 and revoked_at is null`,
+      [threadId, userId],
+    )
+    return c.json({ shared: false, url: null, token: null })
+  })
+})
+
+// Public, unauthenticated resolver for a share link. Redacted by construction:
+// the SELECT never touches user ids, token usage, or credits.
+app.get('/api/share/:token', (c) => {
+  const token = c.req.param('token')
+  if (!/^[A-Za-z0-9_-]{16,64}$/.test(token)) {
+    throw new HTTPException(404, { message: 'Share link not found' })
+  }
+  return withDb(c.env, async (db) => {
+    const head = await db.query<{
+      thread_id: string
+      title: string
+      created_at: string | Date
+      updated_at: string | Date
+      name: string
+      initials: string | null
+      color: string | null
+      source_language: string
+      target_language: string
+      default_vibe: VibeStop
+    }>(
+      `select t.id as thread_id, t.title, t.created_at, t.updated_at,
+              c.name, c.initials, c.color, c.source_language, c.target_language, c.default_vibe
+         from thread_shares sh
+         join threads t on t.id = sh.thread_id
+         join characters c on c.id = t.character_id
+        where sh.token = $1 and sh.revoked_at is null and t.archived_at is null`,
+      [token],
+    )
+    const row = head.rows[0]
+    if (!row) throw new HTTPException(404, { message: 'Share link not found' })
+
+    const segs = await db.query<{
+      id: string
+      source_text: string
+      target_text: string
+      vibe: VibeStop | null
+      token_alignment: SegmentToken[]
+      created_at: string | Date
+    }>(
+      `select id, source_text, target_text, vibe, token_alignment, created_at
+         from segments where thread_id = $1 order by created_at asc`,
+      [row.thread_id],
+    )
+    c.header('Cache-Control', 'no-store')
+    return c.json({
+      thread: {
+        title: row.title,
+        createdAt: new Date(row.created_at).toISOString(),
+        updatedAt: new Date(row.updated_at).toISOString(),
+      },
+      character: {
+        name: row.name,
+        initials: row.initials ?? undefined,
+        color: row.color ?? undefined,
+        sourceLanguage: row.source_language,
+        targetLanguage: row.target_language,
+        defaultVibe: row.default_vibe,
+      },
+      segments: segs.rows.map((s) => ({
+        id: s.id,
+        sourceText: s.source_text,
+        targetText: s.target_text,
+        vibe: s.vibe ?? row.default_vibe,
+        tokenAlignment: s.token_alignment,
+        createdAt: new Date(s.created_at).toISOString(),
+      })),
+    })
+  })
+})
+
 // ---- Segments ------------------------------------------------------------
+
+// Shared translate-with-credits step for POST /segments (miss path) and
+// POST /segments/:id/retry. Resolves the call target, places the credit hold on
+// the platform path (BYOK skips accounting; adr/0003), runs the model, and
+// hands back `settle` (charge the real cost against a reference row) and
+// `refund` (release the hold) so the caller can finish the transaction around
+// its own persistence step.
+type TranslateCharacterRow = {
+  source_language: string
+  target_language: string
+  temperature: string | number
+  persona: Persona
+  instructions: string | null
+}
+
+async function translateWithCredits(
+  db: Parameters<typeof resolveCallTarget>[0],
+  env: AppEnv['Bindings'],
+  userId: string,
+  character: TranslateCharacterRow,
+  sourceText: string,
+  vibe: VibeStop,
+) {
+  const target = await resolveCallTarget(db, env, userId, 'translate')
+  let reservation: Reservation | null = null
+  if (!target.isByok) {
+    const estimate = estimateCredits(sourceText, target.creditCostMultiplier)
+    reservation = await reserveCredits(db, userId, estimate, 'spend.translate')
+    if (!reservation) {
+      throw new HTTPException(402, {
+        message: 'Insufficient credits — add credits or configure BYOK',
+      })
+    }
+  }
+  const refund = async () => {
+    if (reservation) await refundReservation(db, userId, reservation).catch(() => undefined)
+    reservation = null
+  }
+  let result
+  try {
+    result = await translateSegment(
+      {
+        sourceText,
+        sourceLanguage: character.source_language,
+        targetLanguage: character.target_language,
+        vibe,
+        temperature: Number(character.temperature),
+        persona: character.persona,
+        instructions: character.instructions ?? undefined,
+      },
+      { apiKey: target.apiKey, modelId: target.modelId, appUrl: env.APP_URL, reasoning: target.reasoning },
+    )
+  } catch (error) {
+    await refund()
+    throw error
+  }
+  const settle = async (referenceId: string | null) => {
+    if (!reservation) return
+    const cost = computeCredits(
+      result.tokenUsage.promptTokens,
+      result.tokenUsage.completionTokens,
+      result.tokenUsage.modelId,
+      target.creditCostMultiplier,
+    )
+    await reconcileSpend(db, userId, reservation, cost, referenceId)
+    reservation = null
+  }
+  return { result, target, settle, refund }
+}
 
 app.get('/api/segments', (c) => {
   const userId = c.get('userId')
@@ -674,36 +905,20 @@ app.post('/api/segments', zValidator('json', segmentCreateSchema), (c) => {
       }
     }
 
-    // Reserve an estimated credit hold before the paid model call on the
-    // platform path. The atomic reservation gates concurrent requests (a user
-    // near zero balance can't fan out many in-flight calls); it is reconciled to
-    // the real cost on success, or refunded on failure. BYOK pays OpenRouter
-    // directly and skips all credit accounting (adr/0003).
-    let reservation: Reservation | null = null
-    if (!target.isByok) {
-      const estimate = estimateCredits(payload.sourceText, target.creditCostMultiplier)
-      reservation = await reserveCredits(db, userId, estimate, 'spend.translate')
-      if (!reservation) {
-        throw new HTTPException(402, {
-          message: 'Insufficient credits — add credits or configure BYOK',
-        })
-      }
-    }
+    // Model call with the credit hold placed first (platform path). The atomic
+    // reservation gates concurrent requests (a user near zero balance can't fan
+    // out many in-flight calls); it is reconciled to the real cost on success,
+    // or refunded on failure. BYOK pays OpenRouter directly (adr/0003).
+    const { result, settle, refund } = await translateWithCredits(
+      db,
+      c.env,
+      userId,
+      character,
+      payload.sourceText,
+      resolvedVibe,
+    )
 
     try {
-      const result = await translateSegment(
-        {
-          sourceText: payload.sourceText,
-          sourceLanguage: character.source_language,
-          targetLanguage: character.target_language,
-          vibe: resolvedVibe,
-          temperature,
-          persona: character.persona,
-          instructions: character.instructions ?? undefined,
-        },
-        { apiKey: target.apiKey, modelId: target.modelId, appUrl: c.env.APP_URL, reasoning: target.reasoning },
-      )
-
       // Embeddings are always platform-owned (BYOK never applies; see adr/0003)
       // and best-effort: a failed embedding (provider down, or a BYOK-only deploy
       // with no platform key) must not discard an already-generated, paid-for
@@ -737,16 +952,8 @@ app.post('/api/segments', zValidator('json', segmentCreateSchema), (c) => {
         })
       }
 
-      if (reservation) {
-        const cost = computeCredits(
-          result.tokenUsage.promptTokens,
-          result.tokenUsage.completionTokens,
-          result.tokenUsage.modelId,
-          target.creditCostMultiplier,
-        )
-        await reconcileSpend(db, userId, reservation, cost, row.id)
-        reservation = null
-      }
+      await settle(row.id)
+      await db.query(`update threads set updated_at = now() where id = $1`, [payload.threadId])
 
       await logActivity(db, userId, 'segment.created', {
         threadId: payload.threadId,
@@ -756,7 +963,70 @@ app.post('/api/segments', zValidator('json', segmentCreateSchema), (c) => {
       return c.json(mapSegment(row), 201)
     } catch (error) {
       // Release the hold on any failure before the spend was reconciled.
-      if (reservation) await refundReservation(db, userId, reservation).catch(() => undefined)
+      await refund()
+      throw error
+    }
+  })
+})
+
+// Retry: re-run the translation for an existing Segment and overwrite its
+// target in place. Deliberately bypasses the in-thread dedupe and the shared
+// cache — the whole point is a fresh sample — and never seeds the cache. The
+// row keeps its id so open Explain panels/links stay valid; stale `explains`
+// rows for the old target are dropped (they were keyed by the old text).
+app.post('/api/segments/:segmentId/retry', (c) => {
+  const userId = c.get('userId')
+  const segmentId = c.req.param('segmentId')
+  return withDb(c.env, async (db) => {
+    await getOrCreateUser(db, userId, c.get('email'))
+    const segRes = await db.query<
+      SegmentDbRow & TranslateCharacterRow & { user_id: string; default_vibe: VibeStop }
+    >(
+      `select s.id, s.thread_id, s.source_text, s.target_text, s.vibe, s.token_alignment,
+              s.token_usage, s.created_at, s.updated_at, s.user_id,
+              c.source_language, c.target_language, c.temperature, c.persona,
+              c.instructions, c.default_vibe
+         from segments s
+         join threads t on t.id = s.thread_id
+         join characters c on c.id = t.character_id
+        where s.id = $1`,
+      [segmentId],
+    )
+    const seg = segRes.rows[0]
+    if (!seg) throw new HTTPException(404, { message: 'Segment not found' })
+    assertUserOwnsResource(seg.user_id, userId)
+
+    const vibe: VibeStop = seg.vibe ?? seg.default_vibe
+    const { result, target, settle, refund } = await translateWithCredits(
+      db,
+      c.env,
+      userId,
+      seg,
+      seg.source_text,
+      vibe,
+    )
+    try {
+      const updated = await db.query<SegmentDbRow>(
+        `update segments
+            set target_text = $2, token_alignment = $3, token_usage = $4, updated_at = now()
+          where id = $1 returning ${SEGMENT_COLUMNS}`,
+        [
+          segmentId,
+          result.targetText,
+          JSON.stringify(result.tokenAlignment),
+          JSON.stringify(result.tokenUsage),
+        ],
+      )
+      await db.query(`delete from explains where segment_id = $1`, [segmentId])
+      await settle(segmentId)
+      await logActivity(db, userId, 'segment.retried', {
+        threadId: seg.thread_id,
+        vibe,
+        byok: target.isByok,
+      })
+      return c.json(mapSegment(updated.rows[0]))
+    } catch (error) {
+      await refund()
       throw error
     }
   })
@@ -1087,8 +1357,19 @@ function getProviderErrorMessage(status: number, body: string) {
 const toElevenLabsLanguageCode = (languageCode?: string) =>
   languageCode?.split('-')[0]
 
+// Pro+ only, Japanese only (for now): the free tier and every other target
+// language read back with the browser's speech synthesis on the client, so a
+// 403/400 here is a signal to fall back, not a hard failure. See docs/API.md.
 app.post('/api/ai/text-to-speech', zValidator('json', textToSpeechSchema), async (c) => {
   const { text, vibe, languageCode } = c.req.valid('json')
+  const userId = c.get('userId')
+  const user = await withDb(c.env, (db) => getOrCreateUser(db, userId, c.get('email')))
+  canUseFeature(tierLimits[user.tier].elevenLabsTts)
+  if (!languageCode?.toLowerCase().startsWith('ja')) {
+    throw new HTTPException(400, {
+      message: 'ElevenLabs voices are only available for Japanese today',
+    })
+  }
   const apiKey = c.env.ELEVENLABS_API_KEY?.trim()
   const voiceIds = {
     yakuza: c.env.ELEVENLABS_VOICE_YAKUZA,

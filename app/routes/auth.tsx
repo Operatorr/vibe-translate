@@ -20,7 +20,7 @@ function AuthPage() {
           </Link>
         </div>
       ) : (
-        <SignIn routing="hash" signUpUrl="/auth#sign-up" />
+        <SignIn routing="hash" signUpUrl="/auth#sign-up" forceRedirectUrl="/app" />
       )}
     </main>
   )

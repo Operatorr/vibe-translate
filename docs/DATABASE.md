@@ -14,7 +14,7 @@
 ```
 users (1) ── owns ──> (N) characters
                         │
-                        └─ has ──> (N) threads
+                        └─ has ──> (N) threads ──> (0..1 live) thread_shares
                                      │
                                      └─ has ──> (N) segments ──> source_embedding (vector(1536))
                                                   │
@@ -87,6 +87,11 @@ A topic-level conversation under one Character.
 | `created_at`, `updated_at` | timestamptz | |
 
 Indexes: `(character_id, updated_at desc)`, `(user_id, updated_at desc)`.
+
+#### `threads` — sharing & starring
+
+- `threads.starred boolean` — pins the Thread under a STARRED group in the sidebar. Metadata only; toggling it does not touch `updated_at`.
+- **`thread_shares`** — one read-only public link per Thread. `token text unique` is an unguessable base64url string (24 random bytes) resolved by `GET /api/share/:token` **without auth**; `revoked_at` disables it. Cascades from `threads` and `users`. Added in `0005_thread_star_share.sql`.
 
 #### `segments`
 

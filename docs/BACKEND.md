@@ -68,11 +68,13 @@ Defined in [`api/_lib/tier.ts`](../api/_lib/tier.ts):
 | `explain` | ❌ | ✅ | ✅ |
 | `translationMemory` | ❌ | ✅ | ✅ |
 | `customVibeStops` | ❌ | ❌ | ✅ |
+| `elevenLabsTts` | ❌ | ✅ | ✅ |
 
 Notes:
 
 - All three tiers use the **same models** (see [DATABASE.md → models](./DATABASE.md#models)). Upgrades buy capacity and features, not output quality.
 - `customVibeStops` is the team-tier extension hinted at in the pricing prototype ("6 + custom registers"). Free and Pro are pinned to the canonical six.
+- `elevenLabsTts` gates the per-vibe ElevenLabs voices on `/api/ai/text-to-speech` (Japanese targets only today). The free tier — and every non-Japanese target — reads back with the browser's speech synthesis on the client, which never reaches the worker.
 - `explain` and `translationMemory` are the persistent-corpus features. Free tier still creates Segments and sees alignment hover, but the Explain button surfaces an upsell and `/api/memory` returns `403`.
 - **BYOK users bypass `credits` entirely.** A free-tier user with a stored OpenRouter key can translate as much as they want.
 

@@ -25,7 +25,9 @@ Only these routes are intentionally public:
 | `GET /api/diagnostics` | DB connectivity check | no user data; returns only `now()` |
 | `POST /api/waitlist` | pre-auth signups | edge rate limit + unique-email constraint |
 
-**`POST /api/ai/text-to-speech` is authenticated.** It proxies to ElevenLabs, which bills per character — leaving it open is a direct cost-abuse vector. The landing-page demo therefore does **not** call it; it plays pre-rendered per-vibe MP3s from `public/demo/` (fixed translations, no editable source). See [public/demo/README.md](../public/demo/README.md).
+**`GET /api/share/:token` is public by design.** A share link is a capability: the token is 24 random bytes (base64url, ~144 bits), minted only by the Thread's owner via `POST /api/threads/:id/share`, and revocable (`revoked_at`). The resolver selects a redacted projection — thread title, character display fields, segment texts/alignment — and never user ids, token usage, or credits. Tokens are validated against `^[A-Za-z0-9_-]{16,64}$` before touching the DB; unknown/revoked/archived → uniform `404`. Responses are `no-store`.
+
+**`POST /api/ai/text-to-speech` is authenticated and tier-gated (Pro+).** The free tier reads back with the browser's speech synthesis, which never touches the worker. It proxies to ElevenLabs, which bills per character — leaving it open is a direct cost-abuse vector. The landing-page demo therefore does **not** call it; it plays pre-rendered per-vibe MP3s from `public/demo/` (fixed translations, no editable source). See [public/demo/README.md](../public/demo/README.md).
 
 ## Abuse protection & rate limiting
 

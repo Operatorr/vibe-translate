@@ -1,17 +1,23 @@
 {
-  "name": "VibeTranslate",
-  "short_name": "VibeTranslate",
-  "description": "AI translation workspaces for fast-moving teams.",
-  "start_url": "/",
+  "name": "Vibe Translate",
+  "short_name": "Vibe",
+  "description": "Pick the vibe, hear the voice, learn the grammar. A language-learning translator with a six-stop register slider.",
+  "id": "/app",
+  "start_url": "/app",
+  "scope": "/",
   "display": "standalone",
-  "background_color": "#f8fafc",
-  "theme_color": "#111827",
+  "orientation": "any",
+  "background_color": "#0a0a0a",
+  "theme_color": "#0a0a0a",
+  "lang": "en",
+  "categories": ["education", "productivity", "utilities"],
   "icons": [
-    {
-      "src": "/icon.svg",
-      "sizes": "any",
-      "type": "image/svg+xml",
-      "purpose": "any maskable"
-    }
+    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" },
+    { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ],
+  "shortcuts": [
+    { "name": "New translation", "url": "/app", "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192" }] }
   ]
 }

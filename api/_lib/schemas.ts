@@ -19,6 +19,10 @@ export const personaSchema = z
     age: z.string().trim().max(60).optional(),
     region: z.string().trim().max(120).optional(),
     formality: z.string().trim().max(120).optional(),
+    // Voice of the Character: how they sound (tone) and how much they say
+    // (verbosity, 0 = terse … 1 = expansive). Both feed the translate prompt.
+    tone: z.string().trim().max(60).optional(),
+    verbosity: z.number().min(0).max(1).optional(),
     traits: z.array(z.string().trim().max(120)).max(20).default([]),
   })
   .strict()
@@ -79,6 +83,7 @@ export const threadUpdateSchema = z
   .object({
     title: z.string().trim().min(1).max(160).optional(),
     archived: z.boolean().optional(),
+    starred: z.boolean().optional(),
   })
   .refine((value) => Object.keys(value).length > 0, 'At least one field is required')
 
