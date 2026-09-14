@@ -10,12 +10,14 @@ const VIBE_REGISTER: Record<VibeStop, string> = {
     'Rough, aggressive, hyper-masculine street register; blunt slang, dropped politeness, intimidating.',
   friend:
     'Warm casual register between close friends; relaxed contractions, familiar particles, easy banter.',
-  casual: 'Everyday neutral-casual register; plain form, conversational but not slangy.',
+  casual:
+    'Everyday neutral-casual register; plain form, conversational but not slangy.',
   keigo:
     'Standard polite / business register; teineigo (です・ます equivalents), respectful but not deferential.',
   keigoplus:
     'Elevated honorific register; humble + exalted forms (sonkeigo + kenjougo equivalents), deferential toward a superior.',
-  emperor: 'Maximally grandiose, archaic, ceremonial register; ornate, lofty, imperial phrasing.',
+  emperor:
+    'Maximally grandiose, archaic, ceremonial register; ornate, lofty, imperial phrasing.',
 }
 
 export function describeVerbosity(value: number): string {
@@ -33,7 +35,8 @@ export function formatPersona(persona: Persona): string {
   if (persona.tone) lines.push(`- Tone: ${persona.tone}`)
   if (typeof persona.verbosity === 'number')
     lines.push(`- Verbosity: ${describeVerbosity(persona.verbosity)}`)
-  if (persona.traits.length > 0) lines.push(`- Traits: ${persona.traits.join(', ')}`)
+  if (persona.traits.length > 0)
+    lines.push(`- Traits: ${persona.traits.join(', ')}`)
   return lines.join('\n')
 }
 
@@ -54,10 +57,17 @@ export function compileSystemPrompt(input: {
     `Translate from ${input.sourceLanguage} to ${input.targetLanguage}.`,
     ``,
     `REGISTER (vibe = "${input.vibe}"): ${VIBE_REGISTER[input.vibe]}`,
-    persona ? `\nSPEAKER PERSONA (who is speaking / being addressed):\n${persona}` : null,
+    persona
+      ? `\nSPEAKER PERSONA (who is speaking / being addressed):\n${persona}`
+      : null,
     instructions ? `\nADDITIONAL INSTRUCTIONS:\n${instructions}` : null,
     ``,
     `Respond with JSON: "targetText" plus a word-level "tokens" alignment.`,
+    ``,
+    `HARD RULES:`,
+    `- Tokens concatenate back to "targetText" exactly; punctuation is its own token.`,
+    `- Segment at word / morpheme granularity.`,
+    `- Code in backticks or a code fence is copied verbatim as ONE token — never split.`,
   ]
     .filter((line) => line !== null)
     .join('\n')

@@ -2,7 +2,9 @@
 // composer. Chrome/Edge/Safari expose `webkitSpeechRecognition`; Firefox has
 // nothing, in which case `createRecognizer` returns null and the UI explains.
 
-type RecognitionResultList = ArrayLike<ArrayLike<{ transcript: string }> & { isFinal: boolean }>
+type RecognitionResultList = ArrayLike<
+  ArrayLike<{ transcript: string }> & { isFinal: boolean }
+>
 
 type RecognitionEvent = { resultIndex: number; results: RecognitionResultList }
 
@@ -33,10 +35,19 @@ export function speechRecognitionSupported(): boolean {
 export type Recognizer = {
   start(): void
   stop(): void
+  // Stop immediately and detach every handler, so a late result/end event can
+  // never write into the composer after the caller has moved on.
+  abort(): void
 }
 
+// Consecutive silent sessions tolerated before dictation gives up, so an
+// abandoned mic doesn't stay hot forever.
+const MAX_SILENT_RESTARTS = 2
+
 // Streams interim text into `onInterim` and appends finalized phrases via
-// `onFinal`. `onEnd` fires when the engine stops for any reason.
+// `onFinal`. Chrome ends a `continuous` session after a pause, so the engine is
+// restarted until the user stops, an error occurs, or it hears nothing for a
+// few sessions in a row; `onEnd` fires once dictation is really over.
 export function createRecognizer(opts: {
   languageCode: string
   onInterim: (text: string) => void
@@ -50,7 +61,11 @@ export function createRecognizer(opts: {
   rec.lang = opts.languageCode
   rec.continuous = true
   rec.interimResults = true
+  let stopped = false
+  let failed = false
+  let silent = 0
   rec.onresult = (event) => {
+    silent = 0
     let interim = ''
     for (let i = event.resultIndex; i < event.results.length; i += 1) {
       const result = event.results[i]
@@ -60,9 +75,24 @@ export function createRecognizer(opts: {
     }
     opts.onInterim(interim)
   }
-  rec.onend = () => opts.onEnd()
+  rec.onend = () => {
+    if (!stopped && !failed && silent <= MAX_SILENT_RESTARTS) {
+      try {
+        rec.start()
+        return
+      } catch {
+        // fall through and end
+      }
+    }
+    opts.onEnd()
+  }
   rec.onerror = (event) => {
-    if (event.error === 'aborted' || event.error === 'no-speech') return
+    if (event.error === 'aborted') return
+    if (event.error === 'no-speech') {
+      silent += 1
+      return
+    }
+    failed = true
     opts.onError(
       event.error === 'not-allowed'
         ? 'Microphone access was blocked. Allow it in your browser settings.'
@@ -70,7 +100,30 @@ export function createRecognizer(opts: {
     )
   }
   return {
-    start: () => rec.start(),
-    stop: () => rec.stop(),
+    start: () => {
+      stopped = false
+      failed = false
+      silent = 0
+      rec.start()
+    },
+    stop: () => {
+      stopped = true
+      try {
+        rec.stop()
+      } catch {
+        // already ended (e.g. after `not-allowed`)
+      }
+    },
+    abort: () => {
+      stopped = true
+      rec.onresult = null
+      rec.onend = null
+      rec.onerror = null
+      try {
+        rec.abort()
+      } catch {
+        // already ended
+      }
+    },
   }
 }

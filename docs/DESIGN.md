@@ -17,14 +17,14 @@ The repo overloads Tailwind size tokens (e.g. `2xl`, `3xl`). **Use explicit widt
 
 The six **Vibe stops** have fixed brand colors forming a rough "heat" ramp from rough/intimate to formal/ceremonial. These come from the raw palette in `app.css` and the `VIBE_PRESETS_PER_LANG` table:
 
-| stop | token | hex |
-| --- | --- | --- |
-| yakuza | `--red-400` | `#ff2e2e` |
-| friend | `--orange-400` | `#ff5722` |
-| casual | `--amber-400` | `#ff8a00` |
-| keigo | `--turq-400` | `#10c594` |
-| keigoplus | `--cyan-400` | `#00a8ff` |
-| emperor | `--magenta-400` | `#ff1f9d` |
+| stop      | token           | hex       |
+| --------- | --------------- | --------- |
+| yakuza    | `--red-400`     | `#ff2e2e` |
+| friend    | `--orange-400`  | `#ff5722` |
+| casual    | `--amber-400`   | `#ff8a00` |
+| keigo     | `--turq-400`    | `#10c594` |
+| keigoplus | `--cyan-400`    | `#00a8ff` |
+| emperor   | `--magenta-400` | `#ff1f9d` |
 
 The color is consistent across all languages; only the **labels** localize (`keigoplus` → "Keigo+" in `ja-JP`, "Formel" in `fr-FR`).
 
@@ -39,17 +39,17 @@ The color is consistent across all languages; only the **labels** localize (`kei
 ### Hover-to-align
 
 - Hovering a word on the **source** or **target** side highlights its counterpart on the other side, using the per-token `token_alignment` map (`{ t, src }` pairs).
-- **Touch fallback:** there is no hover on touch devices, so the alignment is triggered by **tap** instead. Tapping a token highlights its pair; tapping elsewhere clears.
+- **Touch fallback:** there is no hover on touch devices, so the alignment is triggered by **tap** instead. Tapping a token — on either side — pins its pair; tapping it again, or anywhere outside the card, clears. A mouse click pins the same way, and mouse hover never overrides a pin. Matching is by exact word (`app/lib/alignment.ts`), never substring.
 
 ### Explain panel
 
-- **Explain** opens as a **side panel**, not a modal — the translation stays visible alongside the breakdown so the learner can cross-reference.
+- **Explain** opens **inline, directly under its Segment card**, not as a modal — the translation stays visible right above the breakdown so the learner can cross-reference. One panel is open at a time.
 - The panel renders the language-aware payload: romaji, literal gloss, morphemes & particles (color-coded by part of speech), kanji decomposition (radicals, readings, JLPT, stroke count), and grammar patterns with dialect notes.
 
 ## Layout
 
 - **CAT-tool surface, not a chat wrapper.** Source on the left, target on the right; past **Segments** in a thread collapse to compact pills above the active one. This is a deliberate departure from chat-bubble UIs — the product is for reviewing and learning from translations, not conversing.
-- The authenticated shell (`app/routes/app/`) holds a persistent header, a **Character** sidebar, the active thread workspace, and overlays (quick-find, Explain panel).
+- The authenticated shell (`app/routes/app/`) holds a persistent header, a **Character** sidebar, the active thread workspace, and overlays (command palette, customize-character panel).
 
 ## Accessibility baseline
 
@@ -60,5 +60,5 @@ The color is consistent across all languages; only the **labels** localize (`kei
 ## Open questions
 
 - Does the light theme get the same design attention as dark, or is it a best-effort secondary?
-- Should the "ungenerated stop" cost hint show the *estimated* credit cost (requires a token estimate) or just a generic "1 translation" marker? (Current: generic.)
+- Should the "ungenerated stop" cost hint show the _estimated_ credit cost (requires a token estimate) or just a generic "1 translation" marker? (Current: generic.)
 - ~~Mobile layout for the CAT-tool split~~ — resolved: **stacked** (source above target) under 720px; under 900px the three columns become a single pane switched by `.app-body[data-pane]` (characters → threads → workspace) with back buttons. Explain and the customize panel go full-width. See [FRONTEND.md](./FRONTEND.md#mobile--pwa).

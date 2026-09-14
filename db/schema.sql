@@ -202,8 +202,12 @@ create table if not exists webhook_events (
 create index if not exists characters_user_id_sort_order_idx on characters (user_id, sort_order);
 create index if not exists threads_character_id_updated_at_idx on threads (character_id, updated_at desc);
 create index if not exists threads_user_id_updated_at_idx on threads (user_id, updated_at desc);
-create index if not exists threads_user_id_starred_idx on threads (user_id) where starred;
 create index if not exists thread_shares_thread_id_idx on thread_shares (thread_id);
+create index if not exists thread_shares_user_id_idx on thread_shares (user_id);
+-- At most one live (unrevoked) share link per Thread; POST /share mints with
+-- `on conflict (thread_id) where revoked_at is null do nothing`.
+create unique index if not exists thread_shares_live_thread_uniq
+  on thread_shares (thread_id) where revoked_at is null;
 create index if not exists segments_thread_id_created_at_idx on segments (thread_id, created_at desc);
 create index if not exists segments_user_id_created_at_idx on segments (user_id, created_at desc);
 create index if not exists segments_source_embedding_idx

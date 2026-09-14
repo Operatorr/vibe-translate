@@ -2361,9 +2361,6 @@ body,
   grid-template-columns: 240px 280px 1fr;
   min-height: 0;
 }
-.app-body--with-explain {
-  grid-template-columns: 240px 280px 1fr;
-}
 
 /* --- Characters / presets sidebar (LEFT) --- */
 .chars {
@@ -2790,7 +2787,8 @@ body,
   opacity: 0.5;
   transition: opacity var(--dur-fast) var(--ease-productive);
 }
-.segment:hover .segment__actions {
+.segment:hover .segment__actions,
+.segment:focus-within .segment__actions {
   opacity: 1;
 }
 .segment__action {
@@ -3213,6 +3211,13 @@ body,
 }
 .vibe-mini__label {
   cursor: pointer;
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  color: inherit;
 }
 .vibe-mini__label.is-active {
   color: var(--fg);
@@ -3613,25 +3618,18 @@ body,
 }
 
 /* Popover / menu ---------------------------------------------------------- */
-.vt-popover-anchor {
-  position: relative;
-  display: inline-flex;
-}
+/* Content is portaled and positioned by Radix (its wrapper inherits z-index). */
 .vt-popover {
-  position: absolute;
-  top: calc(100% + 6px);
   z-index: 40;
   min-width: 220px;
+  max-width: calc(100vw - 16px);
   background: var(--bg-elev-1);
   border: 1px solid var(--border-strong);
   box-shadow: var(--shadow-3);
   animation: vt-fade-in var(--dur-fast) var(--ease-productive);
 }
-.vt-popover--end {
-  right: 0;
-}
-.vt-popover--start {
-  left: 0;
+.vt-popover:focus-visible {
+  outline: none;
 }
 .vt-menu {
   display: flex;
@@ -3652,8 +3650,10 @@ body,
   font: 500 13px/1 var(--font-sans);
   white-space: nowrap;
 }
-.vt-menu__item:hover {
+.vt-menu__item:hover,
+.vt-menu__item[data-highlighted] {
   background: var(--bg-elev-2);
+  outline: none;
 }
 .vt-menu__item i {
   width: 14px;
@@ -3764,6 +3764,11 @@ body,
   opacity: 0.6;
   cursor: wait;
 }
+/* Status unknown (share GET in flight): knob parked mid-track, neither on nor off. */
+.vt-switch.is-loading span {
+  transform: translateX(8px);
+  opacity: 0.5;
+}
 
 /* Workspace header states ------------------------------------------------- */
 .workspace__icon-btn.is-active {
@@ -3799,7 +3804,8 @@ body,
   color: var(--amber-400);
   flex-shrink: 0;
 }
-.chars__empty {
+.chars__empty,
+.threads__empty {
   padding: 16px 12px;
   font: 400 13px/1.5 var(--font-sans);
   color: var(--fg-subtle);
@@ -3905,6 +3911,28 @@ body,
   color: var(--red-400);
   border-color: transparent;
 }
+.cust__confirm {
+  padding: 12px 24px;
+  border-top: 1px solid var(--red-400);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  font-size: 13px;
+  color: var(--fg-muted);
+  flex-shrink: 0;
+}
+.cust__confirm p {
+  margin: 0;
+}
+.cust__confirm-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.cust__confirm-row .cust__input {
+  flex: 1;
+  min-width: 0;
+}
 .cust__foot .vt-btn i {
   width: 14px;
   height: 14px;
@@ -3980,6 +4008,10 @@ body,
 @media (max-width: 900px) {
   .app-shell {
     height: 100dvh;
+    /* black-translucent status bar: keep the nav clear of the notch/rounded corners. */
+    box-sizing: border-box;
+    padding: env(safe-area-inset-top) env(safe-area-inset-right) 0
+      env(safe-area-inset-left);
   }
   .app-body {
     grid-template-columns: 1fr;
@@ -4092,4 +4124,34 @@ body,
     font-size: 16px; /* prevents iOS zoom-on-focus */
     min-height: 48px;
   }
+}
+
+/* App shell helpers (replace former inline styles) ------------------------ */
+.chars__status.vt-side-foot {
+  padding: 0;
+  border: 0;
+}
+.threads__empty--pane {
+  padding: 24px;
+}
+.threads__char-info {
+  min-width: 0;
+}
+.threads__customize-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.thread__sep {
+  margin: 0 6px;
+  color: var(--fg-disabled);
+}
+.welcome__icon {
+  width: 32px;
+  height: 32px;
+  color: var(--fg-subtle);
+}
+.welcome__icon--sm {
+  width: 24px;
+  height: 24px;
 }

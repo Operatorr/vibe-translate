@@ -8,6 +8,8 @@ A global `translation_cache` table lets identical translation requests across us
 
 Only **canonical** translations are cached globally: those produced with an empty persona, empty instructions, and the default temperature. Personalized translations (any persona, any instructions, non-default temperature) are saved as per-user **Segments** but are never written to the shared cache.
 
+**Persona** means every field that reaches the translate prompt — `age`, `region`, `formality`, `traits`, and the voice fields `tone` and `verbosity` (a verbosity of `0` counts; it means "terse"). The character form omits a Neutral tone and the default verbosity rather than writing values, so a Character with no other persona stays canonical.
+
 This is privacy-safe by construction: a requester only ever gets a cache hit on inputs they fully supplied themselves. The cache is a memoized pure function `f(source, langs, vibe, model) → (target, alignment)`. Nothing about another user's private content can be learned from it — the source text is supplied by the requester, and personalization (which is where private context lives) is excluded from caching entirely.
 
 We rejected sharing the per-user **Translation memory** directly because those Segments carry persona, instructions, and user attribution — serving one user's personalized output to another would be both a privacy leak and a correctness bug (the same source at the same vibe yields different output under different personas). We rejected including persona/instructions in the fingerprint (which would make personalized results technically cacheable) because storing the resulting target text globally still risks leaking persona-derived phrasing, and the reuse rate for personalized inputs is near zero anyway.

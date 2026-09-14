@@ -1,5 +1,7 @@
 // Copy text with a legacy fallback for contexts where the async Clipboard API
-// is unavailable or denied (embedded webviews, non-secure origins).
+// is unavailable or denied (embedded webviews, non-secure origins). The
+// fallback relies on `document.execCommand('copy')`, which is deprecated but
+// still the only synchronous option in those contexts.
 export async function copyText(text: string): Promise<void> {
   try {
     if (navigator.clipboard?.writeText) {

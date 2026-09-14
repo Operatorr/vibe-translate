@@ -5,6 +5,8 @@ export type VibeRoute = '/' | '/pricing' | '/app'
 export type NavigateFn = (path: VibeRoute) => void
 
 const THEME_KEY = 'vibe-translate:theme'
+// Matches `--bg` per theme in app/styles/app.css; index.html ships the dark one.
+const THEME_COLOR = { dark: '#0a0a0a', light: '#ffffff' }
 
 function readTheme(): 'dark' | 'light' {
   try {
@@ -25,6 +27,13 @@ export function useVibeFrame(route: VibeRoute) {
 
   React.useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme)
+    // Installed-PWA title bar follows the in-app theme, not the OS scheme.
+    document
+      .querySelector('meta[name="theme-color"]')
+      ?.setAttribute(
+        'content',
+        theme === 'dark' ? THEME_COLOR.dark : THEME_COLOR.light,
+      )
     try {
       localStorage.setItem(THEME_KEY, theme)
     } catch {

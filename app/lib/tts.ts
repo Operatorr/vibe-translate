@@ -14,19 +14,36 @@ export type SpeakRequest = {
   languageCode: string
   vibe: VibeStop
   // When provided and returns a Blob, the ElevenLabs path is attempted first.
-  fetchAudio?: (input: { text: string; vibe: VibeStop; languageCode: string }) => Promise<Blob>
+  // `signal` aborts when the utterance is stopped or superseded.
+  fetchAudio?: (
+    input: { text: string; vibe: VibeStop; languageCode: string },
+    options: { signal: AbortSignal },
+  ) => Promise<Blob>
   onStart?: (engine: SpeakEngine) => void
   onEnd?: () => void
 }
 
 let currentAudio: HTMLAudioElement | null = null
 let currentUrl: string | null = null
+let currentAbort: AbortController | null = null
+// Bumped by every stopSpeaking(). A speak() whose generation is stale must not
+// start playback, fall back to the browser engine, or report onEnd — otherwise
+// Stop (or speaking another segment) lets the old utterance resurface.
+let generation = 0
 
 export function stopSpeaking() {
+  generation += 1
+  if (currentAbort) {
+    currentAbort.abort()
+    currentAbort = null
+  }
   if (currentAudio) {
-    currentAudio.pause()
-    currentAudio.src = ''
+    const audio = currentAudio
     currentAudio = null
+    audio.onended = null
+    audio.onerror = null
+    audio.pause()
+    audio.src = ''
   }
   if (currentUrl) {
     URL.revokeObjectURL(currentUrl)
@@ -36,19 +53,28 @@ export function stopSpeaking() {
 }
 
 export function browserTtsSupported(): boolean {
-  return typeof speechSynthesis !== 'undefined' && typeof SpeechSynthesisUtterance !== 'undefined'
+  return (
+    typeof speechSynthesis !== 'undefined' &&
+    typeof SpeechSynthesisUtterance !== 'undefined'
+  )
 }
 
 // Pick the best available system voice for a BCP-47 code: exact match first,
-// then same language, then whatever the browser defaults to.
+// then same language, then whatever the browser defaults to. Android reports
+// voice langs with underscores (`ja_JP`), so both sides are normalized.
+const normLang = (code: string) => code.toLowerCase().replace(/_/g, '-')
+
 function pickVoice(languageCode: string): SpeechSynthesisVoice | null {
   const voices = speechSynthesis.getVoices()
   if (voices.length === 0) return null
-  const want = languageCode.toLowerCase()
+  const want = normLang(languageCode)
   const lang = want.split('-')[0]
   return (
-    voices.find((v) => v.lang.toLowerCase() === want) ??
-    voices.find((v) => v.lang.toLowerCase().startsWith(lang)) ??
+    voices.find((v) => normLang(v.lang) === want) ??
+    voices.find((v) => {
+      const have = normLang(v.lang)
+      return have === lang || have.startsWith(`${lang}-`)
+    }) ??
     null
   )
 }
@@ -64,13 +90,17 @@ const BROWSER_PROSODY: Record<VibeStop, { rate: number; pitch: number }> = {
   emperor: { rate: 0.8, pitch: 0.8 },
 }
 
-function speakWithBrowser(req: SpeakRequest): Promise<void> {
+function speakWithBrowser(req: SpeakRequest, gen: number): Promise<void> {
   return new Promise((resolve, reject) => {
     if (!browserTtsSupported()) {
       reject(new Error('Speech synthesis is not supported in this browser'))
       return
     }
     const run = () => {
+      if (gen !== generation) {
+        resolve()
+        return
+      }
       const utterance = new SpeechSynthesisUtterance(req.text)
       utterance.lang = req.languageCode
       const voice = pickVoice(req.languageCode)
@@ -80,12 +110,17 @@ function speakWithBrowser(req: SpeakRequest): Promise<void> {
       utterance.pitch = prosody.pitch
       utterance.onstart = () => req.onStart?.('browser')
       utterance.onend = () => {
-        req.onEnd?.()
+        if (gen === generation) req.onEnd?.()
         resolve()
       }
       utterance.onerror = (event) => {
-        req.onEnd?.()
-        if (event.error === 'interrupted' || event.error === 'canceled') resolve()
+        if (gen === generation) req.onEnd?.()
+        if (
+          event.error === 'interrupted' ||
+          event.error === 'canceled' ||
+          gen !== generation
+        )
+          resolve()
         else reject(new Error(`Speech synthesis failed (${event.error})`))
       }
       speechSynthesis.speak(utterance)
@@ -107,13 +142,18 @@ function speakWithBrowser(req: SpeakRequest): Promise<void> {
   })
 }
 
-async function speakWithElevenLabs(req: SpeakRequest): Promise<void> {
+async function speakWithElevenLabs(
+  req: SpeakRequest,
+  gen: number,
+  signal: AbortSignal,
+): Promise<void> {
   if (!req.fetchAudio) throw new Error('No ElevenLabs fetcher')
-  const blob = await req.fetchAudio({
-    text: req.text,
-    vibe: req.vibe,
-    languageCode: req.languageCode,
-  })
+  const blob = await req.fetchAudio(
+    { text: req.text, vibe: req.vibe, languageCode: req.languageCode },
+    { signal },
+  )
+  // Stopped or superseded while the audio was downloading: drop the blob.
+  if (gen !== generation) return
   return new Promise((resolve, reject) => {
     const url = URL.createObjectURL(blob)
     const audio = new Audio(url)
@@ -125,36 +165,49 @@ async function speakWithElevenLabs(req: SpeakRequest): Promise<void> {
         currentUrl = null
       }
       URL.revokeObjectURL(url)
-      req.onEnd?.()
     }
     audio.onplay = () => req.onStart?.('elevenlabs')
     audio.onended = () => {
       cleanup()
+      if (gen === generation) req.onEnd?.()
       resolve()
     }
     audio.onerror = () => {
       cleanup()
-      reject(new Error('Audio playback failed'))
+      if (gen !== generation) resolve()
+      else reject(new Error('Audio playback failed'))
     }
     audio.play().catch((error) => {
       cleanup()
-      reject(error instanceof Error ? error : new Error('Audio playback failed'))
+      if (gen !== generation) resolve()
+      else
+        reject(
+          error instanceof Error ? error : new Error('Audio playback failed'),
+        )
     })
   })
 }
 
 // Speak `text`, preferring ElevenLabs when a fetcher is supplied and falling
-// back to the browser engine on any failure. Resolves with the engine used.
-export async function speak(req: SpeakRequest): Promise<SpeakEngine> {
+// back to the browser engine on a genuine failure. Resolves with the engine
+// used, or null when the utterance was stopped/superseded before it finished.
+export async function speak(req: SpeakRequest): Promise<SpeakEngine | null> {
   stopSpeaking()
+  const gen = generation
   if (req.fetchAudio) {
+    const abort = new AbortController()
+    currentAbort = abort
     try {
-      await speakWithElevenLabs(req)
-      return 'elevenlabs'
+      await speakWithElevenLabs(req, gen, abort.signal)
+      return gen === generation ? 'elevenlabs' : null
     } catch {
-      // fall through to the browser engine
+      // An intentional stop is not a failure — never fall back after it.
+      if (gen !== generation) return null
+    } finally {
+      if (currentAbort === abort) currentAbort = null
     }
   }
-  await speakWithBrowser(req)
-  return 'browser'
+  if (gen !== generation) return null
+  await speakWithBrowser(req, gen)
+  return gen === generation ? 'browser' : null
 }

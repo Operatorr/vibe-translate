@@ -4,10 +4,22 @@ import { toast } from 'sonner'
 import { Icon } from '@/components/vibe-design/icon'
 import type { VibePreset } from '@/components/vibe-design/design-data'
 import { cssVars } from '@/lib/css-vars'
-import { createRecognizer, speechRecognitionSupported, type Recognizer } from '@/lib/speech-recognition'
+import {
+  createRecognizer,
+  speechRecognitionSupported,
+  type Recognizer,
+} from '@/lib/speech-recognition'
 import { estimateTokens } from '@/lib/tokens'
 
 const MAX_CHARS = 20_000
+
+// Append a dictated phrase to the draft with a single separating space.
+function joinDraft(draft: string, text: string): string {
+  const next = text.trim()
+  if (!next) return draft
+  const sep = draft && !/\s$/.test(draft) ? ' ' : ''
+  return (draft + sep + next).slice(0, MAX_CHARS)
+}
 
 export const VibeMini = ({
   vibes,
@@ -19,6 +31,8 @@ export const VibeMini = ({
   onChange: (value: number) => void
 }) => {
   const active = vibes[valueIdx] || vibes[0]
+  // Fraction along the rail; a single-stop list would otherwise divide by 0.
+  const at = (i: number) => (vibes.length > 1 ? i / (vibes.length - 1) : 0)
   const onKey = (e: React.KeyboardEvent) => {
     if (e.key === 'ArrowRight' || e.key === 'ArrowUp') {
       e.preventDefault()
@@ -54,16 +68,21 @@ export const VibeMini = ({
         <div className="vibe-mini__rail"></div>
         <div
           className="vibe-mini__fill"
-          style={{ width: `${(valueIdx / (vibes.length - 1)) * 100}%`, background: active.color }}
+          style={{ width: `${at(valueIdx) * 100}%`, background: active.color }}
         ></div>
         <div className="vibe-mini__stops">
           {vibes.map((v, i) => (
             <button
-              key={v.id}
               type="button"
+              key={v.id}
               tabIndex={-1}
-              className={'vibe-mini__dot ' + (i === valueIdx ? 'is-active' : '')}
-              style={cssVars({ left: `${(i / (vibes.length - 1)) * 100}%`, '--vibe-fill': v.color })}
+              className={
+                'vibe-mini__dot ' + (i === valueIdx ? 'is-active' : '')
+              }
+              style={cssVars({
+                left: `${at(i) * 100}%`,
+                '--vibe-fill': v.color,
+              })}
               onClick={() => onChange(i)}
               aria-label={v.label}
             />
@@ -72,14 +91,18 @@ export const VibeMini = ({
       </div>
       <div className="vibe-mini__labels">
         {vibes.map((v, i) => (
-          <span
+          <button
             key={v.id}
-            className={'vibe-mini__label ' + (i === valueIdx ? 'is-active' : '')}
+            type="button"
+            tabIndex={-1}
+            className={
+              'vibe-mini__label ' + (i === valueIdx ? 'is-active' : '')
+            }
             onClick={() => onChange(i)}
             style={{ color: i === valueIdx ? v.color : undefined }}
           >
             {v.label}
-          </span>
+          </button>
         ))}
       </div>
     </div>
@@ -111,8 +134,12 @@ export const TempSlider = ({
         value={value}
         aria-label="Temperature"
         onChange={(e) => onChange(parseFloat(e.target.value))}
-        onPointerUp={(e) => onCommit(parseFloat((e.target as HTMLInputElement).value))}
-        onKeyUp={(e) => onCommit(parseFloat((e.target as HTMLInputElement).value))}
+        onPointerUp={(e) =>
+          onCommit(parseFloat((e.target as HTMLInputElement).value))
+        }
+        onKeyUp={(e) =>
+          onCommit(parseFloat((e.target as HTMLInputElement).value))
+        }
         onBlur={(e) => onCommit(parseFloat(e.target.value))}
       />
     </div>
@@ -132,7 +159,8 @@ export const Composer = React.forwardRef<
     temperature: number
     onTemperatureChange: (value: number) => void
     onTemperatureCommit: (value: number) => void
-    onSend: (text: string) => void
+    // Resolves true once the translation landed; the draft is cleared only then.
+    onSend: (text: string) => Promise<boolean>
     sending: boolean
     disabled?: boolean
   }
@@ -153,22 +181,45 @@ export const Composer = React.forwardRef<
   ref,
 ) {
   const [draft, setDraft] = React.useState('')
-  const [interim, setInterim] = React.useState('')
+  const [interim, setInterimState] = React.useState('')
   const [recording, setRecording] = React.useState(false)
   const recognizerRef = React.useRef<Recognizer | null>(null)
+  // Mirrors `interim` so stop/send can read the latest value synchronously.
+  const interimRef = React.useRef('')
+  const inFlightRef = React.useRef(false)
   const textareaRef = React.useRef<HTMLTextAreaElement>(null)
   const fileRef = React.useRef<HTMLInputElement>(null)
 
-  React.useImperativeHandle(ref, () => ({ focus: () => textareaRef.current?.focus() }), [])
+  React.useImperativeHandle(
+    ref,
+    () => ({ focus: () => textareaRef.current?.focus() }),
+    [],
+  )
 
-  const stopRecording = React.useCallback(() => {
-    recognizerRef.current?.stop()
-    recognizerRef.current = null
-    setRecording(false)
-    setInterim('')
+  const setInterim = React.useCallback((text: string) => {
+    interimRef.current = text
+    setInterimState(text)
   }, [])
 
-  React.useEffect(() => () => recognizerRef.current?.stop(), [])
+  // Commit still-interim dictation into the draft. The engine often ends with
+  // words it never finalized; the user saw them, so they must not vanish.
+  const flushInterim = React.useCallback(() => {
+    const pending = interimRef.current
+    setInterim('')
+    if (pending.trim()) setDraft((d) => joinDraft(d, pending))
+  }, [setInterim])
+
+  // Abort (not stop): stop() would deliver a late final result after we've
+  // already flushed the interim text, duplicating it or writing into the next
+  // draft. abort() also detaches every handler.
+  const stopRecording = React.useCallback(() => {
+    recognizerRef.current?.abort()
+    recognizerRef.current = null
+    setRecording(false)
+    flushInterim()
+  }, [flushInterim])
+
+  React.useEffect(() => () => recognizerRef.current?.abort(), [])
 
   const toggleRecording = () => {
     if (recording) {
@@ -182,15 +233,11 @@ export const Composer = React.forwardRef<
     const rec = createRecognizer({
       languageCode: sourceLanguage,
       onInterim: setInterim,
-      onFinal: (text) =>
-        setDraft((d) => {
-          const sep = d && !/\s$/.test(d) ? ' ' : ''
-          return (d + sep + text.trim()).slice(0, MAX_CHARS)
-        }),
+      onFinal: (text) => setDraft((d) => joinDraft(d, text)),
       onEnd: () => {
         recognizerRef.current = null
         setRecording(false)
-        setInterim('')
+        flushInterim()
       },
       onError: (message) => {
         toast.error(message)
@@ -208,12 +255,20 @@ export const Composer = React.forwardRef<
     }
   }
 
-  const send = () => {
-    const text = draft.trim()
-    if (!text || sending || disabled) return
+  const send = async () => {
+    if (sending || disabled || inFlightRef.current) return
+    const text = joinDraft(draft, interimRef.current).trim()
+    if (!text) return
     stopRecording()
-    onSend(text)
-    setDraft('')
+    inFlightRef.current = true
+    try {
+      const ok = await onSend(text)
+      // Clear only once the translation landed — a 402/timeout keeps the source
+      // for a retry — and only if the user hasn't typed more in the meantime.
+      if (ok) setDraft((d) => (d.trim() === text ? '' : d))
+    } finally {
+      inFlightRef.current = false
+    }
   }
 
   const onAttach = async (file: File | undefined) => {
@@ -258,15 +313,21 @@ export const Composer = React.forwardRef<
     })
   }
 
-  const shown = interim ? `${draft}${draft && !/\s$/.test(draft) ? ' ' : ''}${interim}` : draft
+  const shown = interim
+    ? `${draft}${draft && !/\s$/.test(draft) ? ' ' : ''}${interim}`
+    : draft
   const chars = shown.length
-  const canSend = draft.trim().length > 0 && !sending && !disabled
+  const canSend = shown.trim().length > 0 && !sending && !disabled
 
   return (
     <div className="composer">
       <div className="composer__settings">
         <VibeMini vibes={vibes} valueIdx={vibeIdx} onChange={onVibeChange} />
-        <TempSlider value={temperature} onChange={onTemperatureChange} onCommit={onTemperatureCommit} />
+        <TempSlider
+          value={temperature}
+          onChange={onTemperatureChange}
+          onCommit={onTemperatureCommit}
+        />
       </div>
       <div className="composer__row">
         <div className={'composer__field ' + (recording ? 'is-recording' : '')}>
@@ -282,21 +343,29 @@ export const Composer = React.forwardRef<
               setDraft(e.target.value)
             }}
             onKeyDown={(e) => {
-              if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
+              if (
+                e.key === 'Enter' &&
+                !e.shiftKey &&
+                !e.nativeEvent.isComposing
+              ) {
                 e.preventDefault()
-                send()
+                void send()
               }
             }}
           />
           <div className="composer__field-foot">
             <span>
               {chars} chars · ~{estimateTokens(shown)} tok
-              {recording && <span className="composer__rec"> · listening…</span>}
+              {recording && (
+                <span className="composer__rec"> · listening…</span>
+              )}
             </span>
             <div className="composer__icons">
               <button
                 type="button"
-                className={'composer__icon-btn ' + (recording ? 'is-active' : '')}
+                className={
+                  'composer__icon-btn ' + (recording ? 'is-active' : '')
+                }
                 title={recording ? 'Stop dictation' : 'Voice dictate'}
                 aria-pressed={recording}
                 onClick={toggleRecording}
@@ -333,13 +402,17 @@ export const Composer = React.forwardRef<
           </div>
         </div>
         <button
+          type="button"
           className="composer__send"
-          onClick={send}
+          onClick={() => void send()}
           disabled={!canSend}
           title="Translate · Enter"
           aria-label="Translate"
         >
-          <Icon name={sending ? 'loader' : 'arrow-right'} className={sending ? 'vt-spin' : ''} />
+          <Icon
+            name={sending ? 'loader' : 'arrow-right'}
+            className={sending ? 'vt-spin' : ''}
+          />
         </button>
       </div>
     </div>

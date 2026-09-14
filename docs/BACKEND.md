@@ -10,30 +10,30 @@
 
 ## Module map (`api/_lib/`)
 
-| Module | Role |
-| --- | --- |
-| `auth.ts` | Clerk bearer / `__session` cookie verification, sets `userId`, `email`, `databaseUrl` on Hono context. |
-| `db.ts` | `createDbClient(env)` → `pg.Client` from the Hyperdrive connection string. |
-| `env.ts` | Typed bindings (Clerk keys, Hyperdrive, ElevenLabs voice IDs, Dodo, Resend, OpenRouter) and Hono `Variables`. |
-| `schemas.ts` | All Zod request schemas + the canonical `VIBE_STOPS` list + the `Persona` schema. **Single source of truth for the 6-stop vibe enum on the server.** |
-| `validation.ts` | `parseJson(schema, value)` — manual fallback when `zValidator` middleware isn't a fit. |
-| `errors.ts` | `formatError(unknown)` — uniform JSON error envelope; converts `HTTPException`, `ZodError`, `Error`, and unknowns. |
-| `permissions.ts` | `assertUserOwnsResource`, `canUseFeature` — small guard helpers. |
-| `tier.ts` | `tierLimits` for `free` / `pro` / `team` and the `Tier` type. Tier carries the monthly **Credits** allowance and feature flags. |
-| `models.ts` | Reads the active default model per task (`translate`, `explain`, `dictation`, `embed`) from the `models` table. Operators flip defaults with SQL — no deploy. |
-| `credits.ts` | Token-derived credit accounting: `estimateCredits`/`computeCredits`, the `reserveCredits` → `reconcileSpend`/`refundReservation` spend flow (atomic pre-call hold, settled to the real cost), `recordGrant`, `getBalance`. Transactional writes keep `users.credits_balance` in sync with `credit_ledger`. |
-| `secrets.ts` | AES-GCM `encryptSecret` / `decryptSecret` for at-rest BYOK keys, using `CREDENTIALS_ENCRYPTION_KEY`. Storage format: `base64(iv):base64(cipher)`. |
-| `activity.ts` | `logActivity(db, userId, action, metadata?)` — write to `activity_log`. |
-| `recurrence.ts` | `getRetentionWindow(retentionDays)` — date math for retention queries (driven by tier). |
-| `ai.ts` | Translation + dictation provider functions. `translateSegment(input, config)` → `{ targetText, tokenAlignment, tokenUsage }` (with `finalizeTokens` enforcing the alignment-reconstruction invariant); `draftCharacterFromDictation(prompt, config)` → `{ draft, tokenUsage? }` (`ok: false` signals fall-back-to-form). Prompt construction lives in `prompts.ts`; the OpenRouter call + strict-JSON parsing go through `openrouter.ts → chatJson`. |
-| `openrouter.ts` | OpenRouter access via the OpenAI SDK. `chatJson({ apiKey, model, messages, schema, schemaName, ... })` enforces a strict `json_schema` response (Zod-validated, one corrective retry) → `{ data, tokenUsage }`. `resolveCallTarget(db, env, userId, task)` picks the BYOK-or-platform key + model (dictation is always platform; decrypt failure falls back to platform). |
-| `prompts.ts` | Pure, network-free prompt builders: `buildTranslateMessages`, `buildExplainMessages`, `buildDictationMessages`, `formatPersona`, `isJapaneseTarget`. The `VIBE_REGISTER` map is the model-facing register guidance. Unit-tested in isolation. |
-| `users.ts` | `getOrCreateUser(db, clerkUserId, email)` — idempotent provisioning + a one-time signup credit grant; `toMeResponse(user)` shapes `/api/users/me`. |
-| `embeddings.ts` | `embedText({ text, apiKey, model? })` → `{ modelId, vector, promptTokens }` (via OpenRouter, `openai/text-embedding-3-small`, using the platform key). Owns the embedding model + dimension (`EMBEDDING_DIMENSIONS = 1536`). Also `sha256Hex(text)` for the Explain dedupe key/fingerprints, and `formatVector`/`parseVector` for the pgvector text format. |
-| `translation-cache.ts` | Shared canonical translation cache: `isCanonical`, `fingerprint`, `lookupCache`, `upsertCache`. Cache hits cost 0 credits. See [adr/0004](./adr/0004-shared-canonical-translation-cache.md). |
-| `explain.ts` | `generateExplain(input, config)` → `{ version, body, tokenUsage }`. Language-aware: a full Japanese body (romaji/morphemes/kanji/grammar) when the target is `ja`, a lighter generic body otherwise. Exports `EXPLAIN_PAYLOAD_VERSION`; bumping invalidates older `explains` rows. |
-| `payments.ts` | Dodo Payments. `verifyDodoSignature` (Standard Webhooks, raw-body HMAC-SHA256) + `processDodoWebhook` (idempotent, transactional tier/credit application via `webhook_events`). The `app.ts` webhook route delegates here. |
-| `email.ts` | Transactional email via Resend (raw `fetch`). `sendTransactionalEmail({ env, to, subject, html, text? })` no-ops + warns if `RESEND_API_KEY` is unset; `subscriptionConfirmationEmail({ plan })` builds the upgrade confirmation. Sender from `RESEND_FROM`. |
+| Module                 | Role                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `auth.ts`              | Clerk bearer / `__session` cookie verification, sets `userId`, `email`, `databaseUrl` on Hono context.                                                                                                                                                                                                                                                                                                                                               |
+| `db.ts`                | `createDbClient(env)` → `pg.Client` from the Hyperdrive connection string.                                                                                                                                                                                                                                                                                                                                                                           |
+| `env.ts`               | Typed bindings (Clerk keys, Hyperdrive, ElevenLabs voice IDs, Dodo, Resend, OpenRouter) and Hono `Variables`.                                                                                                                                                                                                                                                                                                                                        |
+| `schemas.ts`           | All Zod request schemas + the canonical `VIBE_STOPS` list + the `Persona` schema. **Single source of truth for the 6-stop vibe enum on the server.**                                                                                                                                                                                                                                                                                                 |
+| `validation.ts`        | `parseJson(schema, value)` — manual fallback when `zValidator` middleware isn't a fit.                                                                                                                                                                                                                                                                                                                                                               |
+| `errors.ts`            | `formatError(unknown)` — uniform JSON error envelope; converts `HTTPException`, `ZodError`, `Error`, and unknowns.                                                                                                                                                                                                                                                                                                                                   |
+| `permissions.ts`       | `assertUserOwnsResource`, `canUseFeature` — small guard helpers.                                                                                                                                                                                                                                                                                                                                                                                     |
+| `tier.ts`              | `tierLimits` for `free` / `pro` / `team` and the `Tier` type. Tier carries the monthly **Credits** allowance and feature flags.                                                                                                                                                                                                                                                                                                                      |
+| `models.ts`            | Reads the active default model per task (`translate`, `explain`, `dictation`, `embed`) from the `models` table. Operators flip defaults with SQL — no deploy.                                                                                                                                                                                                                                                                                        |
+| `credits.ts`           | Token-derived credit accounting: `estimateCredits`/`computeCredits`, the `reserveCredits` → `reconcileSpend`/`refundReservation` spend flow (atomic pre-call hold, settled to the real cost), `recordGrant`, `getBalance`. Transactional writes keep `users.credits_balance` in sync with `credit_ledger`.                                                                                                                                           |
+| `secrets.ts`           | AES-GCM `encryptSecret` / `decryptSecret` for at-rest BYOK keys, using `CREDENTIALS_ENCRYPTION_KEY`. Storage format: `base64(iv):base64(cipher)`.                                                                                                                                                                                                                                                                                                    |
+| `activity.ts`          | `logActivity(db, userId, action, metadata?)` — write to `activity_log`.                                                                                                                                                                                                                                                                                                                                                                              |
+| `recurrence.ts`        | `getRetentionWindow(retentionDays)` — date math for retention queries (driven by tier).                                                                                                                                                                                                                                                                                                                                                              |
+| `ai.ts`                | Translation + dictation provider functions. `translateSegment(input, config)` → `{ targetText, tokenAlignment, tokenUsage }` (with `finalizeTokens` enforcing the alignment-reconstruction invariant); `draftCharacterFromDictation(prompt, config)` → `{ draft, tokenUsage? }` (`ok: false` signals fall-back-to-form). Prompt construction lives in `prompts.ts`; the OpenRouter call + strict-JSON parsing go through `openrouter.ts → chatJson`. |
+| `openrouter.ts`        | OpenRouter access via the OpenAI SDK. `chatJson({ apiKey, model, messages, schema, schemaName, ... })` enforces a strict `json_schema` response (Zod-validated, one corrective retry) → `{ data, tokenUsage }`. `resolveCallTarget(db, env, userId, task)` picks the BYOK-or-platform key + model (dictation is always platform; decrypt failure falls back to platform).                                                                            |
+| `prompts.ts`           | Pure, network-free prompt builders: `buildTranslateMessages`, `buildExplainMessages`, `buildDictationMessages`, `formatPersona`, `isJapaneseTarget`. The `VIBE_REGISTER` map is the model-facing register guidance. Unit-tested in isolation.                                                                                                                                                                                                        |
+| `users.ts`             | `getOrCreateUser(db, clerkUserId, email)` — idempotent provisioning + a one-time signup credit grant; `toMeResponse(user)` shapes `/api/users/me`.                                                                                                                                                                                                                                                                                                   |
+| `embeddings.ts`        | `embedText({ text, apiKey, model? })` → `{ modelId, vector, promptTokens }` (via OpenRouter, `openai/text-embedding-3-small`, using the platform key). Owns the embedding model + dimension (`EMBEDDING_DIMENSIONS = 1536`). Also `sha256Hex(text)` for the Explain dedupe key/fingerprints, and `formatVector`/`parseVector` for the pgvector text format.                                                                                          |
+| `translation-cache.ts` | Shared canonical translation cache: `isCanonical`, `fingerprint`, `lookupCache`, `upsertCache`. Cache hits cost 0 credits. See [adr/0004](./adr/0004-shared-canonical-translation-cache.md).                                                                                                                                                                                                                                                         |
+| `explain.ts`           | `generateExplain(input, config)` → `{ version, body, tokenUsage }`. Language-aware: a full Japanese body (romaji/morphemes/kanji/grammar) when the target is `ja`, a lighter generic body otherwise. Exports `EXPLAIN_PAYLOAD_VERSION`; bumping invalidates older `explains` rows.                                                                                                                                                                   |
+| `payments.ts`          | Dodo Payments. `verifyDodoSignature` (Standard Webhooks, raw-body HMAC-SHA256) + `processDodoWebhook` (idempotent, transactional tier/credit application via `webhook_events`). The `app.ts` webhook route delegates here.                                                                                                                                                                                                                           |
+| `email.ts`             | Transactional email via Resend (raw `fetch`). `sendTransactionalEmail({ env, to, subject, html, text? })` no-ops + warns if `RESEND_API_KEY` is unset; `subscriptionConfirmationEmail({ plan })` builds the upgrade confirmation. Sender from `RESEND_FROM`.                                                                                                                                                                                         |
 
 ## Boundaries
 
@@ -58,17 +58,17 @@
 
 Defined in [`api/_lib/tier.ts`](../api/_lib/tier.ts):
 
-| | `free` | `pro` | `team` |
-| --- | --- | --- | --- |
-| `characters` | 5 | 100 | 1000 |
-| `threadsPerCharacter` | 20 | 200 | 2000 |
-| `credits` (monthly) | 1 000 | 25 000 | 250 000 |
-| `retentionDays` | 30 | 365 | 1095 |
-| `aiDictation` | ❌ | ✅ | ✅ |
-| `explain` | ❌ | ✅ | ✅ |
-| `translationMemory` | ❌ | ✅ | ✅ |
-| `customVibeStops` | ❌ | ❌ | ✅ |
-| `elevenLabsTts` | ❌ | ✅ | ✅ |
+|                       | `free` | `pro`  | `team`  |
+| --------------------- | ------ | ------ | ------- |
+| `characters`          | 5      | 100    | 1000    |
+| `threadsPerCharacter` | 20     | 200    | 2000    |
+| `credits` (monthly)   | 1 000  | 25 000 | 250 000 |
+| `retentionDays`       | 30     | 365    | 1095    |
+| `aiDictation`         | ❌     | ✅     | ✅      |
+| `explain`             | ❌     | ✅     | ✅      |
+| `translationMemory`   | ❌     | ✅     | ✅      |
+| `customVibeStops`     | ❌     | ❌     | ✅      |
+| `elevenLabsTts`       | ❌     | ✅     | ✅      |
 
 Notes:
 
@@ -80,14 +80,14 @@ Notes:
 
 ## Integrations
 
-| Integration | Purpose | Notes |
-| --- | --- | --- |
-| **Clerk** | Auth (sessions, user records) | secret + publishable keys; both required to authenticate requests. |
-| **Cloudflare Hyperdrive** | Postgres connection pool at the edge | `HYPERDRIVE.connectionString`; falls back to `DATABASE_URL` in local dev. |
-| **OpenRouter** | LLM provider for translation, explain, and dictation | `OPENROUTER_API_KEY`; key/model routing lives in `openrouter.ts → resolveCallTarget`, calls go through `chatJson`. |
-| **ElevenLabs** | TTS | One voice ID per **Vibe stop** (`ELEVENLABS_VOICE_<STOP>`); proxied from `/api/ai/text-to-speech`. The `ja` language code triggers `apply_language_text_normalization: true`. |
-| **Dodo Payments** | Subscriptions | `DODO_API_KEY`, `DODO_WEBHOOK_SECRET`, `DODO_PRODUCT_{PRO,TEAM}[_ANNUAL]`. Raw-`fetch` REST calls (test/live base URL by `APP_ENV`): `/checkouts`, `/subscriptions/{id}` cancel, `/subscriptions/{id}/change-plan`. Signature-verified, idempotent webhooks. All in `payments.ts`. |
-| **Resend** | Transactional email | `RESEND_API_KEY`, `RESEND_FROM` (verified sender). `email.ts`; the Dodo webhook fires a subscription-confirmation email on activation (best-effort — a send failure never fails the webhook ack). |
+| Integration               | Purpose                                              | Notes                                                                                                                                                                                                                                                                              |
+| ------------------------- | ---------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Clerk**                 | Auth (sessions, user records)                        | secret + publishable keys; both required to authenticate requests.                                                                                                                                                                                                                 |
+| **Cloudflare Hyperdrive** | Postgres connection pool at the edge                 | `HYPERDRIVE.connectionString`; falls back to `DATABASE_URL` in local dev.                                                                                                                                                                                                          |
+| **OpenRouter**            | LLM provider for translation, explain, and dictation | `OPENROUTER_API_KEY`; key/model routing lives in `openrouter.ts → resolveCallTarget`, calls go through `chatJson`.                                                                                                                                                                 |
+| **ElevenLabs**            | TTS                                                  | One voice ID per **Vibe stop** (`ELEVENLABS_VOICE_<STOP>`); proxied from `/api/ai/text-to-speech`. The `ja` language code triggers `apply_language_text_normalization: true`.                                                                                                      |
+| **Dodo Payments**         | Subscriptions                                        | `DODO_API_KEY`, `DODO_WEBHOOK_SECRET`, `DODO_PRODUCT_{PRO,TEAM}[_ANNUAL]`. Raw-`fetch` REST calls (test/live base URL by `APP_ENV`): `/checkouts`, `/subscriptions/{id}` cancel, `/subscriptions/{id}/change-plan`. Signature-verified, idempotent webhooks. All in `payments.ts`. |
+| **Resend**                | Transactional email                                  | `RESEND_API_KEY`, `RESEND_FROM` (verified sender). `email.ts`; the Dodo webhook fires a subscription-confirmation email on activation (best-effort — a send failure never fails the webhook ack).                                                                                  |
 
 ## Error model
 
@@ -97,7 +97,7 @@ Notes:
 
 ## Activity log
 
-Writes go through `activity.ts → logActivity`. Action strings are free-form for now but should be `<noun>.<verb>` (e.g. `character.created`, `segment.regenerated`, `tier.upgraded`). Metadata is a small jsonb blob — keep it under a few kilobytes.
+Writes go through `activity.ts → logActivity`. Action strings are free-form for now but should be `<noun>.<verb>` (e.g. `character.created`, `segment.retried`, `tier.upgraded`). Metadata is a small jsonb blob — keep it under a few kilobytes.
 
 ## Translation request flow
 
@@ -119,14 +119,16 @@ client POST /api/segments { threadId, sourceText, vibe? }
   ├─ ai.translateSegment(...)                    ← one OpenRouter call
   ├─ embeddings.embedText({ text: sourceText })  ← always platform key + platform embed model (best-effort)
   └─ insert segments (server-produced fields + source_embedding)
-  └─ if canonical AND platform-default → translation-cache.upsertCache(...)  (BYOK output never seeds the shared cache)
-  └─ if platform-key path → credits.reconcileSpend(reservation, realCost)  (refund on failure)
+  └─ if platform-key path → credits.reconcileSpend(reservation, realCost)  (refunded only if the model call or the insert failed)
+  └─ best-effort, never refunds: if canonical AND platform-default → translation-cache.upsertCache(...)  (BYOK output never seeds the shared cache); bump threads.updated_at; activity log
   ← Segment row
 ```
 
 "Commit-to-translate" (the UI fires one call per intended translation, not per slider move — see [DESIGN.md](./DESIGN.md#the-vibe-slider)) plus the two pre-checks means sliding between already-generated stops is instant and free.
 
 The pre-call **reservation** (`reserveCredits`) is an atomic conditional decrement: it is the concurrency gate that stops a near-zero-balance user from fanning out many simultaneous paid calls past a single stale balance read. It is settled by `reconcileSpend` to the real token cost (or `refundReservation` if the call fails), and writes a pending `credit_ledger` row up front so the `balance == sum(ledger)` invariant holds throughout.
+
+**Refund vs. settle ordering.** A hold is refunded only when the model call or the row insert fails. Once the Segment (or Explain) row is stored the hold is reconciled, and nothing afterwards refunds — a flaky post-commit write would otherwise hand out a free translation that in-thread dedupe then serves at 0 credits. Post-commit steps go through `bestEffort()` in `app.ts`. A refund that itself fails is logged with the ledger id and rethrown, never swallowed. Retry overwrites the row owner-scoped (`where id and user_id`) in the same statement that drops stale Explains; zero rows → refund + `404`.
 
 ## Explain request flow
 
@@ -140,11 +142,11 @@ client GET /api/segments/:segmentId/explain
 ```
 
 - The client never supplies `targetText` or `tokenAlignment` on create.
-- Tier `segmentsPerMonth` cap is enforced *before* the provider call so a quota-busting attempt doesn't burn tokens.
+- Tier `segmentsPerMonth` cap is enforced _before_ the provider call so a quota-busting attempt doesn't burn tokens.
 - Provider timeout → `504`. Malformed model output (alignment parse failure) → `502`. Tier cap hit → `403`.
 - Streaming is intentionally deferred — the structured output (`targetText` + `tokenAlignment` + Explain hooks) doesn't streaming-render cleanly, and the latency budget (~1–4s) fits a spinner. Revisit when load data warrants it.
 
 ## Open questions
 
 - ~~Do we keep prompts inline in `ai.ts`, or factor them out?~~ **Resolved:** prompt construction lives in a single pure `prompts.ts` (`buildTranslateMessages` / `buildExplainMessages` / `buildDictationMessages`), unit-tested without network; `ai.ts`/`explain.ts` own the OpenRouter call via `openrouter.ts → chatJson`.
-- ~~Should `payments.ts` validate Dodo webhook signatures before the body parser runs?~~ **Resolved:** yes — verify on the raw body *before* `JSON.parse`, fail `400` with no state mutation, then dedupe via `webhook_events` inside the same transaction as the tier/credit grant. See [adr/0005](./adr/0005-commerce-checkout-and-webhook-idempotency.md) and [SECURITY.md](./SECURITY.md#webhook-signatures).
+- ~~Should `payments.ts` validate Dodo webhook signatures before the body parser runs?~~ **Resolved:** yes — verify on the raw body _before_ `JSON.parse`, fail `400` with no state mutation, then dedupe via `webhook_events` inside the same transaction as the tier/credit grant. See [adr/0005](./adr/0005-commerce-checkout-and-webhook-idempotency.md) and [SECURITY.md](./SECURITY.md#webhook-signatures).

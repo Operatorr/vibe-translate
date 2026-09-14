@@ -18,4 +18,20 @@ create table if not exists thread_shares (
 );
 
 create index if not exists thread_shares_thread_id_idx on thread_shares (thread_id);
-create index if not exists threads_user_id_starred_idx on threads (user_id) where starred;
+create index if not exists thread_shares_user_id_idx on thread_shares (user_id);
+
+-- At most one LIVE link per Thread. `POST /api/threads/:id/share` inserts with
+-- `on conflict (thread_id) where revoked_at is null do nothing`, so concurrent
+-- mints converge on one token. Revoke any duplicates a pre-index race left
+-- behind (keeping the newest) so the index can build.
+update thread_shares s
+   set revoked_at = now()
+ where s.revoked_at is null
+   and exists (
+     select 1 from thread_shares n
+      where n.thread_id = s.thread_id
+        and n.revoked_at is null
+        and (n.created_at, n.id) > (s.created_at, s.id)
+   );
+create unique index if not exists thread_shares_live_thread_uniq
+  on thread_shares (thread_id) where revoked_at is null;

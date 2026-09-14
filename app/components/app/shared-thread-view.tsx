@@ -1,13 +1,22 @@
 import * as React from 'react'
 import { toast } from 'sonner'
 
-import { LANG_FLAG, LANG_NAME, getVibesForLang } from '@/components/vibe-design/design-data'
+import {
+  LANG_FLAG,
+  LANG_NAME,
+  getVibesForLang,
+} from '@/components/vibe-design/design-data'
 import { Icon } from '@/components/vibe-design/icon'
-import { cssVars } from '@/lib/css-vars'
-import { downloadTextFile, slugify, threadToMarkdown } from '@/lib/markdown-export'
+import { safeCssColor } from '@/lib/css-vars'
+import {
+  downloadTextFile,
+  slugify,
+  threadToMarkdown,
+} from '@/lib/markdown-export'
 import { speak, stopSpeaking } from '@/lib/tts'
-import type { SegmentToken, SharedThread } from '@/lib/types'
+import type { SharedThread } from '@/lib/types'
 import { copyText } from '@/lib/clipboard'
+import { initialsFor } from '@/lib/initials'
 
 import { SegmentCard, type SegmentView } from './segment-card'
 
@@ -19,9 +28,10 @@ const LANGUAGE_NAMES = LANG_NAME as Record<string, string>
 export function SharedThreadView({ data }: { data: SharedThread }) {
   const { thread, character, segments } = data
   const vibes = getVibesForLang(character.targetLanguage)
-  const [hoveredTok, setHoveredTok] = React.useState<{ segId: string; token: SegmentToken } | null>(null)
   const [speakingId, setSpeakingId] = React.useState<string | null>(null)
   const ordered = [...segments].reverse()
+
+  React.useEffect(() => () => stopSpeaking(), [])
 
   const copy = async (seg: SegmentView) => {
     try {
@@ -53,7 +63,12 @@ export function SharedThreadView({ data }: { data: SharedThread }) {
   const download = () => {
     downloadTextFile(
       `${slugify(thread.title)}.md`,
-      threadToMarkdown({ title: thread.title, character, segments, shareUrl: window.location.href }),
+      threadToMarkdown({
+        title: thread.title,
+        character,
+        segments,
+        shareUrl: window.location.href,
+      }),
     )
   }
 
@@ -61,24 +76,37 @@ export function SharedThreadView({ data }: { data: SharedThread }) {
     <main className="workspace share-workspace">
       <div className="workspace__head">
         <div className="workspace__head-left">
-          <div className="threads__char-avatar" style={cssVars({ background: character.color ?? 'var(--blue-400)' })}>
-            {character.initials ?? character.name[0]}
+          <div
+            className="threads__char-avatar"
+            style={{ background: safeCssColor(character.color) }}
+          >
+            {character.initials || initialsFor(character.name)}
           </div>
           <div className="workspace__title-block">
             <h2 className="workspace__title">{thread.title}</h2>
             <div className="workspace__pair">
               {character.name}
               <span className="arrow">·</span>
-              {FLAGS[character.sourceLanguage]} {LANGUAGE_NAMES[character.sourceLanguage] ?? character.sourceLanguage}
+              {FLAGS[character.sourceLanguage]}{' '}
+              {LANGUAGE_NAMES[character.sourceLanguage] ??
+                character.sourceLanguage}
               <span className="arrow">→</span>
-              {FLAGS[character.targetLanguage]} {LANGUAGE_NAMES[character.targetLanguage] ?? character.targetLanguage}
+              {FLAGS[character.targetLanguage]}{' '}
+              {LANGUAGE_NAMES[character.targetLanguage] ??
+                character.targetLanguage}
               <span className="arrow">·</span>
               {segments.length} translation{segments.length === 1 ? '' : 's'}
             </div>
           </div>
         </div>
         <div className="workspace__head-right">
-          <button className="workspace__icon-btn" title="Download as Markdown" onClick={download}>
+          <button
+            type="button"
+            className="workspace__icon-btn"
+            title="Download as Markdown"
+            aria-label="Download as Markdown"
+            onClick={download}
+          >
             <Icon name="download" />
           </button>
         </div>
@@ -101,8 +129,6 @@ export function SharedThreadView({ data }: { data: SharedThread }) {
             vibes={vibes}
             defaultVibe={character.defaultVibe}
             onExpand={() => undefined}
-            hoveredTok={hoveredTok}
-            onHoverTok={setHoveredTok}
             onCopy={(seg) => void copy(seg)}
             onSpeak={(seg) => void speakSeg(seg)}
             speaking={speakingId === s.id}

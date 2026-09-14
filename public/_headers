@@ -1,0 +1,7 @@
+# Cloudflare static-asset headers. Share links carry a capability token in the
+# path; keep them out of search indexes and never leak the URL via Referer.
+# The API side (/api/share/*) sets the same headers in api/app.ts.
+/share/*
+  X-Robots-Tag: noindex, nofollow
+  Referrer-Policy: no-referrer
+  Cache-Control: no-store

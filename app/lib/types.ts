@@ -150,7 +150,15 @@ export type ExplainMorpheme = {
   surface: string
   base: string
   reading: string
-  role: 'verb' | 'noun' | 'particle' | 'aux' | 'adjective' | 'adverb' | 'punct' | 'other'
+  role:
+    | 'verb'
+    | 'noun'
+    | 'particle'
+    | 'aux'
+    | 'adjective'
+    | 'adverb'
+    | 'punct'
+    | 'other'
   inflection: string
 }
 export type ExplainKanji = {
@@ -161,7 +169,11 @@ export type ExplainKanji = {
   strokeCount: number
   jlpt: string
 }
-export type ExplainGrammar = { pattern: string; note: string; dialectNote?: string }
+export type ExplainGrammar = {
+  pattern: string
+  note: string
+  dialectNote?: string
+}
 export type ExplainBody = {
   romaji: string
   literalGloss: ExplainGloss[]

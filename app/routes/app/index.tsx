@@ -16,7 +16,11 @@ function AppIndex() {
       toast.success('Subscription active — your new credits are ready.')
       params.delete('upgraded')
       const query = params.toString()
-      window.history.replaceState({}, '', window.location.pathname + (query ? `?${query}` : ''))
+      window.history.replaceState(
+        {},
+        '',
+        window.location.pathname + (query ? `?${query}` : ''),
+      )
     }
   }, [])
 

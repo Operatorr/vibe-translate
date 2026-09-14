@@ -14,6 +14,7 @@ export default defineConfig({
   },
   test: {
     environment: 'node',
-    include: ['api/**/*.test.ts'],
+    // app/lib holds the SPA's pure helpers (cache updaters, alignment, export).
+    include: ['api/**/*.test.ts', 'app/lib/**/*.test.ts'],
   },
 })

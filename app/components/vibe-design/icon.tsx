@@ -5,6 +5,7 @@ import type { CSSProperties } from 'react'
 // Name → lucide glyph. Rendered inside `.vt-icon` so the design-system sizing
 // rules in app.css apply uniformly.
 const ICONS: Record<string, LucideIcon> = {
+  'alert-triangle': Icons.TriangleAlert,
   archive: Icons.Archive,
   'arrow-left': Icons.ArrowLeft,
   'arrow-left-right': Icons.ArrowLeftRight,

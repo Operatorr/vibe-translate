@@ -1,8 +1,12 @@
+import * as PopoverPrimitive from '@radix-ui/react-popover'
 import * as React from 'react'
 
-// Minimal anchored popover: renders `content` below the trigger and closes on
-// outside click or Escape. Used for the thread options menu and share panel;
-// small enough that pulling in another Radix package isn't worth it.
+// Anchored, portaled popover on Radix (DESIGN.md: keep Radix primitives for
+// focus management and ARIA). Radix moves focus into the content on open,
+// returns it to the trigger on close, dismisses on Escape / outside click /
+// focus leaving, and sets `aria-expanded`/`aria-controls` on the trigger.
+// `trigger` must be a single focusable element (rendered via `asChild`) and
+// must not toggle `open` itself — Radix owns that.
 export function Popover({
   open,
   onOpenChange,
@@ -13,37 +17,25 @@ export function Popover({
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
-  trigger: React.ReactNode
+  trigger: React.ReactElement
   children: React.ReactNode
   align?: 'start' | 'end'
   label: string
 }) {
-  const ref = React.useRef<HTMLDivElement>(null)
-  React.useEffect(() => {
-    if (!open) return
-    const onDown = (event: MouseEvent | TouchEvent) => {
-      if (ref.current && !ref.current.contains(event.target as Node)) onOpenChange(false)
-    }
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onOpenChange(false)
-    }
-    document.addEventListener('mousedown', onDown)
-    document.addEventListener('touchstart', onDown)
-    document.addEventListener('keydown', onKey)
-    return () => {
-      document.removeEventListener('mousedown', onDown)
-      document.removeEventListener('touchstart', onDown)
-      document.removeEventListener('keydown', onKey)
-    }
-  }, [open, onOpenChange])
   return (
-    <div className="vt-popover-anchor" ref={ref}>
-      {trigger}
-      {open && (
-        <div className={`vt-popover vt-popover--${align}`} role="dialog" aria-label={label}>
+    <PopoverPrimitive.Root open={open} onOpenChange={onOpenChange}>
+      <PopoverPrimitive.Trigger asChild>{trigger}</PopoverPrimitive.Trigger>
+      <PopoverPrimitive.Portal>
+        <PopoverPrimitive.Content
+          className="vt-popover"
+          align={align}
+          sideOffset={6}
+          collisionPadding={8}
+          aria-label={label}
+        >
           {children}
-        </div>
-      )}
-    </div>
+        </PopoverPrimitive.Content>
+      </PopoverPrimitive.Portal>
+    </PopoverPrimitive.Root>
   )
 }

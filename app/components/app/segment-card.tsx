@@ -3,6 +3,7 @@ import * as React from 'react'
 import { Icon } from '@/components/vibe-design/icon'
 import type { VibePreset } from '@/components/vibe-design/design-data'
 import type { ExplainBody, SegmentToken, VibeStop } from '@/lib/types'
+import { normalizeWord, srcWordSet } from '@/lib/alignment'
 
 import { ExplainPanel } from './explain-panel'
 
@@ -32,21 +33,20 @@ const eyebrow: React.CSSProperties = {
   textTransform: 'uppercase',
 }
 
+// The worker stamps `{ cached: true }` on Segments served from the shared
+// translation cache. Rows with unknown usage show nothing rather than a guess.
 function tokenMeta(seg: SegmentView): string {
   const usage = seg.tokenUsage ?? {}
+  if (usage.cached === true) return 'cached · 0 cr'
   const completion = Number(usage.completionTokens)
   if (Number.isFinite(completion) && completion > 0) return `${completion} tok`
-  return 'cached · 0 cr'
+  return ''
 }
 
-// Words on the source side light up when the hovered target token's `src`
-// span contains them. Punctuation-only tokens never match.
-function sourceIsPaired(word: string, hovered: SegmentToken | null): boolean {
-  if (!hovered?.src) return false
-  const w = word.toLowerCase().replace(/[^\p{L}\p{N}']/gu, '')
-  if (!w) return false
-  return hovered.src.toLowerCase().includes(w)
-}
+// Alignment selection: a target token index, plus whether it was pinned by a
+// tap/click (sticky until tapped again or tapped outside the card) or is a
+// transient mouse hover.
+type Selection = { index: number; pinned: boolean } | null
 
 export function SegmentCard({
   seg,
@@ -59,8 +59,6 @@ export function SegmentCard({
   defaultVibe,
   onExpand,
   explain,
-  hoveredTok,
-  onHoverTok,
   onCopy,
   onRetry,
   retrying,
@@ -78,8 +76,6 @@ export function SegmentCard({
   defaultVibe: VibeStop
   onExpand: (id: string) => void
   explain?: SegmentExplainState
-  hoveredTok: { segId: string; token: SegmentToken } | null
-  onHoverTok: (value: { segId: string; token: SegmentToken } | null) => void
   onCopy: (seg: SegmentView) => void
   onRetry?: (seg: SegmentView) => void
   retrying?: boolean
@@ -87,25 +83,78 @@ export function SegmentCard({
   speaking?: boolean
   readOnly?: boolean
 }) {
-  const hovered = hoveredTok?.segId === seg.id ? hoveredTok.token : null
+  // Hover-align state lives per card so hovering a token re-renders only this
+  // card, not the whole shell.
+  const [selection, setSelection] = React.useState<Selection>(null)
+  const rowRef = React.useRef<HTMLDivElement>(null)
   const vibe = vibes.find((v) => v.id === (seg.vibe ?? defaultVibe))
-  const isJa = targetLanguage.toLowerCase().startsWith('ja')
-  const tokens =
-    seg.tokenAlignment.length > 0 ? seg.tokenAlignment : [{ t: seg.targetText, src: seg.sourceText }]
+  const isJa = /^ja([-_]|$)/i.test(targetLanguage)
+  // Memoized so the no-alignment fallback keeps a stable identity across renders.
+  const tokens = React.useMemo(
+    () =>
+      seg.tokenAlignment.length > 0
+        ? seg.tokenAlignment
+        : [{ t: seg.targetText, src: seg.sourceText }],
+    [seg.tokenAlignment, seg.targetText, seg.sourceText],
+  )
+  const srcSets = React.useMemo(
+    () => tokens.map((tok) => srcWordSet(tok.src)),
+    [tokens],
+  )
+  const selectedSrc = selection ? srcSets[selection.index] : undefined
+
+  // A retry replaces the alignment; drop a selection that now points elsewhere.
+  React.useEffect(() => setSelection(null), [tokens])
+
+  // A pinned (tapped) selection clears when a tap lands outside this card.
+  React.useEffect(() => {
+    if (!selection?.pinned) return
+    const onDown = (event: PointerEvent) => {
+      if (rowRef.current && !rowRef.current.contains(event.target as Node))
+        setSelection(null)
+    }
+    document.addEventListener('pointerdown', onDown)
+    return () => document.removeEventListener('pointerdown', onDown)
+  }, [selection?.pinned])
+
+  // Mouse gets transient hover. Touch/pen synthesize enter events right before
+  // the click, which used to select and then immediately un-select on the same
+  // tap — so they only act on the tap itself, which pins/unpins.
+  const alignProps = (index: number) => ({
+    onPointerEnter: (e: React.PointerEvent) => {
+      if (e.pointerType === 'mouse' && index >= 0) {
+        setSelection((curr) => (curr?.pinned ? curr : { index, pinned: false }))
+      }
+    },
+    onClick: () =>
+      setSelection((curr) =>
+        index < 0 || (curr?.pinned && curr.index === index)
+          ? null
+          : { index, pinned: true },
+      ),
+  })
+  const clearHover = (e: React.PointerEvent) => {
+    if (e.pointerType === 'mouse')
+      setSelection((curr) => (curr?.pinned ? curr : null))
+  }
+  const meta = readOnly ? '' : tokenMeta(seg)
 
   return (
     <div
       className={
-        'segment ' + (isActive ? 'segment--active ' : '') + (collapsed ? 'segment--collapsed' : '')
+        'segment ' +
+        (isActive ? 'segment--active ' : '') +
+        (collapsed ? 'segment--collapsed' : '')
       }
       id={`segment-${seg.id}`}
     >
-      <div className="segment__row">
+      <div className="segment__row" ref={rowRef}>
         <div className="segment__num">{String(idx).padStart(2, '0')}</div>
 
         {collapsed ? (
           <div className="segment__src is-collapsed">
             <button
+              type="button"
               className="segment__src-pill"
               onClick={() => onExpand(seg.id)}
               title={seg.sourceText}
@@ -119,11 +168,22 @@ export function SegmentCard({
         ) : (
           <div className="segment__src">
             <div style={eyebrow}>SOURCE · {sourceLanguage}</div>
-            <div className="segment__src-text">
+            <div className="segment__src-text" onPointerLeave={clearHover}>
               {seg.sourceText.split(/(\s+)/).map((w, i) => {
                 if (!w.trim()) return w
+                const word = normalizeWord(w)
+                const paired = !!word && !!selectedSrc?.has(word)
+                // Source → target direction: a word selects the first target
+                // token whose `src` span contains that exact word.
+                const tokenIndex = word
+                  ? srcSets.findIndex((set) => set.has(word))
+                  : -1
                 return (
-                  <span key={i} className={'tok ' + (sourceIsPaired(w, hovered) ? 'is-paired' : '')}>
+                  <span
+                    key={i}
+                    className={'tok ' + (paired ? 'is-paired' : '')}
+                    {...alignProps(tokenIndex)}
+                  >
                     {w}
                   </span>
                 )
@@ -132,63 +192,85 @@ export function SegmentCard({
           </div>
         )}
 
-        {!collapsed && <div className="segment__divider"></div>}
+        <div className="segment__divider"></div>
 
         <div className="segment__tgt">
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 8 }}>
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'baseline',
+              gap: 8,
+            }}
+          >
             <div style={eyebrow}>
               TARGET · {targetLanguage}
               {vibe && (
-                <span style={{ color: vibe.color, marginLeft: 8 }}>{vibe.label}</span>
+                <span style={{ color: vibe.color, marginLeft: 8 }}>
+                  {vibe.label}
+                </span>
               )}
             </div>
-            {!readOnly && <div className="segment__tgt-meta">{tokenMeta(seg)}</div>}
+            {meta && <div className="segment__tgt-meta">{meta}</div>}
           </div>
           <div
-            className={'segment__tgt-text ' + (isJa ? 'segment__tgt-text--ja' : '')}
-            onMouseLeave={() => onHoverTok(null)}
+            className={
+              'segment__tgt-text ' + (isJa ? 'segment__tgt-text--ja' : '')
+            }
+            onPointerLeave={clearHover}
           >
-            {tokens.map((p, i) => {
-              const paired = hovered != null && hovered === p
-              return (
-                <span
-                  key={i}
-                  className={'tok ' + (paired ? 'is-paired' : '')}
-                  onMouseEnter={() => onHoverTok({ segId: seg.id, token: p })}
-                  onClick={() => onHoverTok(paired ? null : { segId: seg.id, token: p })}
-                  title={p.src ? `↔ ${p.src}` : ''}
-                >
-                  {p.t}
-                </span>
-              )
-            })}
+            {tokens.map((p, i) => (
+              <span
+                key={i}
+                className={'tok ' + (selection?.index === i ? 'is-paired' : '')}
+                title={p.src ? `↔ ${p.src}` : ''}
+                {...alignProps(i)}
+              >
+                {p.t}
+              </span>
+            ))}
           </div>
           <div className="segment__tgt-row">
             <div className="segment__actions">
-              <button className="segment__action" onClick={() => onCopy(seg)} title="Copy translation">
+              <button
+                type="button"
+                className="segment__action"
+                onClick={() => onCopy(seg)}
+                title="Copy translation"
+              >
                 <Icon name="copy" /> COPY
               </button>
               {!readOnly && onRetry && (
                 <button
+                  type="button"
                   className={'segment__action ' + (retrying ? 'is-busy' : '')}
                   onClick={() => onRetry(seg)}
                   disabled={retrying}
                   title="Re-translate this segment"
                 >
-                  <Icon name={retrying ? 'loader' : 'rotate-ccw'} className={retrying ? 'vt-spin' : ''} />{' '}
+                  <Icon
+                    name={retrying ? 'loader' : 'rotate-ccw'}
+                    className={retrying ? 'vt-spin' : ''}
+                  />{' '}
                   {retrying ? 'RETRYING' : 'RETRY'}
                 </button>
               )}
               <button
+                type="button"
                 className={'segment__action ' + (speaking ? 'is-open' : '')}
                 onClick={() => onSpeak(seg)}
                 title={speaking ? 'Stop' : 'Read aloud'}
               >
-                <Icon name={speaking ? 'square' : 'volume-2'} /> {speaking ? 'STOP' : 'SPEAK'}
+                <Icon name={speaking ? 'square' : 'volume-2'} />{' '}
+                {speaking ? 'STOP' : 'SPEAK'}
               </button>
               {!readOnly && explain && (
                 <button
-                  className={'segment__action segment__action--explain ' + (explain.open ? 'is-open' : '')}
+                  type="button"
+                  className={
+                    'segment__action segment__action--explain ' +
+                    (explain.open ? 'is-open' : '')
+                  }
                   onClick={explain.onToggle}
                   aria-expanded={explain.open}
                 >
@@ -240,7 +322,11 @@ export function PendingSegmentCard({
         <div className="segment__tgt">
           <div style={eyebrow}>
             TARGET · {targetLanguage}
-            {vibe && <span style={{ color: vibe.color, marginLeft: 8 }}>{vibe.label}</span>}
+            {vibe && (
+              <span style={{ color: vibe.color, marginLeft: 8 }}>
+                {vibe.label}
+              </span>
+            )}
           </div>
           <div className="segment__tgt-text segment__pending">
             <Icon name="loader" className="vt-spin" />

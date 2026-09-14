@@ -29,7 +29,10 @@ function isMobile(): boolean {
 
 function isIos(): boolean {
   const ua = navigator.userAgent
-  return /iPad|iPhone|iPod/.test(ua) || (ua.includes('Mac') && navigator.maxTouchPoints > 1)
+  return (
+    /iPad|iPhone|iPod/.test(ua) ||
+    (ua.includes('Mac') && navigator.maxTouchPoints > 1)
+  )
 }
 
 function recentlyDismissed(): boolean {
@@ -59,21 +62,30 @@ export function InstallPrompt() {
       shown = true
       toast('Install Vibe Translate', {
         id: 'pwa-install',
-        description: 'Add it to your home screen for a full-screen, offline-ready app.',
+        description:
+          'Add it to your home screen for a full-screen, offline-ready app.',
         duration: 12_000,
         action: {
           label: 'Install',
           onClick: () => {
-            void event.prompt().then(() => event.userChoice).then(({ outcome }) => {
-              if (outcome === 'dismissed') markDismissed()
-            })
+            void event
+              .prompt()
+              .then(() => event.userChoice)
+              .then(({ outcome }) => {
+                if (outcome === 'dismissed') markDismissed()
+              })
           },
         },
         onDismiss: markDismissed,
       })
     }
 
+    // Only suppress the browser's own install UI when we present ours. Desktop
+    // Chromium keeps its native omnibox/infobar install affordance.
+    // (Sonner's timeout fires `onAutoClose`, not `onDismiss`, so an ignored
+    // toast is not remembered as a dismissal — only an explicit close is.)
     const onBeforeInstall = (event: Event) => {
+      if (shown || !isMobile()) return
       event.preventDefault()
       showChromium(event as BeforeInstallPromptEvent)
     }

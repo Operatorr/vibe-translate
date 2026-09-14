@@ -960,7 +960,9 @@ const LandingContent = ({ onNavigate }: { onNavigate: NavigateFn }) => {
 const PricingContent = ({ onNavigate }: { onNavigate: NavigateFn }) => {
   const [annual, setAnnual] = React.useState(true)
   const { getToken, isSignedIn } = useAuth()
-  const [pendingPlan, setPendingPlan] = React.useState<'pro' | 'team' | null>(null)
+  const [pendingPlan, setPendingPlan] = React.useState<'pro' | 'team' | null>(
+    null,
+  )
 
   const price = (m: number, y: number) => (annual ? `$${y}` : `$${m}`)
 
@@ -973,14 +975,22 @@ const PricingContent = ({ onNavigate }: { onNavigate: NavigateFn }) => {
     }
     setPendingPlan(plan)
     try {
-      const { checkoutUrl } = await apiFetch<{ checkoutUrl: string }>('/api/billing/checkout', {
-        method: 'POST',
-        body: JSON.stringify({ plan, billingPeriod: annual ? 'annual' : 'monthly' }),
-        getToken,
-      })
+      const { checkoutUrl } = await apiFetch<{ checkoutUrl: string }>(
+        '/api/billing/checkout',
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            plan,
+            billingPeriod: annual ? 'annual' : 'monthly',
+          }),
+          getToken,
+        },
+      )
       window.location.assign(checkoutUrl)
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Could not start checkout.')
+      toast.error(
+        error instanceof Error ? error.message : 'Could not start checkout.',
+      )
       setPendingPlan(null)
     }
   }

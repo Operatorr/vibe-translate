@@ -37,7 +37,17 @@ const localeSchema = z
 export const characterCreateSchema = z.object({
   name: z.string().trim().min(1).max(80),
   initials: z.string().trim().max(4).optional(),
-  color: z.string().trim().max(40).optional(),
+  // Rendered as an inline CSS background (including on public share pages), so
+  // only plain color syntaxes — never `url(...)` or other fetchable values.
+  color: z
+    .string()
+    .trim()
+    .max(40)
+    .regex(
+      /^(#[0-9a-f]{3,8}|var\(--[a-z0-9-]+\)|(rgb|hsl)a?\([\d\s.,%/]+\))$/i,
+      'Invalid color',
+    )
+    .optional(),
   sourceLanguage: localeSchema,
   targetLanguage: localeSchema,
   defaultVibe: vibeStopSchema.default('casual'),
@@ -68,7 +78,10 @@ export const characterDraftSchema = z.object({
 
 export const characterUpdateSchema = characterCreateSchema
   .partial()
-  .refine((value) => Object.keys(value).length > 0, 'At least one field is required')
+  .refine(
+    (value) => Object.keys(value).length > 0,
+    'At least one field is required',
+  )
 
 export const characterReorderSchema = z.object({
   characterIds: z.array(z.string().uuid()).min(1).max(500),
@@ -85,7 +98,11 @@ export const threadUpdateSchema = z
     archived: z.boolean().optional(),
     starred: z.boolean().optional(),
   })
-  .refine((value) => Object.keys(value).length > 0, 'At least one field is required')
+  .strict()
+  .refine(
+    (value) => Object.keys(value).length > 0,
+    'At least one field is required',
+  )
 
 // A single token in the word-alignment map for a Segment's target text.
 // `t` is the target token; `src` is the matching span on the source side
@@ -115,7 +132,10 @@ export const segmentUpdateSchema = z
     vibe: vibeStopSchema.optional(),
     tokenAlignment: z.array(segmentTokenSchema).max(2000).optional(),
   })
-  .refine((value) => Object.keys(value).length > 0, 'At least one field is required')
+  .refine(
+    (value) => Object.keys(value).length > 0,
+    'At least one field is required',
+  )
 
 // Translation Memory search. `q` is embedded server-side; the worker returns
 // top-K matching past Segments scoped to the user. See docs/API.md.
@@ -168,7 +188,10 @@ export const byokModelsSchema = z
       .nullable()
       .optional(),
   })
-  .refine((value) => Object.keys(value).length > 0, 'At least one field is required')
+  .refine(
+    (value) => Object.keys(value).length > 0,
+    'At least one field is required',
+  )
 
 export const waitlistSchema = z.object({
   email: z.string().trim().email(),

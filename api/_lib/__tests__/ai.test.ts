@@ -4,13 +4,19 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 // chatJson to test the translate/dictation wiring + post-processing in isolation.
 vi.mock('../openrouter', () => ({ chatJson: vi.fn() }))
 
-import { draftCharacterFromDictation, finalizeTokens, translateSegment } from '../ai'
+import {
+  draftCharacterFromDictation,
+  finalizeTokens,
+  translateSegment,
+} from '../ai'
 import type { TranslateSegmentInput } from '../ai'
 import { chatJson, type ProviderConfig } from '../openrouter'
 
 const mockChatJson = vi.mocked(chatJson)
 
-const input = (overrides: Partial<TranslateSegmentInput> = {}): TranslateSegmentInput => ({
+const input = (
+  overrides: Partial<TranslateSegmentInput> = {},
+): TranslateSegmentInput => ({
   sourceText: 'good morning',
   sourceLanguage: 'en-US',
   targetLanguage: 'ja-JP',
@@ -20,7 +26,10 @@ const input = (overrides: Partial<TranslateSegmentInput> = {}): TranslateSegment
   ...overrides,
 })
 
-const config: ProviderConfig = { apiKey: 'sk-test', modelId: 'deepseek/deepseek-v4-pro' }
+const config: ProviderConfig = {
+  apiKey: 'sk-test',
+  modelId: 'deepseek/deepseek-v4-pro',
+}
 
 beforeEach(() => mockChatJson.mockReset())
 
@@ -43,10 +52,15 @@ describe('finalizeTokens', () => {
 
   it('degrades to a single token when tokens do not reconstruct the target', () => {
     const out = finalizeTokens(
-      { targetText: 'おはようございます', tokens: [{ t: 'おはよう', src: 'good morning' }] },
+      {
+        targetText: 'おはようございます',
+        tokens: [{ t: 'おはよう', src: 'good morning' }],
+      },
       input({ sourceText: 'good morning' }),
     )
-    expect(out.tokens).toEqual([{ t: 'おはようございます', src: 'good morning' }])
+    expect(out.tokens).toEqual([
+      { t: 'おはようございます', src: 'good morning' },
+    ])
   })
 
   it('degrades when the tokens array is empty', () => {
@@ -55,19 +69,31 @@ describe('finalizeTokens', () => {
   })
 
   it('throws on whitespace-only target text', () => {
-    expect(() => finalizeTokens({ targetText: '   ', tokens: [] }, input())).toThrow()
+    expect(() =>
+      finalizeTokens({ targetText: '   ', tokens: [] }, input()),
+    ).toThrow()
   })
 })
 
 describe('translateSegment', () => {
   it('returns translation, alignment, and usage on the happy path', async () => {
     mockChatJson.mockResolvedValue({
-      data: { targetText: 'おはよう', tokens: [{ t: 'おはよう', src: 'good morning' }] },
-      tokenUsage: { modelId: 'deepseek/deepseek-v4-pro', promptTokens: 10, completionTokens: 5, costCents: 5 },
+      data: {
+        targetText: 'おはよう',
+        tokens: [{ t: 'おはよう', src: 'good morning' }],
+      },
+      tokenUsage: {
+        modelId: 'deepseek/deepseek-v4-pro',
+        promptTokens: 10,
+        completionTokens: 5,
+        costCents: 5,
+      },
     })
     const result = await translateSegment(input(), config)
     expect(result.targetText).toBe('おはよう')
-    expect(result.tokenAlignment).toEqual([{ t: 'おはよう', src: 'good morning' }])
+    expect(result.tokenAlignment).toEqual([
+      { t: 'おはよう', src: 'good morning' },
+    ])
     expect(result.tokenUsage).toEqual({
       modelId: 'deepseek/deepseek-v4-pro',
       promptTokens: 10,
@@ -78,11 +104,19 @@ describe('translateSegment', () => {
 
   it('degrades alignment when the model output does not reconstruct', async () => {
     mockChatJson.mockResolvedValue({
-      data: { targetText: 'おはようございます', tokens: [{ t: 'おはよう', src: 'good morning' }] },
+      data: {
+        targetText: 'おはようございます',
+        tokens: [{ t: 'おはよう', src: 'good morning' }],
+      },
       tokenUsage: { modelId: 'm', promptTokens: 1, completionTokens: 1 },
     })
-    const result = await translateSegment(input({ sourceText: 'good morning' }), config)
-    expect(result.tokenAlignment).toEqual([{ t: 'おはようございます', src: 'good morning' }])
+    const result = await translateSegment(
+      input({ sourceText: 'good morning' }),
+      config,
+    )
+    expect(result.tokenAlignment).toEqual([
+      { t: 'おはようございます', src: 'good morning' },
+    ])
   })
 
   it('surfaces a malformed provider result as an error (no swallowing)', async () => {
@@ -103,12 +137,22 @@ describe('draftCharacterFromDictation', () => {
         targetLanguage: 'not a locale',
         defaultVibe: 'friend',
         temperature: 0.6,
-        persona: { age: '20s', region: 'Tokyo', formality: null, traits: ['warm'] },
+        persona: {
+          age: '20s',
+          region: 'Tokyo',
+          formality: null,
+          tone: null,
+          verbosity: null,
+          traits: ['warm'],
+        },
         instructions: 'friend in Tokyo',
       },
       tokenUsage: { modelId: 'g', promptTokens: 8, completionTokens: 4 },
     })
-    const { draft, tokenUsage } = await draftCharacterFromDictation('text my friend Tomoko', config)
+    const { draft, tokenUsage } = await draftCharacterFromDictation(
+      'text my friend Tomoko',
+      config,
+    )
     expect(draft).toMatchObject({
       ok: true,
       name: 'Tomoko',
@@ -118,8 +162,37 @@ describe('draftCharacterFromDictation', () => {
       instructions: 'friend in Tokyo',
     })
     expect(draft.targetLanguage).toBeUndefined() // invalid BCP-47 dropped
-    expect(draft.persona).toEqual({ age: '20s', region: 'Tokyo', traits: ['warm'] })
+    expect(draft.persona).toEqual({
+      age: '20s',
+      region: 'Tokyo',
+      traits: ['warm'],
+    })
     expect(tokenUsage?.promptTokens).toBe(8)
+  })
+
+  it('extracts voice fields (tone, clamped verbosity) into the persona', async () => {
+    mockChatJson.mockResolvedValue({
+      data: {
+        ok: true,
+        name: null,
+        sourceLanguage: null,
+        targetLanguage: null,
+        defaultVibe: null,
+        temperature: null,
+        persona: {
+          age: null,
+          region: null,
+          formality: null,
+          tone: ' dry ',
+          verbosity: 3,
+          traits: [],
+        },
+        instructions: null,
+      },
+      tokenUsage: { modelId: 'g', promptTokens: 1, completionTokens: 1 },
+    })
+    const { draft } = await draftCharacterFromDictation('x', config)
+    expect(draft.persona).toEqual({ tone: 'dry', verbosity: 1, traits: [] })
   })
 
   it('clamps an out-of-range temperature', async () => {

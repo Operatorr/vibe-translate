@@ -2,9 +2,12 @@ import { Link } from '@tanstack/react-router'
 import * as React from 'react'
 
 import { Icon } from './icon'
-import { DEFAULT_PALETTE_ITEMS, type PaletteItem } from './palette-items'
+import {
+  DEFAULT_PALETTE_ITEMS,
+  MOD_KEY,
+  type PaletteItem,
+} from './palette-items'
 import type { NavigateFn, VibeRoute } from './use-vibe-frame'
-
 
 export const CommandPalette = ({
   open,
@@ -19,7 +22,9 @@ export const CommandPalette = ({
 }) => {
   const [q, setQ] = React.useState('')
   const [cursor, setCursor] = React.useState(0)
-  const filtered = items.filter((i) => i.label.toLowerCase().includes(q.toLowerCase()))
+  const filtered = items.filter((i) =>
+    i.label.toLowerCase().includes(q.toLowerCase()),
+  )
   React.useEffect(() => {
     if (open) {
       setQ('')
@@ -63,11 +68,16 @@ export const CommandPalette = ({
           <kbd>esc</kbd>
         </div>
         <div className="vt-palette__list">
-          {filtered.length === 0 && <div className="vt-palette__empty">No results.</div>}
+          {filtered.length === 0 && (
+            <div className="vt-palette__empty">No results.</div>
+          )}
           {filtered.map((i, idx) => (
             <button
+              type="button"
               key={i.id}
-              className={'vt-palette__item ' + (idx === cursor ? 'is-cursor' : '')}
+              className={
+                'vt-palette__item ' + (idx === cursor ? 'is-cursor' : '')
+              }
               onMouseEnter={() => setCursor(idx)}
               onClick={() => pick(i.id)}
             >
@@ -138,7 +148,13 @@ export const SiteNav = ({
                 <circle cx="44" cy="22" r="14" fill="black" />
               </mask>
             </defs>
-            <circle cx="32" cy="32" r="28" fill="currentColor" mask="url(#sn-notch)" />
+            <circle
+              cx="32"
+              cy="32"
+              r="28"
+              fill="currentColor"
+              mask="url(#sn-notch)"
+            />
             <circle cx="44" cy="22" r="6" fill="#1f7aff" />
           </svg>
           <span className="vt-mark__name">Vibe Translate</span>
@@ -147,17 +163,22 @@ export const SiteNav = ({
           {navLink('/', 'Product')}
           {navLink('/pricing', 'Pricing')}
           {navLink('/app', 'App')}
-          <Link className="vt-navlink" to={'/changelog' as never}>
+          <Link className="vt-navlink" to="/changelog">
             Changelog
           </Link>
         </nav>
       </div>
       <div className="vt-topnav__right">
         {route === '/app' ? (
-          <button className="vt-cmdk" onClick={onOpenPalette} aria-label="Search or jump to">
+          <button
+            type="button"
+            className="vt-cmdk"
+            onClick={onOpenPalette}
+            aria-label="Search or jump to"
+          >
             <Icon name="search" />
             <span>Search or jump to</span>
-            <kbd>⌘K</kbd>
+            <kbd>{MOD_KEY === '⌘' ? '⌘K' : 'Ctrl K'}</kbd>
           </button>
         ) : (
           <a
@@ -171,11 +192,17 @@ export const SiteNav = ({
             Sign in
           </a>
         )}
-        <button className="vt-iconbtn" aria-label="Toggle theme" onClick={onToggleTheme}>
+        <button
+          type="button"
+          className="vt-iconbtn"
+          aria-label="Toggle theme"
+          onClick={onToggleTheme}
+        >
           <Icon name={theme === 'dark' ? 'sun' : 'moon'} />
         </button>
         {route !== '/app' && (
           <button
+            type="button"
             className="vt-btn vt-btn--primary"
             style={{ padding: '8px 14px', fontSize: 13 }}
             onClick={() => onNavigate('/app')}

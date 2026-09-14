@@ -6,13 +6,13 @@
 
 Two environments only — **Local** and **Production**. There is no staging tier.
 
-| | Local | Production |
-| --- | --- | --- |
-| Runtime | `wrangler dev` / Vite | Cloudflare Workers |
-| Config | top-level `wrangler.toml` + `.dev.vars` overrides | top-level `wrangler.toml` |
-| `APP_ENV` | `development` (set in `.dev.vars`) | `production` (in `wrangler.toml`) |
-| Database | local Neon database, direct via `DATABASE_URL` | production Neon database, via **Hyperdrive** |
-| pgvector | enabled on the local Neon DB | enabled on the prod Neon DB |
+|           | Local                                             | Production                                   |
+| --------- | ------------------------------------------------- | -------------------------------------------- |
+| Runtime   | `wrangler dev` / Vite                             | Cloudflare Workers                           |
+| Config    | top-level `wrangler.toml` + `.dev.vars` overrides | top-level `wrangler.toml`                    |
+| `APP_ENV` | `development` (set in `.dev.vars`)                | `production` (in `wrangler.toml`)            |
+| Database  | local Neon database, direct via `DATABASE_URL`    | production Neon database, via **Hyperdrive** |
+| pgvector  | enabled on the local Neon DB                      | enabled on the prod Neon DB                  |
 
 The committed `wrangler.toml` **is the production config**. Local dev overrides what it needs through `.dev.vars`.
 

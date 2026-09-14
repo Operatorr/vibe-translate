@@ -23,15 +23,15 @@ The per-target-language mapping from **Vibe stop** ID to localized label, hint, 
 _Avoid_: vibe map, presets
 
 **Character**:
-A persistent persona the user translates *toward* — name, source/target language pair, default **Vibe**, temperature, and **Persona** attributes (age, region, formality, traits). Functions like a contact. Examples: "Oba-chan" (Osaka grandma, casual, kansai-ben), "Buchou-san" (Tokyo manager, keigo+).
+A persistent persona the user translates _toward_ — name, source/target language pair, default **Vibe**, temperature, and **Persona** attributes (age, region, formality, traits). Functions like a contact. Examples: "Oba-chan" (Osaka grandma, casual, kansai-ben), "Buchou-san" (Tokyo manager, keigo+).
 _Avoid_: contact, profile, persona (the inner attribute), recipient
 
 **Persona**:
-The *structured* attribute block on a **Character** — age, region, formality, tone, verbosity (0–1), free-form trait list. Drives the UI chips and the deterministic onboarding form.
+The _structured_ attribute block on a **Character** — age, region, formality, tone, verbosity (0–1), free-form trait list. Drives the UI chips and the deterministic onboarding form.
 _Avoid_: traits, profile
 
 **Instructions**:
-The *free-form* natural-language extension appended to a **Character**'s system prompt at translate time ("his name is Kenji, your college roommate, uses Kansai-ben"). Complements the structured **Persona** — Persona is fields, Instructions is prose. Populated by dictation onboarding or hand-edited.
+The _free-form_ natural-language extension appended to a **Character**'s system prompt at translate time ("his name is Kenji, your college roommate, uses Kansai-ben"). Complements the structured **Persona** — Persona is fields, Instructions is prose. Populated by dictation onboarding or hand-edited.
 _Avoid_: notes, prompt, system prompt (that is the whole assembled prompt, not this fragment)
 
 **Onboarding**:
@@ -87,7 +87,7 @@ The `models` table — the system of record for which model serves which **Task*
 _Avoid_: model config, model table
 
 **Translation memory**:
-The user's accumulated **Segments** treated as a searchable corpus. Each Segment carries an embedding of its source text, and `GET /api/memory?q=…` returns top-K cosine-similar past Segments. Lets a learner answer *"did we already translate something like this?"*. Pro+ only.
+The user's accumulated **Segments** treated as a searchable corpus. Each Segment carries an embedding of its source text, and `GET /api/memory?q=…` returns top-K cosine-similar past Segments. Lets a learner answer _"did we already translate something like this?"_. Pro+ only.
 _Avoid_: TM (full term in docs), search history, corpus
 
 **Explain memory**:
@@ -103,11 +103,11 @@ A single result row from a **Translation memory** search — a past Segment with
 _Avoid_: match, result
 
 **Translation cache**:
-A *shared, cross-user* store of **canonical** translations (no persona, no instructions, default temperature), keyed by an exact fingerprint of `(source_text, source_lang, target_lang, vibe, model_id)`. A cache hit returns instantly and costs **0 credits**. Distinct from **Translation memory**: the cache is exact-match and global; memory is semantic and per-user. Privacy-safe — you only hit on inputs you supplied yourself.
+A _shared, cross-user_ store of **canonical** translations (no persona — tone and verbosity included — no instructions, default temperature), keyed by an exact fingerprint of `(source_text, source_lang, target_lang, vibe, model_id)`. A cache hit returns instantly and costs **0 credits**. Distinct from **Translation memory**: the cache is exact-match and global; memory is semantic and per-user. Privacy-safe — you only hit on inputs you supplied yourself.
 _Avoid_: translation memory (different mechanism), shared memory
 
 **Canonical translation**:
-A translation produced with empty **Persona**, empty **Instructions**, and default **Temperature** — the only kind eligible for the shared **Translation cache**. Personalized translations are per-user only.
+A translation produced with empty **Persona** (every field, including the voice fields tone and verbosity), empty **Instructions**, and default **Temperature** — the only kind eligible for the shared **Translation cache**. Personalized translations are per-user only.
 _Avoid_: default translation, vanilla
 
 ### Voices
@@ -143,6 +143,6 @@ _Avoid_: vibe (use **Vibe stop** when referring to the slider value), speaker, v
 
 ## Flagged ambiguities
 
-- **"vibe"** is one concept with two surfaces: it drives both translation register *and* TTS voice selection. The slider value (a **Vibe stop**) is the single input; **Voice persona** is downstream and never independently chosen. The two terms are kept distinct in this glossary because they describe different *effects* (text vs audio), not different *inputs*.
+- **"vibe"** is one concept with two surfaces: it drives both translation register _and_ TTS voice selection. The slider value (a **Vibe stop**) is the single input; **Voice persona** is downstream and never independently chosen. The two terms are kept distinct in this glossary because they describe different _effects_ (text vs audio), not different _inputs_.
 - **"memory"** is overloaded between **Translation memory** (cross-Segment retrieval over source_embedding) and **Explain memory** (per-target-text Explain reuse). They share a name because both are user-data-as-corpus, but the access patterns differ — TM is embedding similarity, Explain memory is hash equality on `target_text`.
-- **"cache"** is *not* used for Explain memory. Both Translation memory and Explain memory are first-class persistent stores; "cache" would imply they are disposable, which they are not.
+- **"cache"** is _not_ used for Explain memory. Both Translation memory and Explain memory are first-class persistent stores; "cache" would imply they are disposable, which they are not.
