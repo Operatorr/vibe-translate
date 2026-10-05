@@ -70,7 +70,7 @@ The Google OAuth client's authorized redirect URIs are `https://translate.marrow
 
 **Manual, via the Neon SQL Editor.** There is no migration runner.
 
-1. For a fresh database: paste [`db/migrations/0001_initial.sql`](../db/migrations) into the Neon SQL Editor and run it (it bootstraps at the current 1536-dim embedding schema), then apply each later migration in order (`0002`…`0006`). All are idempotent (`create … if not exists`, `on conflict do nothing`, type-guarded `alter`s).
+1. For a fresh database: paste [`db/migrations/0001_initial.sql`](../db/migrations) into the Neon SQL Editor and run it (it bootstraps at the current 1536-dim embedding schema), then apply each later migration in order (`0002`…`0007`). All are idempotent (`create … if not exists`, `on conflict do nothing`, type-guarded `alter`s).
 2. For incremental changes: author `db/migrations/000N_<slug>.sql`, keep [`db/schema.sql`](../db/schema.sql) in sync as the canonical bootstrap, and paste the new migration into the Neon SQL Editor for each environment (local DB, then prod DB). **Never edit an already-applied migration in place** — `create … if not exists` means a re-run won't alter existing objects, so a forward migration is the only thing that reaches provisioned databases (e.g. `0004_embed_dims_1536.sql` migrates a pre-1536 DB's `vector(3072)` columns down to 1536).
 3. `pgvector` must be enabled (`create extension if not exists vector;` — included in the migration).
 
@@ -92,6 +92,7 @@ Use Cloudflare's version history: `wrangler rollback` (or pin a prior version vi
 
 ## Pre-launch checklist
 
+- [ ] Apply `0007_auth_account_uniqueness.sql` before deploying this review fix. It fails if duplicate provider/account pairs exist; resolve those rows before retrying.
 - [x] Production Neon DB created, `pgvector` enabled, all migrations (`0001`…`0006`) applied in order.
 - [x] Hyperdrive `vibe-translate-prod` created against the prod Neon DB (query caching **disabled**) and bound in `wrangler.jsonc`.
 - [x] Deployed (`pnpm run deploy`) to `https://translate.marrowtech.app`; `APP_URL` matches.

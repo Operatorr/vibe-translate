@@ -281,8 +281,8 @@ async function applySubscriptionGrant(
 ): Promise<void> {
   const credits = tierLimits[plan].credits
   // Guarantee the FK target exists before the credit_ledger insert below: a user
-  // can reach checkout (and thus this webhook) before any authenticated DB route
-  // has lazily created their row via getOrCreateUser. We can't call
+  // may arrive through an external or legacy checkout. Our checkout route
+  // already provisions the profile and email via getOrCreateUser. We can't call
   // getOrCreateUser here — it opens its own transaction (recordGrant), and we're
   // already inside the webhook's transaction — so insert the bare row directly.
   // No signup grant is applied; getOrCreateUser stays the single owner of that.

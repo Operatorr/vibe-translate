@@ -10,6 +10,8 @@ let answer: (sql: string, params: unknown[]) => Answer
 const queries: string[] = []
 
 const fakeDb = {
+  connect: vi.fn(async () => undefined),
+  end: vi.fn(async () => undefined),
   query: vi.fn(async (sql: string, params: unknown[] = []) => {
     const norm = sql.replace(/\s+/g, ' ').trim().toLowerCase()
     queries.push(norm)
@@ -20,6 +22,9 @@ const fakeDb = {
 }
 
 vi.mock('../_lib/auth', () => ({
+  authBaseURL: (env: { APP_URL?: string }) =>
+    env.APP_URL ?? 'http://localhost:5173',
+  authHandler: vi.fn(),
   auth:
     () =>
     async (
@@ -407,5 +412,115 @@ describe('translate credit ordering', () => {
     expect(credits.reconcileSpend).not.toHaveBeenCalled()
     const update = queries.find((q) => q.startsWith('with updated as'))
     expect(update).toContain('where id = $1 and user_id = $5')
+  })
+})
+
+describe('checkout-first profile provisioning', () => {
+  it('provisions the email and signup grant before checkout, then sends activation mail', async () => {
+    const users = await import('../_lib/users')
+    const actualUsers =
+      await vi.importActual<typeof import('../_lib/users')>('../_lib/users')
+    vi.mocked(users.getOrCreateUser).mockImplementationOnce(
+      actualUsers.getOrCreateUser,
+    )
+    let profile: Row | null = null
+    answer = (sql, params) => {
+      if (sql.startsWith('insert into users (auth_user_id, email)')) {
+        profile = {
+          auth_user_id: params[0],
+          email: params[1],
+          tier: 'free',
+          credits_balance: 0,
+          was_inserted: true,
+        }
+        return { rows: [profile] }
+      }
+      if (sql.startsWith('insert into users (auth_user_id)')) {
+        profile ??= { auth_user_id: params[0], email: null }
+        return { rows: [] }
+      }
+      if (sql.startsWith('select email from users'))
+        return { rows: profile ? [profile] : [] }
+      if (sql.startsWith('insert into webhook_events'))
+        return { rows: [], rowCount: 1 }
+      return { rows: [] }
+    }
+    const fetch = vi
+      .spyOn(globalThis, 'fetch')
+      .mockImplementation(async (input, options) => {
+        if (String(input).endsWith('/checkouts')) {
+          expect(profile).toMatchObject({
+            auth_user_id: 'user_1',
+            email: 'a@example.com',
+          })
+          expect(
+            queries.some((sql) => sql.startsWith('insert into credit_ledger')),
+          ).toBe(true)
+          return Response.json({
+            checkout_url: 'https://checkout.test/session',
+          })
+        }
+        expect(String(input)).toBe('https://api.resend.com/emails')
+        expect(JSON.parse(String(options?.body))).toMatchObject({
+          to: 'a@example.com',
+          subject: 'Your Vibe Translate Pro plan is active',
+        })
+        return Response.json({ id: 'mail' })
+      })
+    const billingEnv = {
+      ...env,
+      DODO_PRODUCT_PRO: 'prod-pro',
+      DODO_API_KEY: 'test-key',
+      DODO_WEBHOOK_SECRET: btoa('test-signing-key'),
+      RESEND_API_KEY: 'test-email-key',
+    }
+    const checkout = await app.request(
+      '/api/billing/checkout',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ plan: 'pro', billingPeriod: 'monthly' }),
+      },
+      billingEnv,
+    )
+    expect(checkout.status).toBe(200)
+    const raw = JSON.stringify({
+      type: 'subscription.active',
+      data: {
+        subscription_id: 'sub-1',
+        metadata: { user_id: 'user_1', plan: 'pro' },
+      },
+    })
+    const timestamp = String(Math.floor(Date.now() / 1000))
+    const key = await crypto.subtle.importKey(
+      'raw',
+      new TextEncoder().encode('test-signing-key'),
+      { name: 'HMAC', hash: 'SHA-256' },
+      false,
+      ['sign'],
+    )
+    const signature = await crypto.subtle.sign(
+      'HMAC',
+      key,
+      new TextEncoder().encode(`evt-1.${timestamp}.${raw}`),
+    )
+    const encoded = btoa(String.fromCharCode(...new Uint8Array(signature)))
+    const webhook = await app.request(
+      '/api/billing/webhooks/dodo',
+      {
+        method: 'POST',
+        headers: {
+          'webhook-id': 'evt-1',
+          'webhook-timestamp': timestamp,
+          'webhook-signature': `v1,${encoded}`,
+        },
+        body: raw,
+      },
+      billingEnv,
+    )
+    expect(webhook.status).toBe(200)
+    expect(await webhook.json()).toEqual({ ok: true, status: 'processed' })
+    expect(fetch).toHaveBeenCalledTimes(2)
+    fetch.mockRestore()
   })
 })

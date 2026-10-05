@@ -69,11 +69,12 @@ create table if not exists auth_rate_limits (
 );
 
 create index if not exists auth_sessions_user_id_idx on auth_sessions (user_id);
+create unique index if not exists auth_accounts_provider_account_idx on auth_accounts (provider_id, account_id);
 create index if not exists auth_accounts_user_id_idx on auth_accounts (user_id);
 create index if not exists auth_verifications_identifier_idx on auth_verifications (identifier);
 
 -- Users carry tier, credit balance, and optional BYOK credentials. Keyed by the
--- Better Auth user; created lazily on first authenticated request (users.ts).
+-- Better Auth user; created by app-data handlers and checkout (users.ts).
 create table if not exists users (
   id uuid primary key default gen_random_uuid(),
   auth_user_id text not null unique references auth_users (id) on delete cascade,

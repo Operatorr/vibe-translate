@@ -5,7 +5,7 @@ import { zValidator } from '@hono/zod-validator'
 
 import { draftCharacterFromDictation, translateSegment } from './_lib/ai'
 import { logActivity } from './_lib/activity'
-import { auth, withAuth } from './_lib/auth'
+import { auth, authBaseURL, authHandler } from './_lib/auth'
 import {
   computeCredits,
   estimateCredits,
@@ -71,7 +71,7 @@ const app = new Hono<AppEnv>()
 app.use(
   '*',
   cors({
-    origin: (_origin, c) => c.env.APP_URL ?? 'http://localhost:5173',
+    origin: (_origin, c) => authBaseURL(c.env),
     allowHeaders: ['content-type'],
     allowMethods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
     credentials: true,
@@ -124,9 +124,7 @@ app.post('/api/waitlist', zValidator('json', waitlistSchema), async (c) => {
 // Better Auth's endpoints: sign-up/in, email verification, password reset,
 // Google OAuth callback, session. Public by design — Better Auth enforces its
 // own origin (trustedOrigins) and rate-limit checks. See api/_lib/auth.ts.
-app.on(['GET', 'POST'], '/api/auth/*', (c) =>
-  withAuth(c, (a) => a.handler(c.req.raw)),
-)
+app.on(['GET', 'POST'], '/api/auth/*', authHandler)
 
 app.use('/api/users/*', auth())
 app.use('/api/characters/*', auth())
@@ -1787,6 +1785,9 @@ app.post(
   zValidator('json', checkoutSchema),
   async (c) => {
     const { plan, billingPeriod } = c.req.valid('json')
+    await withDb(c.env, (db) =>
+      getOrCreateUser(db, c.get('userId'), c.get('email')),
+    )
     const { checkoutUrl } = await createCheckoutSession({
       env: c.env,
       plan,

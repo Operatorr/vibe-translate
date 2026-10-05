@@ -19,7 +19,16 @@ export function useSignedIn(): boolean | undefined {
 // Ends the session, wipes the offline query cache, and hard-navigates home so
 // no in-memory data from this account survives into the next one.
 export async function signOut(): Promise<void> {
-  await authClient.signOut()
   await clearPersistedCache().catch(() => undefined)
+  const { error } = await authClient.signOut()
+  if (error) throw new Error(error.message ?? 'Could not sign out.')
   window.location.assign('/')
+}
+
+// The reset response has already expired cookies; explicitly clear the client
+// store because /reset-password is not a built-in session notification path.
+export async function clearResetSession(): Promise<void> {
+  await clearPersistedCache().catch(() => undefined)
+  const session = authClient.$store.atoms.session
+  session.set({ ...session.get(), data: null, error: null, isPending: false })
 }

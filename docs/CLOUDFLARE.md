@@ -7,10 +7,10 @@
 - Entry point: [`functions/api/[[route]].ts`](../functions/api/[[route]].ts), a one-line re-export of the Hono app in `api/app.ts`.
 - `wrangler.jsonc` (JSONC, validated against `node_modules/wrangler/config-schema.json`):
   - `name: "vibe-translate"`, `main: "functions/api/[[route]].ts"`
-  - `account_id` pins **Thewiding@gmail.com's Account** (`c03f9623…`) — the account that owns the `marrowtech.app` zone. The wrangler login can see two accounts, so this is required for non-interactive commands.
+  - `account_id` pins **the production Cloudflare account** (`c03f9623…`) — the account that owns the `marrowtech.app` zone. The wrangler login can see two accounts, so this is required for non-interactive commands.
   - `compatibility_date: "2026-10-01"`, `compatibility_flags: ["nodejs_compat"]` — `nodejs_compat` is required for the `pg` driver and Node built-ins used by the server helpers.
   - `observability.enabled` — Workers Logs on, 100% head sampling (`wrangler tail` for live logs).
-  - `placement: { mode: "targeted", region: "aws:ap-southeast-1" }` — **Targeted Placement** runs the Worker beside the Neon DB (AWS Singapore). An auth or API request makes several sequential queries. The `marrowtech.app` zone is on the free plan, so APAC traffic (the owner is in Taiwan) was often served from SJC, and every query crossed the Pacific. Sign-in dropped from ~2–3 s to ~0.9 s after the change. Responses carry `cf-placement: remote-SIN`. Only Worker invocations (`/api/*`) move; static assets are still served at the edge.
+  - `placement: { mode: "targeted", region: "aws:ap-southeast-1" }` — **Targeted Placement** runs the Worker beside the Neon DB (AWS Singapore). An auth or API request makes several sequential queries. The `marrowtech.app` zone is on the free plan, so APAC traffic was often served from SJC, and every query crossed the Pacific. Sign-in dropped from ~2–3 s to ~0.9 s after the change. Responses carry `cf-placement: remote-SIN`. Only Worker invocations (`/api/*`) move; static assets are still served at the edge.
 
 ## Bindings
 
@@ -36,7 +36,7 @@ Production binds Hyperdrive to the production Neon database:
 "hyperdrive": [{ "binding": "HYPERDRIVE", "id": "651eb586c0de4e9596c954f951ddcd05" }]
 ```
 
-- Hyperdrive config **`vibe-translate-prod`** (Thewiding account) points at the production Neon DB, which lives in AWS `ap-southeast-1` (Singapore). The Worker's placement targets that region (see [Worker](#worker)). (`domarrow-hyperdrive` in the same account belongs to another project — don't reuse it.)
+- Hyperdrive config **`vibe-translate-prod`** (production account) points at the production Neon DB, which lives in AWS `ap-southeast-1` (Singapore). The Worker's placement targets that region (see [Worker](#worker)). (`domarrow-hyperdrive` in the same account belongs to another project — don't reuse it.)
 - `api/_lib/db.ts` reads `env.HYPERDRIVE?.connectionString ?? env.DATABASE_URL`. In production that is Hyperdrive, used for **connection pooling only**. Query caching is **disabled** on `vibe-translate-prod`, because cached reads would serve stale sessions (e.g. after sign-out) and stale lists after writes. Keep it off.
 - **Local dev:** `wrangler dev` refuses to start with a Hyperdrive binding and no local connection string. It reads `CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE` from a gitignored **`.env`** (Wrangler CLI env — `.dev.vars` does _not_ work for this). Set it to the same local Neon URL as `DATABASE_URL`.
 - The bound Neon database must have `pgvector` enabled (translation memory depends on it).

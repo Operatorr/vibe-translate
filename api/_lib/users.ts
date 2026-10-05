@@ -4,7 +4,7 @@ import { recordGrant } from './credits'
 import { tierLimits, type Tier } from './tier'
 
 // User provisioning. Better Auth owns identity (auth_users); the first
-// authenticated request for a given auth_user_id lazily creates this app-side
+// app-data or checkout request for a given auth_user_id creates this app-side
 // row and grants the free-tier signup credits. Routes call getOrCreateUser
 // after connecting. (The auth() middleware only resolves the session and sets
 // context vars — it never touches this table.) See docs/BACKEND.md.
@@ -99,7 +99,10 @@ export function toMeResponse(user: UserRow) {
     displayName: user.displayName,
     tier: user.tier,
     limits: tierLimits[user.tier],
-    credits: { balance: user.creditsBalance, refilledAt: user.creditsRefilledAt },
+    credits: {
+      balance: user.creditsBalance,
+      refilledAt: user.creditsRefilledAt,
+    },
     byok: {
       configured: user.byokConfigured,
       last4: user.byokLast4,

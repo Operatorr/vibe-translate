@@ -36,7 +36,7 @@ The enum is defined on the database so the schema is self-describing for agents 
 
 #### Identity (`auth_*`)
 
-Better Auth's core schema ([adr/0008](./adr/0008-better-auth-replaces-clerk.md)), added in `0006_better_auth.sql`. Columns are snake_case through the `modelName`/`fields` mapping in `api/_lib/auth.ts`. The DDL is what Better Auth's `getMigrations` emits for that mapping, so **change the two together**. Ids are Better Auth-generated text.
+Better Auth's core schema ([adr/0008](./adr/0008-better-auth-replaces-clerk.md)), added in `0006_better_auth.sql`. Columns are snake_case through the `modelName`/`fields` mapping in `api/_lib/auth.ts`. The DDL follows Better Auth’s `getMigrations` for that mapping, with an additional unique provider/account index (`0007` also adds it to existing databases), so **change the two together**. Ids are Better Auth-generated text.
 
 | table                | holds                                                                                                                      |
 | -------------------- | -------------------------------------------------------------------------------------------------------------------------- |
@@ -46,11 +46,11 @@ Better Auth's core schema ([adr/0008](./adr/0008-better-auth-replaces-clerk.md))
 | `auth_verifications` | email-verification and password-reset tokens (`identifier`, `value`, `expires_at`)                                         |
 | `auth_rate_limits`   | Better Auth rate-limit counters (`key` unique, `count`, `last_request` epoch ms); production only                          |
 
-Indexes: `auth_sessions (user_id)`, `auth_accounts (user_id)`, `auth_verifications (identifier)`. Better Auth owns these rows. App code reads identity only through the session (`c.get('userId')`, `c.get('email')`).
+Indexes: `auth_sessions (user_id)`, `auth_accounts (user_id)`, unique `auth_accounts (provider_id, account_id)`, `auth_verifications (identifier)`. Better Auth owns these rows. App code reads identity only through the session (`c.get('userId')`, `c.get('email')`).
 
 #### `users`
 
-The app-side profile. `api/_lib/users.ts → getOrCreateUser` creates it lazily on the first authenticated request. It is keyed by the Better Auth user id (`auth_user_id`, text), which is the FK target for all per-user tables.
+The app-side profile. `api/_lib/users.ts → getOrCreateUser` creates it lazily when an app-data handler or billing checkout first calls it. It is keyed by the Better Auth user id (`auth_user_id`, text), which is the FK target for all per-user tables.
 
 | column                            | type                                                | notes                                                                                                                                                                   |
 | --------------------------------- | --------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

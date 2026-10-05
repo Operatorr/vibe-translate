@@ -1,5 +1,6 @@
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu'
 import * as React from 'react'
+import { toast } from 'sonner'
 
 import { Icon } from '@/components/vibe-design/icon'
 import { authClient, signOut } from '@/lib/auth-client'
@@ -39,7 +40,15 @@ export function AccountMenu() {
           <DropdownMenu.Separator className="vt-menu__sep" />
           <DropdownMenu.Item
             className="vt-menu__item"
-            onSelect={() => void signOut()}
+            onSelect={() =>
+              void signOut().catch((error: unknown) => {
+                toast.error(
+                  error instanceof Error
+                    ? error.message
+                    : 'Could not sign out.',
+                )
+              })
+            }
           >
             <Icon name="log-out" /> Sign out
           </DropdownMenu.Item>

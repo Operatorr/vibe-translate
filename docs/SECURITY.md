@@ -8,15 +8,16 @@ Self-hosted **Better Auth** ([adr/0008](./adr/0008-better-auth-replaces-clerk.md
 
 - **Methods.** Email + password (min 8 chars) with **required** email verification, and Google OAuth (`prompt=select_account`, enabled only when `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET` are set). An unverified account can't sign in: the attempt re-sends the verification link, and opening that link signs the user in. Password reset is by email and **revokes every session**.
 - **Session = cookie, not a token.** The session is a same-origin httpOnly cookie, `SameSite=Lax`, and `Secure` with the `__Secure-` prefix on https. JavaScript never sees it, and the API accepts no bearer token. Expiry is 30 days and slides (`expiresIn` 30d, `updateAge` 1d): use after a day extends it, so daily users stay signed in, and 30 idle days expire it.
-- **Cookie cache.** A signed session-data cookie (5 min) lets most requests skip the session DB read. The trade-off is that revocation (sign-out on another device, password reset) can lag by up to 5 minutes.
+- **Cookie cache.** A signed session-data cookie (5 min) lets most requests skip the session DB read. The trade-off is that revocation (sign-out on another device, password reset) on other devices can lag by up to 5 minutes. The successful reset response expires this browser’s session and cache cookies immediately, and the client clears its session store.
 - **Route guard.** `auth()` resolves the session (cookie cache, else DB) and sets `userId` and `email` on context. No session → `401`. It forwards refreshed `Set-Cookie` headers onto the handler's response. It never touches `users`: handlers call `getOrCreateUser`, which lazily creates the app-side row and grants signup credits.
 - **Origin check.** `trustedOrigins = [APP_URL]`. Better Auth rejects requests from any other `Origin` with `403 INVALID_ORIGIN`, and callback/redirect URLs must be on that origin too.
 - **Rate limits** are on only when `APP_ENV=production`. Counters live in Postgres (`auth_rate_limits`) because isolate memory doesn't persist across requests. Better Auth's built-in rules apply: sign-in and sign-up are capped at 3 per 10 s, and the email senders (`/send-verification-email`, `/request-password-reset`) at 3/min so they can't flood an inbox. The client IP comes from `cf-connecting-ip`. The edge WAF stays the coarse layer.
-- **Account linking.** Google links into an existing account only if that account's email is already verified (Better Auth's `requireLocalEmailVerified` default). This blocks pre-registration takeover: an attacker who signs up with a victim's address can't have the victim's later Google sign-in merge into it. `/auth` explains the resulting `account_not_linked` error.
+- **Account linking.** Google links into an existing account only if that account's email is already verified (explicitly configured `account.accountLinking.requireLocalEmailVerified: true`). This blocks pre-registration takeover: an attacker who signs up with a victim's address can't have the victim's later Google sign-in merge into it. `/auth` explains the resulting `account_not_linked` error.
 - **No timing leak.** Auth emails are sent after the response (`waitUntil`), so latency doesn't reveal whether an address has an account.
+- **OAuth tokens at rest.** `auth_accounts.access_token`, `refresh_token`, and `id_token` use Better Auth’s default plaintext storage. A database read compromise can expose live Google access and refresh tokens. Restrict database and backup access, never log these columns, and revoke affected grants after a compromise. BYOK encryption does not cover OAuth tokens.
 - **Passwords** are hashed with scrypt, using native `node:crypto` in workerd through the `@better-auth/utils` `workerd` export condition. The hash is stored in `auth_accounts.password` (`provider_id = 'credential'`).
-- **Fails closed.** A missing `BETTER_AUTH_SECRET` returns `500` on `/api/auth/*` and every guarded route, never open. Production also needs `RESEND_API_KEY` + `RESEND_FROM` on a Resend-verified domain, or no one can verify an email. Locally, with no key, the worker logs `[auth] <subject> → <email>: <url>` instead of sending.
-- **Sign-out** (`app/lib/auth-client.ts → signOut`) ends the session, deletes the persisted IndexedDB query cache, and hard-navigates to `/`, so nothing from one account survives into the next on a shared device.
+- **Fails closed.** A missing `BETTER_AUTH_SECRET` returns `500` on `/api/auth/*` and every guarded route, never open. Missing production `APP_URL` returns `500`, with no localhost fallback. Email-dependent auth POSTs return `503` before dispatch if production `RESEND_API_KEY` is missing. Production also needs `RESEND_FROM` on a Resend-verified domain. Deferred delivery failures are logged; the inbox screen tells users to sign in again to request a fresh verification link. Locally, with no key, the worker logs `[auth] <subject> → <email>: <url>` instead of sending.
+- **Sign-out** (`app/lib/auth-client.ts → signOut`) pauses cache persistence, cancels queries and clears memory, deletes the user-scoped IndexedDB cache after pending writes, ends the session, and hard-navigates to `/`, so nothing from one account survives into the next on a shared device.
 
 ## Authorization & data scoping {#per-user-scoping}
 
@@ -29,13 +30,14 @@ Self-hosted **Better Auth** ([adr/0008](./adr/0008-better-auth-replaces-clerk.md
 
 Only these routes are intentionally public:
 
-| route                   | why public               | protection                                                             |
-| ----------------------- | ------------------------ | ---------------------------------------------------------------------- |
-| `/api/auth/*`           | sign-up/in, reset, OAuth | Better Auth: origin check, DB rate limits, required email verification |
-| `GET /api/health`       | uptime checks            | none needed (no data, no cost)                                         |
-| `GET /api/diagnostics`  | DB connectivity check    | no user data; returns only `now()`                                     |
-| `POST /api/waitlist`    | pre-auth signups         | edge rate limit + unique-email constraint                              |
-| `GET /api/share/:token` | read-only shared Thread  | unguessable revocable token, redacted projection, `no-store` (below)   |
+| route                             | why public               | protection                                                             |
+| --------------------------------- | ------------------------ | ---------------------------------------------------------------------- |
+| `/api/auth/*`                     | sign-up/in, reset, OAuth | Better Auth: origin check, DB rate limits, required email verification |
+| `POST /api/billing/webhooks/dodo` | payment notifications    | Standard Webhooks signature, replay window, event deduplication        |
+| `GET /api/health`                 | uptime checks            | none needed (no data, no cost)                                         |
+| `GET /api/diagnostics`            | DB connectivity check    | no user data; returns only `now()`                                     |
+| `POST /api/waitlist`              | pre-auth signups         | edge rate limit + unique-email constraint                              |
+| `GET /api/share/:token`           | read-only shared Thread  | unguessable revocable token, redacted projection, `no-store` (below)   |
 
 **`GET /api/share/:token` is public by design.** A share link is a capability: the token is 24 random bytes (base64url, 192 bits of entropy), minted only by the Thread's owner via `POST /api/threads/:id/share`, and revocable (`revoked_at`). The resolver selects a redacted projection — thread title, character display fields, segment texts/alignment — and never user ids, token usage, or credits. Tokens are validated against `^[A-Za-z0-9_-]{16,64}$` before touching the DB; unknown/revoked/archived → uniform `404`. Responses are `no-store`. Every `/api/share/*` response — errors included — also sends `X-Robots-Tag: noindex, nofollow` and `Referrer-Policy: no-referrer`; the SPA route `/share/*` gets the same headers from `public/_headers` plus a runtime robots meta tag, `robots.txt` disallows `/share/`, and the client never keeps a resolved share in memory (`staleTime`/`gcTime` 0). A partial unique index on the live `thread_id` guarantees a single live capability per Thread even under concurrent mints; archived threads can't be shared (`409`). The payload is capped at 500 Segments.
 

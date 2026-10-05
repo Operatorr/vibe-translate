@@ -4,7 +4,7 @@ import * as React from 'react'
 import { Icon } from '@/components/vibe-design/icon'
 import { SiteNav } from '@/components/vibe-design/shell'
 import { useVibeFrame } from '@/components/vibe-design/use-vibe-frame'
-import { authClient, useSignedIn } from '@/lib/auth-client'
+import { authClient, clearResetSession, useSignedIn } from '@/lib/auth-client'
 
 // Sign in / sign up / password reset (Better Auth). Every auth email and OAuth
 // round-trip lands back here: `?token=` opens the new-password form (reset
@@ -26,7 +26,8 @@ const ERRORS: Record<string, string> = {
   account_not_linked:
     'That email already has an unverified password account. Verify it from your inbox (signing in re-sends the link), then use Google.',
   token_expired: 'That link has expired — request a new one.',
-  invalid_token: 'That link is invalid or has already been used.',
+  invalid_token:
+    'That link is invalid, has already been used, or has expired — request a new one.',
   access_denied: 'Google sign-in was cancelled.',
 }
 
@@ -56,9 +57,9 @@ function AuthPage() {
   // The session store refreshes after sign-in, so this is the one redirect.
   // A reset link must still work for a signed-in visitor.
   React.useEffect(() => {
-    if (signedIn && mode !== 'reset')
+    if (signedIn && mode !== 'reset' && !resetDone)
       void navigate({ to: '/app', replace: true })
-  }, [signedIn, mode, navigate])
+  }, [signedIn, mode, resetDone, navigate])
 
   const go = (next: Mode) => {
     setMode(next)
@@ -94,11 +95,19 @@ function AuthPage() {
           callbackURL: '/auth',
         })
         if (error?.code === 'EMAIL_NOT_VERIFIED') {
-          sent(`Verify your email first — we've sent a fresh link to ${email}.`)
+          sent(
+            `Verify your email first — a fresh link is on its way to ${email}. If it doesn't arrive, try signing in again to resend it.`,
+          )
         } else if (error) {
           setError(error.message ?? 'Could not sign in.')
+        } else {
+          setResetDone(false)
         }
       } else if (mode === 'sign-up') {
+        if (!name.trim()) {
+          setError('Enter your name.')
+          return
+        }
         const { error } = await authClient.signUp.email({
           name: name.trim(),
           email,
@@ -108,7 +117,7 @@ function AuthPage() {
         if (error) setError(error.message ?? 'Could not create the account.')
         else
           sent(
-            `We've sent a verification link to ${email}. Open it to finish signing up.`,
+            `A verification link is on its way to ${email}. Open it to finish signing up. If it doesn't arrive, sign in to request a fresh link.`,
           )
       } else if (mode === 'forgot') {
         const { error } = await authClient.requestPasswordReset({
@@ -129,6 +138,7 @@ function AuthPage() {
           setError(error.message ?? 'Could not reset the password.')
         } else {
           // Reset revokes every session; drop the spent token from the URL.
+          await clearResetSession()
           setResetDone(true)
           go('sign-in')
           void navigate({ to: '/auth', search: {}, replace: true })
@@ -144,7 +154,12 @@ function AuthPage() {
         callbackURL: '/app',
         errorCallbackURL: '/auth',
       })
-      if (error) setError(error.message ?? 'Google sign-in is unavailable.')
+      if (error)
+        setError(
+          error.code === 'PROVIDER_NOT_FOUND'
+            ? 'Google sign-in is not configured. Use email and password.'
+            : (error.message ?? 'Google sign-in is unavailable.'),
+        )
     })
 
   const title = {
@@ -239,9 +254,11 @@ function AuthPage() {
                   </label>
                 )}
                 {mode !== 'forgot' && (
-                  <label className="auth-field">
+                  <div className="auth-field">
                     <span className="auth-field__row">
-                      {mode === 'reset' ? 'New password' : 'Password'}
+                      <label htmlFor="auth-password">
+                        {mode === 'reset' ? 'New password' : 'Password'}
+                      </label>
                       {mode === 'sign-in' && (
                         <button
                           type="button"
@@ -254,6 +271,7 @@ function AuthPage() {
                     </span>
                     <input
                       className="cust__input"
+                      id="auth-password"
                       type="password"
                       autoComplete={
                         mode === 'sign-in' ? 'current-password' : 'new-password'
@@ -263,7 +281,7 @@ function AuthPage() {
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
                     />
-                  </label>
+                  </div>
                 )}
                 <button
                   type="submit"

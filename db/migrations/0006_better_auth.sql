@@ -65,6 +65,7 @@ create table if not exists auth_rate_limits (
 );
 
 create index if not exists auth_sessions_user_id_idx on auth_sessions (user_id);
+create unique index if not exists auth_accounts_provider_account_idx on auth_accounts (provider_id, account_id);
 create index if not exists auth_accounts_user_id_idx on auth_accounts (user_id);
 create index if not exists auth_verifications_identifier_idx on auth_verifications (identifier);
 
@@ -77,15 +78,15 @@ do $$
 begin
   if exists (
     select 1 from information_schema.columns
-     where table_name = 'users' and column_name = 'clerk_user_id'
+     where table_schema = 'public' and table_name = 'users' and column_name = 'clerk_user_id'
   ) then
-    alter table users rename column clerk_user_id to auth_user_id;
+    alter table public.users rename column clerk_user_id to auth_user_id;
   end if;
-  if exists (select 1 from pg_constraint where conname = 'users_clerk_user_id_key') then
-    alter table users rename constraint users_clerk_user_id_key to users_auth_user_id_key;
+  if exists (select 1 from pg_constraint where connamespace = 'public'::regnamespace and conrelid = 'public.users'::regclass and conname = 'users_clerk_user_id_key') then
+    alter table public.users rename constraint users_clerk_user_id_key to users_auth_user_id_key;
   end if;
-  if not exists (select 1 from pg_constraint where conname = 'users_auth_user_id_fkey') then
-    alter table users add constraint users_auth_user_id_fkey
-      foreign key (auth_user_id) references auth_users (id) on delete cascade;
+  if not exists (select 1 from pg_constraint where connamespace = 'public'::regnamespace and conrelid = 'public.users'::regclass and conname = 'users_auth_user_id_fkey') then
+    alter table public.users add constraint users_auth_user_id_fkey
+      foreign key (auth_user_id) references public.auth_users (id) on delete cascade;
   end if;
 end$$;

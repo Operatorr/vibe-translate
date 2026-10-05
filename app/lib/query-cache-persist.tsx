@@ -1,45 +1,38 @@
-import type { QueryClient } from '@tanstack/react-query'
-import { get, set } from 'idb-keyval'
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
+import type { ReactNode } from 'react'
 
-import { CACHE_KEY } from '@/lib/query-cache-store'
+import { authClient } from '@/lib/auth-client'
+import { CacheReadyContext } from '@/lib/query-cache-context'
+import { queryCachePersistence } from '@/lib/query-cache-store'
 
-const PERSISTED_KEYS = new Set(['characters', 'threads', 'segments', 'activity'])
+export function CacheHydrator({ children }: { children: ReactNode }) {
+  const { data, isPending, error } = authClient.useSession()
+  const owner = data?.user.id ?? (error ? undefined : null)
+  const identity = isPending
+    ? 'pending'
+    : (owner ?? (error ? 'offline' : 'signed-out'))
+  const [readyFor, setReadyFor] = useState<string | null>(null)
 
-type CacheHydratorProps = {
-  queryClient: QueryClient
-}
-
-export function CacheHydrator({ queryClient }: CacheHydratorProps) {
   useEffect(() => {
+    if (isPending) return
     let cancelled = false
-
-    get<Array<[unknown[], unknown]>>(CACHE_KEY).then((entries) => {
-      if (cancelled || !entries) {
-        return
-      }
-
-      for (const [queryKey, data] of entries) {
-        queryClient.setQueryData(queryKey, data)
-      }
-    })
-
-    const unsubscribe = queryClient.getQueryCache().subscribe(() => {
-      const entries = queryClient
-        .getQueryCache()
-        .getAll()
-        .filter((query) => PERSISTED_KEYS.has(String(query.queryKey[0])))
-        .map((query) => [query.queryKey, query.state.data] as [unknown[], unknown])
-        .filter(([, data]) => data !== undefined)
-
-      void set(CACHE_KEY, entries)
-    })
-
+    // The product gate waits until ownership has switched and hydration is
+    // complete. Public auth forms stay mounted across session changes.
+    void queryCachePersistence
+      .activate(owner)
+      .catch(() => undefined)
+      .then(() => {
+        if (!cancelled) setReadyFor(identity)
+      })
     return () => {
       cancelled = true
-      unsubscribe()
+      queryCachePersistence.stop()
     }
-  }, [queryClient])
+  }, [identity, isPending, owner])
 
-  return null
+  return (
+    <CacheReadyContext.Provider value={readyFor === identity}>
+      {children}
+    </CacheReadyContext.Provider>
+  )
 }

@@ -10,6 +10,6 @@ export function useApiQuery<TData = unknown>(queryKey: QueryKey, path: string) {
   return useQuery({
     queryKey,
     queryFn: async () => apiFetch<TData>(path),
-    enabled: path.startsWith('/api/dev') || isSignedIn !== false,
+    enabled: path === '/api/diagnostics' || isSignedIn === true,
   })
 }

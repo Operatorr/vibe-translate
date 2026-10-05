@@ -5,7 +5,7 @@
   // pointing at the local Neon database). See docs/DEPLOYMENT.md.
   "name": "vibe-translate",
   "main": "functions/api/[[route]].ts",
-  // Thewiding@gmail.com's Account — owns the marrowtech.app zone.
+  // Production Cloudflare account — owns the marrowtech.app zone.
   "account_id": "c03f9623334b016d3279ee0a59673174",
   "compatibility_date": "2026-10-01",
   "compatibility_flags": ["nodejs_compat"],
