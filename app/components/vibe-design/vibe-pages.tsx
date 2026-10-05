@@ -1,9 +1,9 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { useAuth } from '@clerk/react'
 import * as React from 'react'
 import { toast } from 'sonner'
 
 import { apiFetch } from '@/lib/api'
+import { useSignedIn } from '@/lib/auth-client'
 import { cssVars } from '@/lib/css-vars'
 
 import { DEMO_PAIRS_JA, VIBE_PRESETS_PER_LANG } from './design-data'
@@ -959,7 +959,7 @@ const LandingContent = ({ onNavigate }: { onNavigate: NavigateFn }) => {
 
 const PricingContent = ({ onNavigate }: { onNavigate: NavigateFn }) => {
   const [annual, setAnnual] = React.useState(true)
-  const { getToken, isSignedIn } = useAuth()
+  const isSignedIn = useSignedIn()
   const [pendingPlan, setPendingPlan] = React.useState<'pro' | 'team' | null>(
     null,
   )
@@ -983,7 +983,6 @@ const PricingContent = ({ onNavigate }: { onNavigate: NavigateFn }) => {
             plan,
             billingPeriod: annual ? 'annual' : 'monthly',
           }),
-          getToken,
         },
       )
       window.location.assign(checkoutUrl)

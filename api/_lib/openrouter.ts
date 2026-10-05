@@ -264,7 +264,7 @@ export async function resolveCallTarget(
       byok_explain_model_id: string | null
     }>(
       `select openrouter_api_key_cipher, byok_translate_model_id, byok_explain_model_id
-         from users where clerk_user_id = $1`,
+         from users where auth_user_id = $1`,
       [userId],
     )
     const row = result.rows[0]

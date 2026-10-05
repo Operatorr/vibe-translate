@@ -115,7 +115,7 @@ export const SiteNav = ({
   route: VibeRoute
   onNavigate: NavigateFn
   onOpenPalette: () => void
-  // Right-hand account slot on the app route (Clerk's UserButton).
+  // Right-hand account slot on the app route (AccountMenu).
   account?: React.ReactNode
 }) => {
   const navLink = (to: VibeRoute, label: string) => (

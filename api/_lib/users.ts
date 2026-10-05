@@ -3,13 +3,14 @@ import type { Client } from 'pg'
 import { recordGrant } from './credits'
 import { tierLimits, type Tier } from './tier'
 
-// User provisioning. Clerk owns identity; the first authenticated request for a
-// given clerk_user_id lazily creates the local row and grants the free-tier
-// signup credits. Routes call getOrCreateUser after connecting. (auth.ts only
-// sets context vars — it does not touch the DB.) See docs/BACKEND.md.
+// User provisioning. Better Auth owns identity (auth_users); the first
+// authenticated request for a given auth_user_id lazily creates this app-side
+// row and grants the free-tier signup credits. Routes call getOrCreateUser
+// after connecting. (The auth() middleware only resolves the session and sets
+// context vars — it never touches this table.) See docs/BACKEND.md.
 
 export type UserRow = {
-  clerkUserId: string
+  userId: string
   email: string | null
   displayName: string | null
   tier: Tier
@@ -24,7 +25,7 @@ export type UserRow = {
 }
 
 type UserDbRow = {
-  clerk_user_id: string
+  auth_user_id: string
   email: string | null
   display_name: string | null
   tier: Tier
@@ -39,14 +40,14 @@ type UserDbRow = {
 }
 
 // Never selects the cipher — only the safe `last4` for display.
-const USER_COLUMNS = `clerk_user_id, email, display_name, tier, onboarding_complete,
+const USER_COLUMNS = `auth_user_id, email, display_name, tier, onboarding_complete,
   credits_balance, credits_refilled_at,
   (openrouter_api_key_cipher is not null) as byok_configured,
   openrouter_api_key_last4, byok_translate_model_id, byok_explain_model_id, locale`
 
 function mapUser(row: UserDbRow): UserRow {
   return {
-    clerkUserId: row.clerk_user_id,
+    userId: row.auth_user_id,
     email: row.email,
     displayName: row.display_name,
     tier: row.tier,
@@ -68,22 +69,22 @@ function mapUser(row: UserDbRow): UserRow {
 // invariant holds from creation.
 export async function getOrCreateUser(
   db: Client,
-  clerkUserId: string,
+  userId: string,
   email: string | null,
 ): Promise<UserRow> {
   const result = await db.query<UserDbRow & { was_inserted: boolean }>(
-    `insert into users (clerk_user_id, email)
+    `insert into users (auth_user_id, email)
      values ($1, $2)
-     on conflict (clerk_user_id) do update set
+     on conflict (auth_user_id) do update set
        email = coalesce(excluded.email, users.email),
        updated_at = now()
      returning ${USER_COLUMNS}, (xmax = 0) as was_inserted`,
-    [clerkUserId, email],
+    [userId, email],
   )
   const row = result.rows[0]
 
   if (row.was_inserted) {
-    await recordGrant(db, clerkUserId, tierLimits.free.credits, 'grant.signup')
+    await recordGrant(db, userId, tierLimits.free.credits, 'grant.signup')
     row.credits_balance = tierLimits.free.credits
   }
 
@@ -93,7 +94,7 @@ export async function getOrCreateUser(
 // Shape the public /api/users/me payload from a UserRow.
 export function toMeResponse(user: UserRow) {
   return {
-    id: user.clerkUserId,
+    id: user.userId,
     email: user.email,
     displayName: user.displayName,
     tier: user.tier,

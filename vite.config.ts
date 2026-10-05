@@ -7,6 +7,8 @@ import { defineConfig } from 'vite'
 
 // Wrangler local secrets live in `.dev.vars`. Vite only auto-loads `.env*`,
 // so copy VITE_* keys into process.env here — existing process.env wins.
+// Skipped for production builds so local-only values never ship in the bundle
+// (process.env would also outrank any `.env.production`).
 function loadViteKeysFromDevVars() {
   const file = fileURLToPath(new URL('./.dev.vars', import.meta.url))
   if (!existsSync(file)) {
@@ -40,30 +42,34 @@ function loadViteKeysFromDevVars() {
   }
 }
 
-loadViteKeysFromDevVars()
+export default defineConfig(({ mode }) => {
+  if (mode !== 'production') {
+    loadViteKeysFromDevVars()
+  }
 
-export default defineConfig({
-  plugins: [
-    tanstackRouter({
-      routesDirectory: './app/routes',
-      generatedRouteTree: './app/routeTree.gen.ts',
-    }),
-    react(),
-    tailwindcss(),
-  ],
-  resolve: {
-    alias: {
-      '@': fileURLToPath(new URL('./app', import.meta.url)),
-      '@api': fileURLToPath(new URL('./api', import.meta.url)),
-    },
-  },
-  server: {
-    port: 5173,
-    proxy: {
-      '/api': {
-        target: 'http://127.0.0.1:8787',
-        changeOrigin: true,
+  return {
+    plugins: [
+      tanstackRouter({
+        routesDirectory: './app/routes',
+        generatedRouteTree: './app/routeTree.gen.ts',
+      }),
+      react(),
+      tailwindcss(),
+    ],
+    resolve: {
+      alias: {
+        '@': fileURLToPath(new URL('./app', import.meta.url)),
+        '@api': fileURLToPath(new URL('./api', import.meta.url)),
       },
     },
-  },
+    server: {
+      port: 5173,
+      proxy: {
+        '/api': {
+          target: 'http://127.0.0.1:8787',
+          changeOrigin: true,
+        },
+      },
+    },
+  }
 })

@@ -1,4 +1,3 @@
-import { ClerkProvider } from '@clerk/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { RouterProvider, createRouter } from '@tanstack/react-router'
 import { StrictMode } from 'react'
@@ -34,23 +33,15 @@ declare module '@tanstack/react-router' {
   }
 }
 
-const clerkPublishableKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY
-
-if (!clerkPublishableKey) {
-  throw new Error('Missing VITE_CLERK_PUBLISHABLE_KEY')
-}
-
 registerServiceWorker()
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <ClerkProvider publishableKey={clerkPublishableKey}>
-      <QueryClientProvider client={queryClient}>
-        <CacheHydrator queryClient={queryClient} />
-        <RouterProvider router={router} />
-        <InstallPrompt />
-        <Toaster richColors closeButton position="top-right" />
-      </QueryClientProvider>
-    </ClerkProvider>
+    <QueryClientProvider client={queryClient}>
+      <CacheHydrator queryClient={queryClient} />
+      <RouterProvider router={router} />
+      <InstallPrompt />
+      <Toaster richColors closeButton position="top-right" />
+    </QueryClientProvider>
   </StrictMode>,
 )

@@ -5,13 +5,15 @@
 ## Engine and binding
 
 - **PostgreSQL** is the primary datastore. The **`pgvector`** extension is a hard runtime dependency — translation memory retrieval depends on it.
-- In Cloudflare Workers, the database is reached through a **Hyperdrive** binding (`HYPERDRIVE` in `wrangler.toml`), which pools and caches Postgres connections at the edge.
-- In local dev, `HYPERDRIVE.localConnectionString` points at a developer Postgres (Neon, local Docker, etc.); the connection string is read by `api/_lib/db.ts` and used to spin up a `pg.Client` per request.
+- In Cloudflare Workers, the database is reached through a **Hyperdrive** binding (`HYPERDRIVE` in `wrangler.jsonc`), which pools Postgres connections at the edge. Query caching is **off**, so session and list reads are never stale (see [CLOUDFLARE.md](./CLOUDFLARE.md#hyperdrive)).
+- In local dev, Wrangler emulates the binding from `CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE` in a gitignored `.env` (the local Neon URL). `api/_lib/db.ts → databaseUrl(env)` resolves the connection string. Each request opens its own `pg.Client`, and a guarded request also gets a `pg.Pool` for Better Auth.
 - The bootstrap schema lives in [`db/schema.sql`](../db/schema.sql). Incremental migrations live in [`db/migrations/`](../db/migrations) (sequential, e.g. `0001_initial.sql`).
 
 ## Domain model
 
 ```
+auth_users (1) ──> (0..1) users          identity → app profile (cascade)
+
 users (1) ── owns ──> (N) characters
                         │
                         └─ has ──> (N) threads ──> (0..1 live) thread_shares
@@ -32,44 +34,58 @@ The enum is defined on the database so the schema is self-describing for agents 
 
 ### Tables
 
+#### Identity (`auth_*`)
+
+Better Auth's core schema ([adr/0008](./adr/0008-better-auth-replaces-clerk.md)), added in `0006_better_auth.sql`. Columns are snake_case through the `modelName`/`fields` mapping in `api/_lib/auth.ts`. The DDL is what Better Auth's `getMigrations` emits for that mapping, so **change the two together**. Ids are Better Auth-generated text.
+
+| table                | holds                                                                                                                      |
+| -------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| `auth_users`         | one row per person: `name`, `email` (unique), `email_verified`, `image`                                                    |
+| `auth_sessions`      | `token` (unique), `expires_at` (30-day sliding), `ip_address`, `user_agent`; fk `user_id` → `auth_users` on delete cascade |
+| `auth_accounts`      | one row per sign-in method: `provider_id = 'credential'` carries the scrypt `password` hash, `'google'` the OAuth tokens   |
+| `auth_verifications` | email-verification and password-reset tokens (`identifier`, `value`, `expires_at`)                                         |
+| `auth_rate_limits`   | Better Auth rate-limit counters (`key` unique, `count`, `last_request` epoch ms); production only                          |
+
+Indexes: `auth_sessions (user_id)`, `auth_accounts (user_id)`, `auth_verifications (identifier)`. Better Auth owns these rows. App code reads identity only through the session (`c.get('userId')`, `c.get('email')`).
+
 #### `users`
 
-Provisioned on first authenticated request by `api/_lib/auth.ts`. Keyed by the Clerk user ID (text, FK target for all per-user tables).
+The app-side profile. `api/_lib/users.ts → getOrCreateUser` creates it lazily on the first authenticated request. It is keyed by the Better Auth user id (`auth_user_id`, text), which is the FK target for all per-user tables.
 
-| column                            | type                             | notes                                                                                                                                                                   |
-| --------------------------------- | -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `id`                              | uuid pk                          | local primary key                                                                                                                                                       |
-| `clerk_user_id`                   | text unique                      | the FK target for everything user-scoped                                                                                                                                |
-| `email`, `display_name`, `locale` | text                             | mirrored from Clerk                                                                                                                                                     |
-| `tier`                            | text check (`free`/`pro`/`team`) | gates feature access in `api/_lib/tier.ts`                                                                                                                              |
-| `subscription_id`                 | text nullable                    | Dodo Payments subscription id; partial-unique (`where subscription_id is not null`) so lifecycle webhooks can resolve the owning user. Set/cleared by the Dodo webhook. |
-| `onboarding_complete`             | boolean                          | gates the `/app` shell                                                                                                                                                  |
-| `credits_balance`                 | int                              | spendable on the platform-key path; debited per token spend                                                                                                             |
-| `credits_refilled_at`             | timestamptz                      | last monthly grant; drives the refill scheduler                                                                                                                         |
-| `openrouter_api_key_cipher`       | text nullable                    | AES-GCM ciphertext of the user's BYOK key                                                                                                                               |
-| `openrouter_api_key_last4`        | text nullable                    | last 4 chars for UI display; safe to expose                                                                                                                             |
-| `byok_translate_model_id`         | text nullable                    | OpenRouter slug override; `null` = use default                                                                                                                          |
-| `byok_explain_model_id`           | text nullable                    | OpenRouter slug override; `null` = use default                                                                                                                          |
-| `created_at`, `updated_at`        | timestamptz                      |                                                                                                                                                                         |
+| column                            | type                                                | notes                                                                                                                                                                   |
+| --------------------------------- | --------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `id`                              | uuid pk                                             | local primary key                                                                                                                                                       |
+| `auth_user_id`                    | text unique, fk → `auth_users.id` on delete cascade | the FK target for everything user-scoped; deleting the auth user cascades through all app data                                                                          |
+| `email`, `display_name`, `locale` | text                                                | `email` refreshed from the auth session on each guarded call; `display_name`, `locale` app-owned                                                                        |
+| `tier`                            | text check (`free`/`pro`/`team`)                    | gates feature access in `api/_lib/tier.ts`                                                                                                                              |
+| `subscription_id`                 | text nullable                                       | Dodo Payments subscription id; partial-unique (`where subscription_id is not null`) so lifecycle webhooks can resolve the owning user. Set/cleared by the Dodo webhook. |
+| `onboarding_complete`             | boolean                                             | gates the `/app` shell                                                                                                                                                  |
+| `credits_balance`                 | int                                                 | spendable on the platform-key path; debited per token spend                                                                                                             |
+| `credits_refilled_at`             | timestamptz                                         | last monthly grant; drives the refill scheduler                                                                                                                         |
+| `openrouter_api_key_cipher`       | text nullable                                       | AES-GCM ciphertext of the user's BYOK key                                                                                                                               |
+| `openrouter_api_key_last4`        | text nullable                                       | last 4 chars for UI display; safe to expose                                                                                                                             |
+| `byok_translate_model_id`         | text nullable                                       | OpenRouter slug override; `null` = use default                                                                                                                          |
+| `byok_explain_model_id`           | text nullable                                       | OpenRouter slug override; `null` = use default                                                                                                                          |
+| `created_at`, `updated_at`        | timestamptz                                         |                                                                                                                                                                         |
 
 #### `characters`
 
 A persistent persona the user translates _toward_. One row = one **Character**.
 
-| column                               | type                                              | notes                                                                                                            |
-| ------------------------------------ | ------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| `id`                                 | uuid pk                                           |                                                                                                                  |
-| `user_id`                            | text fk → `users.clerk_user_id` on delete cascade | per-user scoping                                                                                                 |
-| `name`                               | text                                              | display name, e.g. "Oba-chan"                                                                                    |
-| `initials`, `color`                  | text                                              | UI ornamentation                                                                                                 |
-| `source_language`, `target_language` | text                                              | BCP-47 codes (`en-US`, `ja-JP`)                                                                                  |
-| `default_vibe`                       | `vibe_stop` not null                              | the default **Vibe** for new Segments                                                                            |
-| `temperature`                        | numeric(3,2) bounded 0..1, default 0.40           | per-Character model temperature                                                                                  |
-| `persona`                            | jsonb default `{}`                                | _structured_ attributes `{ age, region, formality, tone, verbosity (0..1), traits: string[] }` — UI chips + form |
-| `instructions`                       | text nullable                                     | _free-form_ system-prompt extension appended at translate time; populated by dictation or hand-edited            |
-| `sort_order`                         | int                                               | user-controlled ordering (reorder endpoint)                                                                      |
-| `archived_at`                        | timestamptz nullable                              | soft-archive                                                                                                     |
-| `created_at`, `updated_at`           | timestamptz                                       |                                                                                                                  |
+| column                               | type                                             | notes                                                                                                            |
+| ------------------------------------ | ------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------- |
+| `id`                                 | uuid pk                                          |                                                                                                                  |
+| `user_id`                            | text fk → `users.auth_user_id` on delete cascade | per-user scoping                                                                                                 |
+| `name`                               | text                                             | display name, e.g. "Oba-chan"                                                                                    |
+| `initials`, `color`                  | text                                             | UI ornamentation                                                                                                 |
+| `source_language`, `target_language` | text                                             | BCP-47 codes (`en-US`, `ja-JP`)                                                                                  |
+| `default_vibe`                       | `vibe_stop` not null                             | the default **Vibe** for new Segments                                                                            |
+| `temperature`                        | numeric(3,2) bounded 0..1, default 0.40          | per-Character model temperature                                                                                  |
+| `persona`                            | jsonb default `{}`                               | _structured_ attributes `{ age, region, formality, tone, verbosity (0..1), traits: string[] }` — UI chips + form |
+| `instructions`                       | text nullable                                    | _free-form_ system-prompt extension appended at translate time; populated by dictation or hand-edited            |
+| `sort_order`                         | int                                              | user-controlled ordering (reorder endpoint)                                                                      |
+| `archived_at`                        | timestamptz nullable                             | soft-archive                                                                                                     |
+| `created_at`, `updated_at`           | timestamptz                                      |                                                                                                                  |
 
 Indexes: `(user_id, sort_order)`.
 
@@ -77,15 +93,15 @@ Indexes: `(user_id, sort_order)`.
 
 A topic-level conversation under one Character.
 
-| column                     | type                                              | notes                                    |
-| -------------------------- | ------------------------------------------------- | ---------------------------------------- |
-| `id`                       | uuid pk                                           |                                          |
-| `character_id`             | uuid fk → `characters.id` on delete cascade       |                                          |
-| `user_id`                  | text fk → `users.clerk_user_id` on delete cascade | denormalised for retention queries       |
-| `title`                    | text                                              | e.g. "Asking for grandma's recipe"       |
-| `starred`                  | boolean not null default false                    | pins the Thread under STARRED; see below |
-| `archived_at`              | timestamptz nullable                              |                                          |
-| `created_at`, `updated_at` | timestamptz                                       |                                          |
+| column                     | type                                             | notes                                    |
+| -------------------------- | ------------------------------------------------ | ---------------------------------------- |
+| `id`                       | uuid pk                                          |                                          |
+| `character_id`             | uuid fk → `characters.id` on delete cascade      |                                          |
+| `user_id`                  | text fk → `users.auth_user_id` on delete cascade | denormalised for retention queries       |
+| `title`                    | text                                             | e.g. "Asking for grandma's recipe"       |
+| `starred`                  | boolean not null default false                   | pins the Thread under STARRED; see below |
+| `archived_at`              | timestamptz nullable                             |                                          |
+| `created_at`, `updated_at` | timestamptz                                      |                                          |
 
 Indexes: `(character_id, updated_at desc)`, `(user_id, updated_at desc)`.
 
@@ -98,19 +114,19 @@ Indexes: `(character_id, updated_at desc)`, `(user_id, updated_at desc)`.
 
 One source-text → target-text translation inside a Thread.
 
-| column                     | type                                              | notes                                                                                                                                        |
-| -------------------------- | ------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
-| `id`                       | uuid pk                                           |                                                                                                                                              |
-| `thread_id`                | uuid fk → `threads.id` on delete cascade          |                                                                                                                                              |
-| `user_id`                  | text fk → `users.clerk_user_id` on delete cascade | denormalised for retention queries                                                                                                           |
-| `source_text`              | text not null                                     | what the user typed                                                                                                                          |
-| `target_text`              | text not null                                     | model output                                                                                                                                 |
-| `vibe`                     | `vibe_stop` **nullable**                          | generation-time stop; legacy `null` = unrecorded, never resolved from the current default ([ADR 0007](./adr/0007-segment-vibe-snapshot.md)). |
-| `token_alignment`          | jsonb default `[]`                                | array of `{ t, src }` — target token + matched source span. Drives hover-to-align UI.                                                        |
-| `token_usage`              | jsonb default `{}`                                | model accounting: `{ model_id, prompt_tokens, completion_tokens, cost_cents }`                                                               |
-| `metadata`                 | jsonb default `{}`                                | catch-all (model id used, retrieval hits considered, etc.)                                                                                   |
-| `source_embedding`         | `vector(1536)` nullable                           | Embedding of `source_text`. Powers Translation memory retrieval (HNSW + cosine). `null` = excluded from search until backfill.               |
-| `created_at`, `updated_at` | timestamptz                                       |                                                                                                                                              |
+| column                     | type                                             | notes                                                                                                                                        |
+| -------------------------- | ------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| `id`                       | uuid pk                                          |                                                                                                                                              |
+| `thread_id`                | uuid fk → `threads.id` on delete cascade         |                                                                                                                                              |
+| `user_id`                  | text fk → `users.auth_user_id` on delete cascade | denormalised for retention queries                                                                                                           |
+| `source_text`              | text not null                                    | what the user typed                                                                                                                          |
+| `target_text`              | text not null                                    | model output                                                                                                                                 |
+| `vibe`                     | `vibe_stop` **nullable**                         | generation-time stop; legacy `null` = unrecorded, never resolved from the current default ([ADR 0007](./adr/0007-segment-vibe-snapshot.md)). |
+| `token_alignment`          | jsonb default `[]`                               | array of `{ t, src }` — target token + matched source span. Drives hover-to-align UI.                                                        |
+| `token_usage`              | jsonb default `{}`                               | model accounting: `{ model_id, prompt_tokens, completion_tokens, cost_cents }`                                                               |
+| `metadata`                 | jsonb default `{}`                               | catch-all (model id used, retrieval hits considered, etc.)                                                                                   |
+| `source_embedding`         | `vector(1536)` nullable                          | Embedding of `source_text`. Powers Translation memory retrieval (HNSW + cosine). `null` = excluded from search until backfill.               |
+| `created_at`, `updated_at` | timestamptz                                      |                                                                                                                                              |
 
 Indexes: `(thread_id, created_at desc)`, `(user_id, created_at desc)`, `using hnsw (source_embedding vector_cosine_ops)`.
 
@@ -118,18 +134,18 @@ Indexes: `(thread_id, created_at desc)`, `(user_id, created_at desc)`, `using hn
 
 The Explain Memory store. One row per `(segment_id, version)`.
 
-| column             | type                                              | notes                                                                                                        |
-| ------------------ | ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
-| `id`               | uuid pk                                           |                                                                                                              |
-| `segment_id`       | uuid fk → `segments.id` on delete cascade         |                                                                                                              |
-| `user_id`          | text fk → `users.clerk_user_id` on delete cascade |                                                                                                              |
-| `target_language`  | text                                              | e.g. `ja-JP` — drives payload shape                                                                          |
-| `target_text`      | text                                              | denormalised from the source Segment for cross-segment dedupe                                                |
-| `target_text_hash` | text                                              | sha-256 hex of `target_text`                                                                                 |
-| `version`          | int                                               | bumped when the Explain payload schema changes; older rows are re-generated on next read                     |
-| `body`             | jsonb                                             | language-specific payload (romaji, morphemes, kanji, grammar for Japanese; other shapes for other languages) |
-| `token_usage`      | jsonb default `{}`                                | model accounting for the Explain generation call                                                             |
-| `created_at`       | timestamptz                                       |                                                                                                              |
+| column             | type                                             | notes                                                                                                        |
+| ------------------ | ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------ |
+| `id`               | uuid pk                                          |                                                                                                              |
+| `segment_id`       | uuid fk → `segments.id` on delete cascade        |                                                                                                              |
+| `user_id`          | text fk → `users.auth_user_id` on delete cascade |                                                                                                              |
+| `target_language`  | text                                             | e.g. `ja-JP` — drives payload shape                                                                          |
+| `target_text`      | text                                             | denormalised from the source Segment for cross-segment dedupe                                                |
+| `target_text_hash` | text                                             | sha-256 hex of `target_text`                                                                                 |
+| `version`          | int                                              | bumped when the Explain payload schema changes; older rows are re-generated on next read                     |
+| `body`             | jsonb                                            | language-specific payload (romaji, morphemes, kanji, grammar for Japanese; other shapes for other languages) |
+| `token_usage`      | jsonb default `{}`                               | model accounting for the Explain generation call                                                             |
+| `created_at`       | timestamptz                                      |                                                                                                              |
 
 Indexes: `(segment_id, version desc)`, unique `(user_id, target_language, target_text_hash, version)`, `(user_id, created_at desc)`. The unique index is what makes cross-segment reuse possible — same Japanese sentence explained twice maps to one row.
 
@@ -167,15 +183,15 @@ Indexes: unique `(task) where is_default`, unique `(task, provider, provider_mod
 
 Append-only audit log. Every credit grant (signup, monthly refill, manual adjustment) and every credit spend (translate, explain) writes a row. The sum of all `delta` for a user always equals `users.credits_balance` (invariant — assert in tests). A platform-path spend first writes a **pending** reservation row (`metadata.reservation = true`, delta = estimated hold) via `credits.reserveCredits`; `reconcileSpend` then rewrites that row's `delta`/`reference_id`/`metadata` to the real token cost, or `refundReservation` deletes it. The row is mutated in place, so the invariant holds at every step (this is the one place a `credit_ledger` row is updated/deleted rather than purely appended).
 
-| column         | type                                              | notes                                                                                                                                          |
-| -------------- | ------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
-| `id`           | uuid pk                                           |                                                                                                                                                |
-| `user_id`      | text fk → `users.clerk_user_id` on delete cascade |                                                                                                                                                |
-| `delta`        | int                                               | positive = grant, negative = spend                                                                                                             |
-| `reason`       | text                                              | enum-shaped (`grant.signup`, `grant.monthly`, `grant.subscription`, `grant.adjustment`, `spend.translate`, `spend.explain`, `spend.dictation`) |
-| `reference_id` | uuid nullable                                     | e.g. the `segments.id` or `explains.id` the spend was for; `null` for in-app dictation                                                         |
-| `metadata`     | jsonb default `{}`                                | model id, token breakdown                                                                                                                      |
-| `created_at`   | timestamptz                                       |                                                                                                                                                |
+| column         | type                                             | notes                                                                                                                                          |
+| -------------- | ------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| `id`           | uuid pk                                          |                                                                                                                                                |
+| `user_id`      | text fk → `users.auth_user_id` on delete cascade |                                                                                                                                                |
+| `delta`        | int                                              | positive = grant, negative = spend                                                                                                             |
+| `reason`       | text                                             | enum-shaped (`grant.signup`, `grant.monthly`, `grant.subscription`, `grant.adjustment`, `spend.translate`, `spend.explain`, `spend.dictation`) |
+| `reference_id` | uuid nullable                                    | e.g. the `segments.id` or `explains.id` the spend was for; `null` for in-app dictation                                                         |
+| `metadata`     | jsonb default `{}`                               | model id, token breakdown                                                                                                                      |
+| `created_at`   | timestamptz                                      |                                                                                                                                                |
 
 Index: `(user_id, created_at desc)`.
 
@@ -221,8 +237,8 @@ Derived/operational data — not user-scoped, no cascade.
 
 ## Invariants
 
-- **Per-user scoping.** Every row in `characters`, `threads`, `segments`, `activity_log` is scoped by `user_id = clerk_user_id`. All queries must include the user filter — see [SECURITY.md](./SECURITY.md#per-user-scoping).
-- **Cascade deletes** flow user → character → thread → segment. Deleting a user wipes all owned data.
+- **Per-user scoping.** Every row in `characters`, `threads`, `segments`, `activity_log` is scoped by `user_id = users.auth_user_id`. All queries must include the user filter — see [SECURITY.md](./SECURITY.md#per-user-scoping).
+- **Cascade deletes** flow `auth_users` → `users` → character → thread → segment (and every other per-user table). Deleting the identity row wipes all owned data, so it is the one-statement account deletion.
 - **`segments.vibe` records the generation-time stop**, including when the request omits `vibe`. Changing a Character default affects future translations, not existing targets. Null remains only for legacy rows with an unrecorded stop; render it as "Vibe not recorded" ([ADR 0007](./adr/0007-segment-vibe-snapshot.md)).
 - **`token_alignment` shape** is the same as the design prototype's `target` arrays in `data.js` (each entry `{ t, src }`). This is the contract between the model output and the frontend hover-alignment renderer.
 - **Embeddings are derived data.** Source-of-truth is `source_text` (and for explains, `target_text` + `body`). Re-embedding is always safe; never trust the embedding vector over the underlying text.
@@ -234,7 +250,7 @@ Derived/operational data — not user-scoped, no cascade.
 
 - New incremental changes go in `db/migrations/000N_<slug>.sql`. Apply manually for now; deploy hooks land later.
 - `db/schema.sql` is the canonical bootstrap — keep it in sync with the latest migration so fresh environments are one step.
-- The `0001_initial.sql` migration establishes the Character/Thread/Segment model directly; there is no pre-character schema in production. Later migrations are additive: `0002_commerce.sql` (webhook idempotency + `subscription_id` index), `0003_embed_via_openrouter.sql` (embed routed via OpenRouter), `0004_embed_dims_1536.sql` (embed columns/model to 1536 for any pre-1536 DB).
+- The `0001_initial.sql` migration establishes the Character/Thread/Segment model directly; there is no pre-character schema in production. Later migrations are additive: `0002_commerce.sql` (webhook idempotency + `subscription_id` index), `0003_embed_via_openrouter.sql` (embed routed via OpenRouter), `0004_embed_dims_1536.sql` (embed columns/model to 1536 for any pre-1536 DB), `0005_thread_star_share.sql` (starring + share links), `0006_better_auth.sql` (`auth_*` tables; renames `users.clerk_user_id` → `auth_user_id` and adds the cascading FK to `auth_users`).
 - **Never edit an applied migration in place.** Because every statement is `if not exists` / `on conflict do nothing` / type-guarded, re-running an edited file won't change existing objects — only a new forward migration reaches provisioned databases.
 
 ## Open questions

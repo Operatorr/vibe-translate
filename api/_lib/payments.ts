@@ -59,7 +59,7 @@ async function dodoErrorMessage(res: Response, action: string): Promise<never> {
 // ---------------------------------------------------------------------------
 
 // Creates a hosted Dodo checkout session for a plan upgrade. Stamps
-// metadata.clerk_user_id so the resulting subscription webhook can resolve the
+// metadata.user_id so the resulting subscription webhook can resolve the
 // user (see adr/0005). Returns the hosted checkout URL to redirect the browser to.
 export async function createCheckoutSession(params: {
   env: Bindings
@@ -86,7 +86,7 @@ export async function createCheckoutSession(params: {
       product_cart: [{ product_id: productId, quantity: 1 }],
       customer: { email },
       return_url: `${env.APP_URL ?? ''}/app?upgraded=1`,
-      metadata: { clerk_user_id: userId, plan },
+      metadata: { user_id: userId, plan },
     }),
   })
   if (!res.ok) await dodoErrorMessage(res, 'checkout')
@@ -248,21 +248,21 @@ function resolvePlan(env: Bindings, data: NonNullable<DodoEvent['data']>): Tier 
 
 // User from checkout metadata (primary), falling back to the stored
 // subscription id for lifecycle events that omit metadata. Email is
-// deliberately NOT used — Clerk and Dodo billing emails can drift (adr/0005).
+// deliberately NOT used — account and Dodo billing emails can drift (adr/0005).
 async function resolveUserId(
   db: Client,
   data: NonNullable<DodoEvent['data']>,
   subscriptionId: string | undefined,
 ): Promise<string | undefined> {
-  const fromMeta = data.metadata?.clerk_user_id
+  const fromMeta = data.metadata?.user_id
   if (typeof fromMeta === 'string' && fromMeta) return fromMeta
 
   if (subscriptionId) {
-    const result = await db.query<{ clerk_user_id: string }>(
-      `select clerk_user_id from users where subscription_id = $1`,
+    const result = await db.query<{ auth_user_id: string }>(
+      `select auth_user_id from users where subscription_id = $1`,
       [subscriptionId],
     )
-    if (result.rows[0]?.clerk_user_id) return result.rows[0].clerk_user_id
+    if (result.rows[0]?.auth_user_id) return result.rows[0].auth_user_id
   }
   return undefined
 }
@@ -287,8 +287,8 @@ async function applySubscriptionGrant(
   // already inside the webhook's transaction — so insert the bare row directly.
   // No signup grant is applied; getOrCreateUser stays the single owner of that.
   await db.query(
-    `insert into users (clerk_user_id) values ($1)
-     on conflict (clerk_user_id) do nothing`,
+    `insert into users (auth_user_id) values ($1)
+     on conflict (auth_user_id) do nothing`,
     [userId],
   )
   await db.query(
@@ -298,7 +298,7 @@ async function applySubscriptionGrant(
             credits_balance = credits_balance + $4,
             credits_refilled_at = now(),
             updated_at = now()
-      where clerk_user_id = $1`,
+      where auth_user_id = $1`,
     [userId, plan, subscriptionId ?? null, credits],
   )
   await db.query(
@@ -363,7 +363,7 @@ async function handleDodoEvent(
         return { status: 'ignored' }
       }
       await db.query(
-        `update users set tier = 'free', updated_at = now() where clerk_user_id = $1`,
+        `update users set tier = 'free', updated_at = now() where auth_user_id = $1`,
         [userId],
       )
       await logActivity(db, userId, 'tier.downgraded', { reason: event.type, subscriptionId })
@@ -383,7 +383,7 @@ async function handleDodoEvent(
       await db.query(
         `update users
             set tier = 'free', subscription_id = null, updated_at = now()
-          where clerk_user_id = $1`,
+          where auth_user_id = $1`,
         [userId],
       )
       await logActivity(db, userId, 'tier.downgraded', { reason: event.type, subscriptionId })

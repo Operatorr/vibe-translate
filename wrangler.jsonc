@@ -1,0 +1,51 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  // This committed config is the PRODUCTION deployment (two-env model: Local + Production).
+  // Local dev overrides these via .dev.vars (e.g. APP_ENV=development, DATABASE_URL
+  // pointing at the local Neon database). See docs/DEPLOYMENT.md.
+  "name": "vibe-translate",
+  "main": "functions/api/[[route]].ts",
+  // Thewiding@gmail.com's Account — owns the marrowtech.app zone.
+  "account_id": "c03f9623334b016d3279ee0a59673174",
+  "compatibility_date": "2026-10-01",
+  "compatibility_flags": ["nodejs_compat"],
+
+  // Served only on the custom domain; the *.workers.dev URL and preview URLs are off.
+  "workers_dev": false,
+  "preview_urls": false,
+  "routes": [{ "pattern": "translate.marrowtech.app", "custom_domain": true }],
+
+  "vars": {
+    "APP_ENV": "production",
+    "APP_URL": "https://translate.marrowtech.app",
+  },
+
+  "assets": {
+    "directory": "./dist",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    // API paths always reach the worker, even when they collide with the SPA fallback.
+    "run_worker_first": ["/api/*"],
+  },
+
+  // `vibe-translate-prod` → production Neon DB (ep-wispy-flower), query caching off.
+  // Local dev emulates it via CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE
+  // in the gitignored .env (see docs/CLOUDFLARE.md#hyperdrive).
+  "hyperdrive": [
+    {
+      "binding": "HYPERDRIVE",
+      "id": "651eb586c0de4e9596c954f951ddcd05",
+    },
+  ],
+
+  // Run the Worker beside the Neon DB (AWS Singapore). An auth or API request
+  // makes several sequential queries; from a far edge (free-plan APAC traffic
+  // often lands in SJC) each one crossed the Pacific. Static assets are served
+  // at the edge regardless — only /api/* invocations move.
+  "placement": { "mode": "targeted", "region": "aws:ap-southeast-1" },
+
+  "observability": {
+    "enabled": true,
+    "head_sampling_rate": 1,
+  },
+}

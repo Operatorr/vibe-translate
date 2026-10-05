@@ -1,5 +1,6 @@
-import { useAuth } from '@clerk/react'
 import { Navigate, Outlet, createFileRoute } from '@tanstack/react-router'
+
+import { useSignedIn } from '@/lib/auth-client'
 
 export const Route = createFileRoute('/app')({
   component: AppLayout,
@@ -7,8 +8,8 @@ export const Route = createFileRoute('/app')({
 
 // Auth gate for the product shell: unauthenticated visitors go to /auth.
 function AppLayout() {
-  const { isLoaded, isSignedIn } = useAuth()
-  if (!isLoaded) {
+  const isSignedIn = useSignedIn()
+  if (isSignedIn === undefined) {
     return (
       <main
         className="app-shell"

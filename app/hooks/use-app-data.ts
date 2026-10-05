@@ -1,7 +1,7 @@
-import { useAuth } from '@clerk/react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
 import { apiFetch } from '@/lib/api'
+import { useSignedIn } from '@/lib/auth-client'
 import { applyServerThread, patchThread } from '@/lib/query-updaters'
 import { keys } from '@/lib/query-keys'
 import { createSegmentOptions } from '@/lib/segment-mutations'
@@ -23,11 +23,11 @@ import type {
 export { keys } from '@/lib/query-keys'
 
 function useApi() {
-  const { getToken, isSignedIn } = useAuth()
+  const isSignedIn = useSignedIn()
   const call = <T>(
     path: string,
     init?: RequestInit & { responseType?: 'json' | 'blob' },
-  ) => apiFetch<T>(path, { ...init, getToken })
+  ) => apiFetch<T>(path, init)
   const json = <T>(path: string, method: string, body?: unknown) =>
     call<T>(path, {
       method,

@@ -7,7 +7,8 @@ and [`docs/`](./docs).
 ## Quick Start
 
 1. Install dependencies with `pnpm install`.
-2. Copy `.env.example` to `.dev.vars` and fill in Clerk/database secrets.
+2. Copy `.env.example` to `.dev.vars` and fill in `BETTER_AUTH_SECRET` and the database secrets
+   (full steps: [`docs/DEPLOYMENT.md`](./docs/DEPLOYMENT.md#local-development)).
 3. Run `pnpm dev` for Wrangler or `pnpm dev:full` for Wrangler plus Vite.
 4. Build with `pnpm build`.
 

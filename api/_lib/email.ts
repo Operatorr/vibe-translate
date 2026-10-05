@@ -52,6 +52,35 @@ export async function sendTransactionalEmail(message: EmailMessage): Promise<voi
   }
 }
 
+type EmailContent = { subject: string; html: string; text: string }
+
+// Single-link auth emails (Better Auth supplies the signed URL).
+function linkEmail(subject: string, lead: string, cta: string, url: string): EmailContent {
+  return {
+    subject,
+    html: `<p>${lead}</p><p><a href="${url}">${cta}</a></p><p>If you didn't request this, you can ignore this email.</p>`,
+    text: `${lead}\n\n${cta}: ${url}\n\nIf you didn't request this, you can ignore this email.`,
+  }
+}
+
+export function verifyEmailContent(url: string): EmailContent {
+  return linkEmail(
+    'Verify your Vibe Translate email',
+    'Confirm your email address to finish setting up your Vibe Translate account.',
+    'Verify email',
+    url,
+  )
+}
+
+export function resetPasswordContent(url: string): EmailContent {
+  return linkEmail(
+    'Reset your Vibe Translate password',
+    'Someone asked to reset the password for your Vibe Translate account. The link expires in one hour.',
+    'Choose a new password',
+    url,
+  )
+}
+
 // Content for the subscription-activation confirmation email. Kept minimal on
 // purpose — a richer template layer (e.g. react-email) can replace this later.
 export function subscriptionConfirmationEmail(params: { plan: PaidPlan }): {

@@ -4,6 +4,8 @@ status: accepted
 
 # Commerce: Dodo checkout identity, webhook verification & idempotency
 
+> Since [ADR 0008](./0008-better-auth-replaces-clerk.md), the metadata key is `user_id` and the column is `users.auth_user_id`. The `clerk_user_id` names below are historical.
+
 The commerce layer (Dodo Payments checkout + subscription webhooks) needs three decisions nailed down: how a webhook maps an event back to a local user, when signature verification runs, and how redelivered webhooks avoid double-applying credits. These are load-bearing for correctness and security, and one of them (signature verification) is a launch blocker.
 
 ## Identity flows through checkout metadata, not email

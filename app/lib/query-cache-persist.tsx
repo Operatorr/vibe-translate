@@ -2,7 +2,8 @@ import type { QueryClient } from '@tanstack/react-query'
 import { get, set } from 'idb-keyval'
 import { useEffect } from 'react'
 
-const CACHE_KEY = 'vibe-translate:query-cache'
+import { CACHE_KEY } from '@/lib/query-cache-store'
+
 const PERSISTED_KEYS = new Set(['characters', 'threads', 'segments', 'activity'])
 
 type CacheHydratorProps = {

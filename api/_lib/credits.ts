@@ -23,7 +23,7 @@ export type LedgerReason =
 
 export async function getBalance(db: Client, userId: string): Promise<number> {
   const result = await db.query<{ credits_balance: number }>(
-    `select credits_balance from users where clerk_user_id = $1`,
+    `select credits_balance from users where auth_user_id = $1`,
     [userId],
   )
   return result.rows[0]?.credits_balance ?? 0
@@ -58,7 +58,7 @@ export async function reserveCredits(
       `update users
          set credits_balance = credits_balance - $2,
              updated_at = now()
-       where clerk_user_id = $1 and credits_balance >= $2`,
+       where auth_user_id = $1 and credits_balance >= $2`,
       [userId, estimate],
     )
     if (updated.rowCount === 0) {
@@ -94,7 +94,7 @@ export async function reconcileSpend(
       `update users
          set credits_balance = credits_balance + ($2 - $3),
              updated_at = now()
-       where clerk_user_id = $1`,
+       where auth_user_id = $1`,
       [userId, reservation.reserved, cost.credits],
     )
     await db.query(
@@ -113,7 +113,7 @@ export async function reconcileSpend(
       ],
     )
     const result = await db.query<{ credits_balance: number }>(
-      `select credits_balance from users where clerk_user_id = $1`,
+      `select credits_balance from users where auth_user_id = $1`,
       [userId],
     )
     await db.query('commit')
@@ -137,7 +137,7 @@ export async function refundReservation(
       `update users
          set credits_balance = credits_balance + $2,
              updated_at = now()
-       where clerk_user_id = $1`,
+       where auth_user_id = $1`,
       [userId, reservation.reserved],
     )
     await db.query(`delete from credit_ledger where id = $1`, [reservation.ledgerId])
@@ -163,7 +163,7 @@ export async function recordGrant(
              credits_refilled_at = case when $3 = 'grant.monthly' then now()
                                         else credits_refilled_at end,
              updated_at = now()
-       where clerk_user_id = $1`,
+       where auth_user_id = $1`,
       [userId, amount, reason],
     )
     await db.query(
@@ -172,7 +172,7 @@ export async function recordGrant(
       [userId, amount, reason, JSON.stringify(metadata)],
     )
     const result = await db.query<{ credits_balance: number }>(
-      `select credits_balance from users where clerk_user_id = $1`,
+      `select credits_balance from users where auth_user_id = $1`,
       [userId],
     )
     await db.query('commit')

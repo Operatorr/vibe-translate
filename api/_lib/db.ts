@@ -4,14 +4,18 @@ import type { Bindings } from './env'
 
 export type { Client }
 
-export function createDbClient(env: Bindings) {
+export function databaseUrl(env: Bindings): string {
   const connectionString = env.HYPERDRIVE?.connectionString ?? env.DATABASE_URL
 
   if (!connectionString) {
     throw new Error('DATABASE_URL or HYPERDRIVE binding is required')
   }
 
-  return new Client({ connectionString })
+  return connectionString
+}
+
+export function createDbClient(env: Bindings) {
+  return new Client({ connectionString: databaseUrl(env) })
 }
 
 // Open a connection, run `fn`, and always close — the per-request pattern for
