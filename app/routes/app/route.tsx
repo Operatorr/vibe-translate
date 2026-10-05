@@ -7,6 +7,7 @@ export const Route = createFileRoute('/app')({
 })
 
 // Auth gate for the product shell: unauthenticated visitors go to /auth.
+// `replace` so Back from /auth doesn't land on /app and bounce straight back.
 function AppLayout() {
   const isSignedIn = useSignedIn()
   if (isSignedIn === undefined) {
@@ -19,6 +20,6 @@ function AppLayout() {
       </main>
     )
   }
-  if (!isSignedIn) return <Navigate to="/auth" />
+  if (!isSignedIn) return <Navigate to="/auth" replace />
   return <Outlet />
 }

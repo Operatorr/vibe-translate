@@ -1,7 +1,7 @@
 import { useNavigate } from '@tanstack/react-router'
 import * as React from 'react'
 
-export type VibeRoute = '/' | '/pricing' | '/app'
+export type VibeRoute = '/' | '/pricing' | '/app' | '/auth'
 export type NavigateFn = (path: VibeRoute) => void
 
 const THEME_KEY = 'vibe-translate:theme'

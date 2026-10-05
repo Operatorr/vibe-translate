@@ -1,7 +1,8 @@
-import { Link, createFileRoute, useNavigate } from '@tanstack/react-router'
+import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import * as React from 'react'
 
 import { Icon } from '@/components/vibe-design/icon'
+import { SiteNav } from '@/components/vibe-design/shell'
 import { useVibeFrame } from '@/components/vibe-design/use-vibe-frame'
 import { authClient, useSignedIn } from '@/lib/auth-client'
 
@@ -33,7 +34,7 @@ const errorText = (code: string) =>
   ERRORS[code.toLowerCase()] ?? 'Sign-in failed. Please try again.'
 
 function AuthPage() {
-  const frame = useVibeFrame('/')
+  const frame = useVibeFrame('/auth')
   const navigate = useNavigate()
   const search = Route.useSearch()
   const signedIn = useSignedIn()
@@ -55,7 +56,8 @@ function AuthPage() {
   // The session store refreshes after sign-in, so this is the one redirect.
   // A reset link must still work for a signed-in visitor.
   React.useEffect(() => {
-    if (signedIn && mode !== 'reset') void navigate({ to: '/app' })
+    if (signedIn && mode !== 'reset')
+      void navigate({ to: '/app', replace: true })
   }, [signedIn, mode, navigate])
 
   const go = (next: Mode) => {
@@ -154,41 +156,16 @@ function AuthPage() {
   }[mode]
 
   return (
-    <div className="app-shell auth-shell">
-      <header className="vt-topnav">
-        <div className="vt-topnav__left">
-          <Link className="vt-mark" to="/">
-            <svg width="22" height="22" viewBox="0 0 64 64" aria-hidden="true">
-              <defs>
-                <mask id="au-notch">
-                  <rect width="64" height="64" fill="white" />
-                  <circle cx="44" cy="22" r="14" fill="black" />
-                </mask>
-              </defs>
-              <circle
-                cx="32"
-                cy="32"
-                r="28"
-                fill="currentColor"
-                mask="url(#au-notch)"
-              />
-              <circle cx="44" cy="22" r="6" fill="#1f7aff" />
-            </svg>
-            <span className="vt-mark__name">Vibe Translate</span>
-          </Link>
-        </div>
-        <div className="vt-topnav__right">
-          <button
-            className="vt-iconbtn"
-            aria-label="Toggle theme"
-            onClick={frame.onToggleTheme}
-          >
-            <Icon name={frame.theme === 'dark' ? 'sun' : 'moon'} />
-          </button>
-        </div>
-      </header>
+    <div className="site">
+      <SiteNav
+        theme={frame.theme}
+        onToggleTheme={frame.onToggleTheme}
+        route="/auth"
+        onNavigate={frame.onNavigate}
+        onOpenPalette={() => frame.setPaletteOpen(true)}
+      />
 
-      <main className="auth-main">
+      <main className="site-main auth-main">
         <section className="auth-card" aria-labelledby="auth-title">
           <h1 id="auth-title" className="auth-card__title">
             {title}

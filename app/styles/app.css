@@ -3987,12 +3987,8 @@ body,
 }
 
 /* Auth (/auth) + account menu -------------------------------------------- */
-.auth-shell {
-  height: auto;
-  min-height: 100vh;
-}
 .auth-main {
-  flex: 1;
+  min-height: calc(100dvh - 56px);
   display: grid;
   place-items: center;
   padding: 48px 20px;

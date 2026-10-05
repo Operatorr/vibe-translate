@@ -24,9 +24,9 @@ There is no auth provider: `authClient` is a module singleton, and components re
 ## Routes
 
 - Public: landing (`index.tsx`), `pricing`, `auth`, `legal`, `changelog`, `invite`, `dev/diagnostics`.
-- `auth.tsx` is the one auth page: sign-in, sign-up, forgot password, and the new-password form (opened by the reset link's `?token=`), plus **Continue with Google**. `?error=<code>` (failed link, Google error, `account_not_linked`) is shown inline. Every auth email and OAuth round-trip lands back here, and a signed-in visitor is forwarded to `/app`.
+- `auth.tsx` is the one auth page: sign-in, sign-up, forgot password, and the new-password form (opened by the reset link's `?token=`), plus **Continue with Google**. `?error=<code>` (failed link, Google error, `account_not_linked`) is shown inline. Every auth email and OAuth round-trip lands back here, and a signed-in visitor is forwarded to `/app` (`replace`). It uses the marketing `SiteNav` with `route="/auth"`, which hides the nav's own Sign in / Start translating CTAs there.
 - Public: `share/$token` — read-only **Share link** page (`app/components/app/shared-thread-view.tsx`), no auth.
-- Authenticated product lives under `app/routes/app/`. `app/routes/app/route.tsx` is the auth gate. `useSignedIn()` is tri-state: `undefined` while loading **or when the session fetch fails** (offline, worker down) renders the loading shell, so the PWA doesn't bounce an offline user; `false` redirects to `/auth`; `app/routes/app/index.tsx` renders `AppExperience`.
+- Authenticated product lives under `app/routes/app/`. `app/routes/app/route.tsx` is the auth gate. `useSignedIn()` is tri-state: `undefined` while loading **or when the session fetch fails** (offline, worker down) renders the loading shell, so the PWA doesn't bounce an offline user; `false` redirects to `/auth` with `replace` (so Back from `/auth` returns to the previous page instead of bouncing through `/app`); `app/routes/app/index.tsx` renders `AppExperience`.
 
 ## The app shell (`app/components/app/`)
 
