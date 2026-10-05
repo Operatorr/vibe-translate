@@ -98,19 +98,19 @@ Indexes: `(character_id, updated_at desc)`, `(user_id, updated_at desc)`.
 
 One source-text → target-text translation inside a Thread.
 
-| column                     | type                                              | notes                                                                                                                          |
-| -------------------------- | ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
-| `id`                       | uuid pk                                           |                                                                                                                                |
-| `thread_id`                | uuid fk → `threads.id` on delete cascade          |                                                                                                                                |
-| `user_id`                  | text fk → `users.clerk_user_id` on delete cascade | denormalised for retention queries                                                                                             |
-| `source_text`              | text not null                                     | what the user typed                                                                                                            |
-| `target_text`              | text not null                                     | model output                                                                                                                   |
-| `vibe`                     | `vibe_stop` **nullable**                          | `null` = inherit `characters.default_vibe`. Renderers must resolve.                                                            |
-| `token_alignment`          | jsonb default `[]`                                | array of `{ t, src }` — target token + matched source span. Drives hover-to-align UI.                                          |
-| `token_usage`              | jsonb default `{}`                                | model accounting: `{ model_id, prompt_tokens, completion_tokens, cost_cents }`                                                 |
-| `metadata`                 | jsonb default `{}`                                | catch-all (model id used, retrieval hits considered, etc.)                                                                     |
-| `source_embedding`         | `vector(1536)` nullable                           | Embedding of `source_text`. Powers Translation memory retrieval (HNSW + cosine). `null` = excluded from search until backfill. |
-| `created_at`, `updated_at` | timestamptz                                       |                                                                                                                                |
+| column                     | type                                              | notes                                                                                                                                        |
+| -------------------------- | ------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| `id`                       | uuid pk                                           |                                                                                                                                              |
+| `thread_id`                | uuid fk → `threads.id` on delete cascade          |                                                                                                                                              |
+| `user_id`                  | text fk → `users.clerk_user_id` on delete cascade | denormalised for retention queries                                                                                                           |
+| `source_text`              | text not null                                     | what the user typed                                                                                                                          |
+| `target_text`              | text not null                                     | model output                                                                                                                                 |
+| `vibe`                     | `vibe_stop` **nullable**                          | generation-time stop; legacy `null` = unrecorded, never resolved from the current default ([ADR 0007](./adr/0007-segment-vibe-snapshot.md)). |
+| `token_alignment`          | jsonb default `[]`                                | array of `{ t, src }` — target token + matched source span. Drives hover-to-align UI.                                                        |
+| `token_usage`              | jsonb default `{}`                                | model accounting: `{ model_id, prompt_tokens, completion_tokens, cost_cents }`                                                               |
+| `metadata`                 | jsonb default `{}`                                | catch-all (model id used, retrieval hits considered, etc.)                                                                                   |
+| `source_embedding`         | `vector(1536)` nullable                           | Embedding of `source_text`. Powers Translation memory retrieval (HNSW + cosine). `null` = excluded from search until backfill.               |
+| `created_at`, `updated_at` | timestamptz                                       |                                                                                                                                              |
 
 Indexes: `(thread_id, created_at desc)`, `(user_id, created_at desc)`, `using hnsw (source_embedding vector_cosine_ops)`.
 
@@ -223,7 +223,7 @@ Derived/operational data — not user-scoped, no cascade.
 
 - **Per-user scoping.** Every row in `characters`, `threads`, `segments`, `activity_log` is scoped by `user_id = clerk_user_id`. All queries must include the user filter — see [SECURITY.md](./SECURITY.md#per-user-scoping).
 - **Cascade deletes** flow user → character → thread → segment. Deleting a user wipes all owned data.
-- **`segments.vibe` nullability** is load-bearing — `null` means "use the Character's `default_vibe`". Do not default-write the resolved vibe into the row; the user changing `default_vibe` later should affect not-overridden segments retroactively.
+- **`segments.vibe` records the generation-time stop**, including when the request omits `vibe`. Changing a Character default affects future translations, not existing targets. Null remains only for legacy rows with an unrecorded stop; render it as "Vibe not recorded" ([ADR 0007](./adr/0007-segment-vibe-snapshot.md)).
 - **`token_alignment` shape** is the same as the design prototype's `target` arrays in `data.js` (each entry `{ t, src }`). This is the contract between the model output and the frontend hover-alignment renderer.
 - **Embeddings are derived data.** Source-of-truth is `source_text` (and for explains, `target_text` + `body`). Re-embedding is always safe; never trust the embedding vector over the underlying text.
 - **Explain payload versioning.** Bumping `EXPLAIN_PAYLOAD_VERSION` in `api/_lib/explain.ts` invalidates older `explains` rows. The next read on those segments triggers re-generation. Old rows are retained as a fallback only — they should never be served above a newer one.

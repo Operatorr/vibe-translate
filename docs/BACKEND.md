@@ -106,7 +106,7 @@ The Segment-create path is **synchronous translate-and-return** plus an embeddin
 ```
 client POST /api/segments { threadId, sourceText, vibe? }
   └─ resolve Character (default_vibe, temperature, persona, instructions, langs)
-  └─ PRE-CHECK 1: in-thread Segment for (thread, source_text, vibe)?  → return it, 0 credits
+  └─ PRE-CHECK 1: in-thread Segment for (thread, source_text, resolved vibe)?  → return it, 0 credits
   └─ resolve call target (BYOK key + model override → env *_MODEL → registry default)
   └─ PRE-CHECK 2: canonical request? → translation_cache fingerprint lookup
        │   fingerprint is keyed by the RESOLVED model, so a BYOK/override
@@ -118,7 +118,7 @@ client POST /api/segments { threadId, sourceText, vibe? }
        └─ platform → credits.reserveCredits(estimate): atomic hold; null → 402
   ├─ ai.translateSegment(...)                    ← one OpenRouter call
   ├─ embeddings.embedText({ text: sourceText })  ← always platform key + platform embed model (best-effort)
-  └─ insert segments (server-produced fields + source_embedding)
+  └─ insert segments (server-produced fields + resolved vibe + source_embedding)
   └─ if platform-key path → credits.reconcileSpend(reservation, realCost)  (refunded only if the model call or the insert failed)
   └─ best-effort, never refunds: if canonical AND platform-default → translation-cache.upsertCache(...)  (BYOK output never seeds the shared cache); bump threads.updated_at; activity log
   ← Segment row

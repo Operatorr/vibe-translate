@@ -78,7 +78,7 @@ export type SharedThread = {
     id: string
     sourceText: string
     targetText: string
-    vibe: VibeStop
+    vibe: VibeStop | null
     tokenAlignment: SegmentToken[]
     createdAt: string
   }>

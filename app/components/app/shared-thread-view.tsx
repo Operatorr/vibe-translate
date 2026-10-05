@@ -52,7 +52,7 @@ export function SharedThreadView({ data }: { data: SharedThread }) {
       await speak({
         text: seg.targetText,
         languageCode: character.targetLanguage,
-        vibe: seg.vibe ?? character.defaultVibe,
+        vibe: seg.vibe ?? 'casual',
         onEnd: () => setSpeakingId((id) => (id === seg.id ? null : id)),
       })
     } catch (error) {
@@ -127,7 +127,6 @@ export function SharedThreadView({ data }: { data: SharedThread }) {
             sourceLanguage={character.sourceLanguage}
             targetLanguage={character.targetLanguage}
             vibes={vibes}
-            defaultVibe={character.defaultVibe}
             onExpand={() => undefined}
             onCopy={(seg) => void copy(seg)}
             onSpeak={(seg) => void speakSeg(seg)}

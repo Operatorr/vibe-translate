@@ -151,6 +151,7 @@ export type ComposerHandle = { focus: () => void }
 export const Composer = React.forwardRef<
   ComposerHandle,
   {
+    contextId: string
     placeholder: string
     sourceLanguage: string
     vibes: VibePreset[]
@@ -166,6 +167,7 @@ export const Composer = React.forwardRef<
   }
 >(function Composer(
   {
+    contextId,
     placeholder,
     sourceLanguage,
     vibes,
@@ -180,13 +182,26 @@ export const Composer = React.forwardRef<
   },
   ref,
 ) {
-  const [draft, setDraft] = React.useState('')
+  // Switching threads keeps each draft, and a completion clears only the draft
+  // it submitted. One pending send must not lock the next thread's composer.
+  const [drafts, setDrafts] = React.useState<Record<string, string>>({})
+  const draft = drafts[contextId] ?? ''
+  const setDraft = React.useCallback(
+    (update: React.SetStateAction<string>) => {
+      setDrafts((prev) => ({
+        ...prev,
+        [contextId]:
+          typeof update === 'function' ? update(prev[contextId] ?? '') : update,
+      }))
+    },
+    [contextId],
+  )
   const [interim, setInterimState] = React.useState('')
   const [recording, setRecording] = React.useState(false)
   const recognizerRef = React.useRef<Recognizer | null>(null)
   // Mirrors `interim` so stop/send can read the latest value synchronously.
   const interimRef = React.useRef('')
-  const inFlightRef = React.useRef(false)
+  const inFlightRef = React.useRef(new Set<string>())
   const textareaRef = React.useRef<HTMLTextAreaElement>(null)
   const fileRef = React.useRef<HTMLInputElement>(null)
 
@@ -207,7 +222,7 @@ export const Composer = React.forwardRef<
     const pending = interimRef.current
     setInterim('')
     if (pending.trim()) setDraft((d) => joinDraft(d, pending))
-  }, [setInterim])
+  }, [setInterim, setDraft])
 
   // Abort (not stop): stop() would deliver a late final result after we've
   // already flushed the interim text, duplicating it or writing into the next
@@ -219,7 +234,8 @@ export const Composer = React.forwardRef<
     flushInterim()
   }, [flushInterim])
 
-  React.useEffect(() => () => recognizerRef.current?.abort(), [])
+  // Flush the previous thread's dictation before the next thread uses the mic.
+  React.useEffect(() => () => stopRecording(), [stopRecording])
 
   const toggleRecording = () => {
     if (recording) {
@@ -256,18 +272,18 @@ export const Composer = React.forwardRef<
   }
 
   const send = async () => {
-    if (sending || disabled || inFlightRef.current) return
+    if (sending || disabled || inFlightRef.current.has(contextId)) return
     const text = joinDraft(draft, interimRef.current).trim()
     if (!text) return
     stopRecording()
-    inFlightRef.current = true
+    inFlightRef.current.add(contextId)
     try {
       const ok = await onSend(text)
       // Clear only once the translation landed — a 402/timeout keeps the source
       // for a retry — and only if the user hasn't typed more in the meantime.
       if (ok) setDraft((d) => (d.trim() === text ? '' : d))
     } finally {
-      inFlightRef.current = false
+      inFlightRef.current.delete(contextId)
     }
   }
 

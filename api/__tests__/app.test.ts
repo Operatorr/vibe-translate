@@ -182,6 +182,40 @@ describe('share links', () => {
     expect(res.status).toBe(404)
     expect(queries).toHaveLength(0)
   })
+
+  it('does not relabel an unknown historical vibe with the current default', async () => {
+    answer = (sql) => {
+      if (sql.includes('from thread_shares sh'))
+        return {
+          rows: [
+            {
+              thread_id: THREAD,
+              title: 'History',
+              created_at: '2026-09-14T10:00:00Z',
+              updated_at: '2026-09-14T10:00:00Z',
+              name: 'Character',
+              source_language: 'en-US',
+              target_language: 'ja-JP',
+              default_vibe: 'emperor',
+            },
+          ],
+        }
+      if (sql.includes('from segments where thread_id'))
+        return {
+          rows: [
+            { ...segmentRow(), vibe: null },
+            { ...segmentRow(), id: 'known', vibe: 'casual' },
+          ],
+        }
+      return { rows: [] }
+    }
+    const res = await call('/api/share/abcdefghijklmnop')
+    expect(res.status).toBe(200)
+    expect(await res.json()).toMatchObject({
+      character: { defaultVibe: 'emperor' },
+      segments: [{ vibe: null }, { vibe: 'casual' }],
+    })
+  })
 })
 
 describe('translate credit ordering', () => {
@@ -257,6 +291,69 @@ describe('translate credit ordering', () => {
     expect(insert?.[1]?.[6]).toBe(JSON.stringify({ cached: true }))
     expect(credits.reserveCredits).not.toHaveBeenCalled()
   })
+
+  it.each([false, true])(
+    'snapshots an omitted vibe on create (cache hit: %s)',
+    async (cached) => {
+      if (cached)
+        vi.mocked(cache.lookupCache).mockResolvedValueOnce({
+          targetText: 'やあ',
+          tokenAlignment: [],
+          sourceEmbedding: null,
+        })
+      answer = (sql) => createAnswers(sql)
+      const res = await postJson('/api/segments', {
+        threadId: THREAD,
+        sourceText: 'hi',
+      })
+      expect(res.status).toBe(201)
+      const insert = fakeDb.query.mock.calls.find(([sql]) =>
+        String(sql).includes('insert into segments'),
+      )
+      expect(insert?.[1]?.[4]).toBe('casual')
+      const dedupe = fakeDb.query.mock.calls.find(([sql]) =>
+        String(sql).includes('vibe is not distinct from'),
+      )
+      expect(dedupe?.[1]?.[2]).toBe('casual')
+    },
+  )
+
+  it.each(['friend', null])(
+    'retry persists the actual vibe used (stored vibe: %s)',
+    async (stored) => {
+      answer = (sql, params) => {
+        if (sql.startsWith('select s.id, s.thread_id'))
+          return {
+            rows: [
+              {
+                ...segmentRow('old'),
+                vibe: stored,
+                user_id: 'user_1',
+                source_language: 'en-US',
+                target_language: 'ja-JP',
+                temperature: '0.4',
+                persona: { traits: [] },
+                instructions: null,
+                default_vibe: 'emperor',
+              },
+            ],
+          }
+        if (sql.startsWith('with updated as'))
+          return { rows: [{ ...segmentRow(), vibe: params[5] }] }
+        return { rows: [] }
+      }
+      const res = await call(`/api/segments/${SEGMENT}/retry`, {
+        method: 'POST',
+      })
+      expect(res.status).toBe(200)
+      expect(await res.json()).toMatchObject({ vibe: stored ?? 'emperor' })
+      const update = fakeDb.query.mock.calls.find(([sql]) =>
+        String(sql).includes('with updated as'),
+      )
+      expect(update?.[0]).toContain('vibe = $6')
+      expect(update?.[1]?.[5]).toBe(stored ?? 'emperor')
+    },
+  )
 
   it('logs and does not swallow a failed refund', async () => {
     const ai = await import('../_lib/ai')

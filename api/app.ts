@@ -848,7 +848,8 @@ app.get('/api/share/:token', (c) => {
         id: s.id,
         sourceText: s.source_text,
         targetText: s.target_text,
-        vibe: s.vibe ?? row.default_vibe,
+        // Null is a legacy row whose generation-time stop was not recorded.
+        vibe: s.vibe,
         tokenAlignment: s.token_alignment,
         createdAt: new Date(s.created_at).toISOString(),
       })),
@@ -1005,7 +1006,6 @@ app.post('/api/segments', zValidator('json', segmentCreateSchema), (c) => {
 
     const temperature = Number(character.temperature)
     const resolvedVibe: VibeStop = payload.vibe ?? character.default_vibe
-    const storedVibe = payload.vibe ?? null
 
     const insertSeg = (
       targetText: string,
@@ -1023,7 +1023,7 @@ app.post('/api/segments', zValidator('json', segmentCreateSchema), (c) => {
             userId,
             payload.sourceText,
             targetText,
-            storedVibe,
+            resolvedVibe,
             JSON.stringify(tokenAlignment),
             JSON.stringify(tokenUsage),
             embedding ? formatVector(embedding) : null,
@@ -1031,12 +1031,13 @@ app.post('/api/segments', zValidator('json', segmentCreateSchema), (c) => {
         )
         .then((r) => r.rows[0])
 
-    // Pre-check 1: identical in-thread request (null-aware vibe) → reuse, 0 credits.
+    // Pre-check 1: same text and generation-time vibe → reuse, 0 credits.
+    // A changed Character default must not reuse a translation at an old stop.
     const dedup = await db.query<SegmentDbRow>(
       `select ${SEGMENT_COLUMNS} from segments
         where thread_id = $1 and source_text = $2 and vibe is not distinct from $3
         order by created_at desc limit 1`,
-      [payload.threadId, payload.sourceText, storedVibe],
+      [payload.threadId, payload.sourceText, resolvedVibe],
     )
     if (dedup.rows[0]) return c.json(mapSegment(dedup.rows[0]), 201)
 
@@ -1210,7 +1211,7 @@ app.post('/api/segments/:segmentId/retry', (c) => {
       const res = await db.query<SegmentDbRow>(
         `with updated as (
            update segments
-              set target_text = $2, token_alignment = $3, token_usage = $4, updated_at = now()
+              set target_text = $2, token_alignment = $3, token_usage = $4, vibe = $6, updated_at = now()
             where id = $1 and user_id = $5
            returning ${SEGMENT_COLUMNS}
          ), dropped as (
@@ -1223,6 +1224,7 @@ app.post('/api/segments/:segmentId/retry', (c) => {
           JSON.stringify(result.tokenAlignment),
           JSON.stringify(result.tokenUsage),
           userId,
+          vibe,
         ],
       )
       updated = res.rows[0]

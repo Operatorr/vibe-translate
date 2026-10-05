@@ -29,16 +29,16 @@ Postgres + pgvector  (via Hyperdrive)
 
 ## Domains
 
-| Domain | Lives in | Doc |
-| --- | --- | --- |
-| Frontend SPA | `app/` | [docs/FRONTEND.md](./docs/FRONTEND.md) |
-| Design system & interactions | `app/styles/`, `app/components/` | [docs/DESIGN.md](./docs/DESIGN.md) |
-| Worker / server logic | `api/app.ts`, `api/_lib/` | [docs/BACKEND.md](./docs/BACKEND.md) |
-| HTTP API surface | `api/app.ts` | [docs/API.md](./docs/API.md) |
-| Data model | `db/` | [docs/DATABASE.md](./docs/DATABASE.md) |
-| Platform / runtime | `wrangler.toml`, `functions/` | [docs/CLOUDFLARE.md](./docs/CLOUDFLARE.md) |
-| Deploy & environments | — | [docs/DEPLOYMENT.md](./docs/DEPLOYMENT.md) |
-| Security & abuse | cross-cutting | [docs/SECURITY.md](./docs/SECURITY.md) |
+| Domain                       | Lives in                         | Doc                                        |
+| ---------------------------- | -------------------------------- | ------------------------------------------ |
+| Frontend SPA                 | `app/`                           | [docs/FRONTEND.md](./docs/FRONTEND.md)     |
+| Design system & interactions | `app/styles/`, `app/components/` | [docs/DESIGN.md](./docs/DESIGN.md)         |
+| Worker / server logic        | `api/app.ts`, `api/_lib/`        | [docs/BACKEND.md](./docs/BACKEND.md)       |
+| HTTP API surface             | `api/app.ts`                     | [docs/API.md](./docs/API.md)               |
+| Data model                   | `db/`                            | [docs/DATABASE.md](./docs/DATABASE.md)     |
+| Platform / runtime           | `wrangler.toml`, `functions/`    | [docs/CLOUDFLARE.md](./docs/CLOUDFLARE.md) |
+| Deploy & environments        | —                                | [docs/DEPLOYMENT.md](./docs/DEPLOYMENT.md) |
+| Security & abuse             | cross-cutting                    | [docs/SECURITY.md](./docs/SECURITY.md)     |
 
 ## Core domain model
 
@@ -48,6 +48,7 @@ Postgres + pgvector  (via Hyperdrive)
 - [adr/0002](./docs/adr/0002-translation-and-explain-memory.md) — translation & explain memory (pgvector).
 - [adr/0003](./docs/adr/0003-credits-byok-and-model-registry.md) — credits, BYOK, model registry.
 - [adr/0004](./docs/adr/0004-shared-canonical-translation-cache.md) — shared canonical translation cache.
+- [adr/0007](./docs/adr/0007-segment-vibe-snapshot.md) — generation-time Vibe snapshots and legacy null rows.
 
 ## Boundaries (load-bearing rules)
 
@@ -60,6 +61,6 @@ Postgres + pgvector  (via Hyperdrive)
 ## Tech choices worth knowing
 
 - **Hono** on Workers for the API; **TanStack Router + Query** on the SPA.
-- **Postgres + pgvector** for relational data *and* embedding retrieval in one store.
+- **Postgres + pgvector** for relational data _and_ embedding retrieval in one store.
 - **Model selection is data** (`models` table), not config — swap defaults with SQL, no deploy.
 - Two environments only — **Local + Production** — with separate Neon databases. See [docs/DEPLOYMENT.md](./docs/DEPLOYMENT.md).

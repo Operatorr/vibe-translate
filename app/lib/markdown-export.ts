@@ -58,9 +58,9 @@ export function threadToMarkdown(input: ExportInput): string {
   const { character, segments, title } = input
   const vibes = getVibesForLang(character.targetLanguage)
   const vibeLabel = (id: VibeStop | null) =>
-    vibes.find((v) => v.id === (id ?? character.defaultVibe))?.label ??
-    id ??
-    character.defaultVibe
+    id === null
+      ? 'Vibe not recorded'
+      : (vibes.find((v) => v.id === id)?.label ?? id)
 
   const lines: string[] = [
     `# ${escapeInline(title) || 'Untitled thread'}`,

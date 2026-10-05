@@ -360,24 +360,40 @@ export function AppExperience() {
     }
   }, [char, createThread, threadList, goPane])
 
-  // Serializes sends: two quick submits in the gap before `newThread()` resolves
-  // would otherwise create two threads.
-  const sendingRef = React.useRef(false)
+  // Serialize within a thread (or a character's not-yet-created thread), while
+  // allowing translations in other threads to proceed independently.
+  const sendingRef = React.useRef(new Set<string>())
+  const [pendingSends, setPendingSends] = React.useState<
+    Map<string, { sourceText: string; vibe: VibeStop }>
+  >(() => new Map())
+  const composerContext = thread?.id ?? `new:${char?.id ?? ''}`
+  const activeThreadRef = React.useRef(activeThreadId)
+  activeThreadRef.current = activeThreadId
   // Resolves true when the Segment landed, so the composer knows to clear.
   const send = async (text: string): Promise<boolean> => {
     // While the thread list is loading, "no active thread" is unknown, not
     // "create one" — sending now would mint a spare thread.
-    if (!char || threads.isPending || sendingRef.current) return false
-    sendingRef.current = true
+    if (!char || threads.isPending || sendingRef.current.has(composerContext))
+      return false
+    const locked = [composerContext]
+    const pending = { sourceText: text, vibe: vibes[vibeIdx].id as VibeStop }
+    sendingRef.current.add(composerContext)
+    setPendingSends((prev) => new Map(prev).set(composerContext, pending))
     try {
       let target: Thread | null = thread
       if (!target) target = await newThread()
       if (!target) return false
+      if (target.id !== composerContext) {
+        if (sendingRef.current.has(target.id)) return false
+        locked.push(target.id)
+        sendingRef.current.add(target.id)
+        setPendingSends((prev) => new Map(prev).set(target.id, pending))
+      }
       // A thread that wasn't in the list before this send was created for it.
       const createdForSend = threadList.some((t) => t.id === target.id)
         ? null
         : target
-      const vibe = vibes[vibeIdx]?.id as VibeStop
+      const vibe = pending.vibe
       await tempCommit.current
       let created
       try {
@@ -395,9 +411,13 @@ export function AppExperience() {
         }
         return false
       }
-      setExpanded(new Set())
-      setExplainOpenId(null)
-      scrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' })
+      // A background completion must not collapse or scroll the thread the
+      // user has switched to in the meantime.
+      if (activeThreadRef.current === target.id) {
+        setExpanded(new Set())
+        setExplainOpenId(null)
+        scrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' })
+      }
       if (autoTitled.current.has(target.id)) {
         autoTitled.current.delete(target.id)
         const title =
@@ -408,7 +428,12 @@ export function AppExperience() {
         toast.message('Translated (alignment unavailable).')
       return true
     } finally {
-      sendingRef.current = false
+      locked.forEach((key) => sendingRef.current.delete(key))
+      setPendingSends((prev) => {
+        const next = new Map(prev)
+        locked.forEach((key) => next.delete(key))
+        return next
+      })
     }
   }
 
@@ -468,7 +493,7 @@ export function AppExperience() {
       await speak({
         text: seg.targetText,
         languageCode: char.targetLanguage,
-        vibe: seg.vibe ?? char.defaultVibe,
+        vibe: seg.vibe ?? 'casual',
         fetchAudio: useElevenLabs ? fetchTts : undefined,
         onStart: (engine) => {
           if (useElevenLabs && engine === 'browser')
@@ -724,8 +749,8 @@ export function AppExperience() {
   const activeVibe = vibes[vibeIdx] ?? vibes[0]
   const starred = threadList.filter((t) => t.starred)
   const recent = threadList.filter((t) => !t.starred)
-  const pendingHere =
-    createSegment.isPending && createSegment.variables?.threadId === thread?.id
+  const pendingSend = pendingSends.get(composerContext)
+  const pendingHere = !!pendingSend
   const retryingId = retrySegment.isPending ? retrySegment.variables?.id : null
   const credits = me.data?.credits.balance
   const tier = me.data?.tier ?? 'free'
@@ -1113,15 +1138,13 @@ export function AppExperience() {
               </div>
             ) : (
               <>
-                {pendingHere && createSegment.variables && (
+                {pendingSend && (
                   <PendingSegmentCard
                     idx={segList.length + 1}
-                    sourceText={createSegment.variables.sourceText}
+                    sourceText={pendingSend.sourceText}
                     sourceLanguage={char.sourceLanguage}
                     targetLanguage={char.targetLanguage}
-                    vibe={vibes.find(
-                      (v) => v.id === createSegment.variables?.vibe,
-                    )}
+                    vibe={vibes.find((v) => v.id === pendingSend.vibe)}
                   />
                 )}
                 {ordered.map((s, i) => (
@@ -1136,7 +1159,6 @@ export function AppExperience() {
                     sourceLanguage={char.sourceLanguage}
                     targetLanguage={char.targetLanguage}
                     vibes={vibes}
-                    defaultVibe={char.defaultVibe}
                     onExpand={(id) =>
                       setExpanded((prev) => new Set(prev).add(id))
                     }
@@ -1165,6 +1187,7 @@ export function AppExperience() {
 
           {char && (
             <Composer
+              contextId={composerContext}
               ref={composerRef}
               placeholder={`Translate to ${langName(char.targetLanguage)} as ${char.name} · ${activeVibe?.label}…`}
               sourceLanguage={char.sourceLanguage}
@@ -1175,9 +1198,7 @@ export function AppExperience() {
               onTemperatureChange={setTemp}
               onTemperatureCommit={commitTemperature}
               onSend={send}
-              sending={
-                pendingHere || createThread.isPending || threads.isPending
-              }
+              sending={pendingHere || threads.isPending}
             />
           )}
         </main>

@@ -56,7 +56,6 @@ export function SegmentCard({
   sourceLanguage,
   targetLanguage,
   vibes,
-  defaultVibe,
   onExpand,
   explain,
   onCopy,
@@ -73,7 +72,6 @@ export function SegmentCard({
   sourceLanguage: string
   targetLanguage: string
   vibes: VibePreset[]
-  defaultVibe: VibeStop
   onExpand: (id: string) => void
   explain?: SegmentExplainState
   onCopy: (seg: SegmentView) => void
@@ -87,7 +85,7 @@ export function SegmentCard({
   // card, not the whole shell.
   const [selection, setSelection] = React.useState<Selection>(null)
   const rowRef = React.useRef<HTMLDivElement>(null)
-  const vibe = vibes.find((v) => v.id === (seg.vibe ?? defaultVibe))
+  const vibe = vibes.find((v) => v.id === seg.vibe)
   const isJa = /^ja([-_]|$)/i.test(targetLanguage)
   // Memoized so the no-alignment fallback keeps a stable identity across renders.
   const tokens = React.useMemo(
@@ -205,11 +203,9 @@ export function SegmentCard({
           >
             <div style={eyebrow}>
               TARGET · {targetLanguage}
-              {vibe && (
-                <span style={{ color: vibe.color, marginLeft: 8 }}>
-                  {vibe.label}
-                </span>
-              )}
+              <span style={{ color: vibe?.color, marginLeft: 8 }}>
+                {vibe?.label ?? 'Vibe not recorded'}
+              </span>
             </div>
             {meta && <div className="segment__tgt-meta">{meta}</div>}
           </div>

@@ -73,7 +73,7 @@ export const sharedThreadSchema = z.object({
       id: z.string(),
       sourceText: z.string(),
       targetText: z.string(),
-      vibe: vibeStopSchema,
+      vibe: vibeStopSchema.nullable(),
       tokenAlignment: z.array(segmentTokenSchema).catch([]),
       createdAt: z.string(),
     }),

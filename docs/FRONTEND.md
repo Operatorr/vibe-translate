@@ -6,7 +6,7 @@
 
 - **React 19 + Vite + TypeScript** (strict). Source under `app/`.
 - **TanStack Router** — file-based routes in `app/routes/`, generated `app/routeTree.gen.ts` (via `@tanstack/router-plugin` in `vite.config.ts`).
-- **TanStack Query** — server-state cache, invalidation, optimistic updates.
+- **TanStack Query** — server-state cache, invalidation, optimistic updates. Segment creates cancel stale reads before the call and before merging its response; an unloaded segment list is refetched in full.
 - **Clerk** (`@clerk/react`) — auth/session.
 - **Tailwind v4**, Radix, CVA, lucide, Framer Motion (see DESIGN.md).
 - `@/*` resolves to `app/*`.
@@ -28,7 +28,7 @@
 
 ## The app shell (`app/components/app/`)
 
-`app-experience.tsx` owns the shell: active Character/Thread, the mobile pane, the open panel, hover-align state, and every action (send, retry, speak, star, share, download, rename/archive/delete, create/customize character). It composes: `send` resolves only once the Segment lands: the composer flushes interim dictation into the draft, clears the draft on success (a 402/timeout keeps it), sends are serialized and wait for the thread list so they never mint a spare thread, and a thread created for a failed send is deleted. Speak uses a generation token in `tts.ts`, so Stop/switch cancels an in-flight ElevenLabs fetch and never falls back to browser speech.
+`app-experience.tsx` owns the shell: active Character/Thread, the mobile pane, the open panel, hover-align state, and every action (send, retry, speak, star, share, download, rename/archive/delete, create/customize character). It composes: `send` resolves only once the Segment lands: the composer flushes interim dictation into the draft, clears the draft on success (a 402/timeout keeps it), sends are serialized per thread and wait for the thread list so they never mint a spare thread; drafts and pending cards are scoped per thread, so switching threads permits another send without losing the first draft, and a thread created for a failed send is deleted. Speak uses a generation token in `tts.ts`, so Stop/switch cancels an in-flight ElevenLabs fetch and never falls back to browser speech.
 
 - `composer.tsx` — Vibe slider (`VibeMini`, keyboard-operable), `TempSlider` (PATCHes the Character's temperature on release), the textarea with char/token counter, **mic** (Web Speech API dictation in the source language, `app/lib/speech-recognition.ts`), **attach** (reads a text file into the draft), **code** (wraps the selection in backticks; the translate prompt keeps code verbatim), and send (Enter; Shift+Enter for newline).
 - `segment-card.tsx` — one **Segment** (newest first, older ones collapse to a source pill) with COPY / RETRY / SPEAK / EXPLAIN, hover- or tap-to-align, and a `PendingSegmentCard` while a translation is in flight.

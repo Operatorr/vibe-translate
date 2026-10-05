@@ -131,6 +131,7 @@ create table if not exists segments (
   user_id text not null references users (clerk_user_id) on delete cascade,
   source_text text not null,
   target_text text not null,
+  -- Generation-time stop. Nullable only for legacy rows whose stop wasn't recorded.
   vibe vibe_stop,
   token_alignment jsonb not null default '[]'::jsonb,
   token_usage jsonb not null default '{}'::jsonb,

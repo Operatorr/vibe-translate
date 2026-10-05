@@ -2,12 +2,9 @@ import { useAuth } from '@clerk/react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
 import { apiFetch } from '@/lib/api'
-import {
-  appendSegment,
-  applyServerThread,
-  patchThread,
-  touchThread,
-} from '@/lib/query-updaters'
+import { applyServerThread, patchThread } from '@/lib/query-updaters'
+import { keys } from '@/lib/query-keys'
+import { createSegmentOptions } from '@/lib/segment-mutations'
 import type {
   Character,
   ExplainPayload,
@@ -23,14 +20,7 @@ import type {
 // names persisted by app/lib/query-cache-persist.tsx ('characters', 'threads',
 // 'segments'), so list data survives reloads and works offline (read-only).
 
-export const keys = {
-  me: ['me'] as const,
-  characters: ['characters'] as const,
-  threads: (characterId: string | null) => ['threads', characterId] as const,
-  segments: (threadId: string | null) => ['segments', threadId] as const,
-  explain: (segmentId: string) => ['explain', segmentId] as const,
-  share: (threadId: string) => ['share', threadId] as const,
-}
+export { keys } from '@/lib/query-keys'
 
 function useApi() {
   const { getToken, isSignedIn } = useAuth()
@@ -241,32 +231,11 @@ export function useDeleteThread() {
 export function useCreateSegment() {
   const { json } = useApi()
   const qc = useQueryClient()
-  return useMutation({
-    mutationFn: (input: {
-      threadId: string
-      sourceText: string
-      vibe?: VibeStop
-    }) => json<Segment>('/api/segments', 'POST', input),
-    onSuccess: (created, vars, _ctx) => {
-      let appended: boolean | null = null
-      qc.setQueryData<Segment[]>(keys.segments(vars.threadId), (prev) => {
-        const result = appendSegment(prev, created)
-        appended = result.appended
-        return result.list
-      })
-      if (appended === true) {
-        // Bump the thread's count/recency without a refetch.
-        qc.setQueriesData<Thread[]>({ queryKey: ['threads'] }, (list) =>
-          touchThread(list, vars.threadId, created.createdAt, 1),
-        )
-      } else if (appended === null) {
-        // Segments weren't loaded, so we can't tell a new row from a de-duped one.
-        void qc.invalidateQueries({ queryKey: ['threads'] })
-      }
-      // A miss spends credits; refresh the balance shown in the sidebar.
-      void qc.invalidateQueries({ queryKey: keys.me })
-    },
-  })
+  return useMutation(
+    createSegmentOptions(qc, (input) =>
+      json<Segment>('/api/segments', 'POST', input),
+    ),
+  )
 }
 
 export function useRetrySegment() {

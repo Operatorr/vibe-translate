@@ -10,6 +10,24 @@ const character = {
 }
 
 describe('threadToMarkdown', () => {
+  it('labels unknown legacy vibes explicitly instead of using the current default', () => {
+    const segments = [
+      {
+        sourceText: 'hi',
+        targetText: 'やあ',
+        vibe: null,
+        createdAt: '2026-09-14T10:00:00Z',
+      },
+    ]
+    const before = threadToMarkdown({ title: 'History', character, segments })
+    const after = threadToMarkdown({
+      title: 'History',
+      character: { ...character, defaultVibe: 'emperor' },
+      segments,
+    })
+    expect(before).toContain('## 01 · Vibe not recorded')
+    expect(after).toContain('## 01 · Vibe not recorded')
+  })
   it('cannot inject blocks through the title', () => {
     const md = threadToMarkdown({
       title: 'Recipe\n\n# Injected',

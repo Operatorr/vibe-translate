@@ -14,11 +14,14 @@ export async function copyText(text: string): Promise<void> {
   const el = document.createElement('textarea')
   el.value = text
   el.setAttribute('readonly', '')
+  el.setAttribute('aria-hidden', 'true')
   el.style.position = 'fixed'
   el.style.opacity = '0'
   document.body.appendChild(el)
-  el.select()
-  const ok = document.execCommand('copy')
-  el.remove()
-  if (!ok) throw new Error('Copy failed')
+  try {
+    el.select()
+    if (!document.execCommand('copy')) throw new Error('Copy failed')
+  } finally {
+    el.remove()
+  }
 }
