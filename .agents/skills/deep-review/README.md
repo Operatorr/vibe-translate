@@ -5,17 +5,18 @@ Maximally thorough, CodeRabbit-style code review for GitHub PRs and local branch
 ## Files
 
 - [`SKILL.md`](./SKILL.md) — main skill instructions (principles, phased workflow, severity tiers, output)
-- [`REFERENCE.md`](./REFERENCE.md) — finding shape, terminal + GitHub templates, the `gh api .../reviews` inline payload recipe, fallback commands, pitfalls
+- [`REFERENCE.md`](./REFERENCE.md) — finding shape, terminal + GitHub summary-comment templates, the posting command, fallback commands, pitfalls
 - [`SUBAGENT_PROMPT.md`](./SUBAGENT_PROMPT.md) — the exact per-file review sub-agent prompt (the anti-salience-collapse core)
 - [`TOOL_BATTERY.md`](./TOOL_BATTERY.md) — language/file detection and the linter/SAST/secret-scanner matrix with the npx/uvx install policy
 
 ## Example prompts
 
 ```text
+/deep-review https://github.com/OWNER/REPO/pull/123
 /skill:deep-review https://github.com/OWNER/REPO/pull/123
 Exhaustively review PR #123 — find everything.
 CodeRabbit-style deep review of the current branch.
-Thorough review of this PR with inline comments.
+Thorough review of this PR, post the summary.
 Nitpick-level review of these local changes, terminal only.
 ```
 

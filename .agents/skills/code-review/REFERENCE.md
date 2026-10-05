@@ -2,6 +2,8 @@
 
 Supporting templates, examples, and guidelines for the `code-review` skill.
 
+The review reports every Critical, High, and Medium finding it can prove from the code, with no cap on count. Low-severity and nitpick coverage belongs in `deep-review`.
+
 ## Full Handoff Prompt Template
 
 Use this structure for every issue:
@@ -48,10 +50,11 @@ After the change, add a unit test case for the "attendee not found" scenario.
 | --- | --- | --- |
 | Critical | Immediate data loss, security breach, production crash, auth bypass | SQL injection, missing auth on sensitive endpoint, crash in startup path |
 | High | Logic bug that breaks a core feature, missing critical error handling, major performance regression | Wrong calculation in pricing engine, payment race condition, N+1 query on hot path |
-| Medium | Maintainability issue likely to cause future bugs, missing tests for new logic, minor behavior issue | Duplicate validation logic, magic values, missing edge-case test |
-| Low | Explicit style or clarity issue with low risk | Wrong import order when standardized, confusing name in touched code |
+| Medium | Maintainability issue likely to cause future bugs, missing tests for a concrete regression risk, minor behavior issue | Duplicate validation logic, magic values that affect behavior, missing edge-case test |
+| Low | Omitted; use only when an explicit project rule makes the issue merge-blocking | Required generated file is missing from a project that requires it |
 
-Rule of thumb: if you would not block a real merge for it, do not mark it Medium or higher.
+Rule of thumb: if you would ask for it to be fixed before merging, it is Medium or higher and belongs in the report. If you would let it merge and mention it in passing, leave it out.
+Do not include Low/Nit findings just to fill space, and do not drop a real Medium just to keep the report short.
 
 ## Sample Review Output
 
@@ -89,31 +92,68 @@ Use the same error response format as `getEventById`.
 Add a corresponding test case for the "attendee not found" path.
 ```
 
+## Medium Issue: New activity aggregation has no test for the empty-activities case
+
+**File:** `src/services/AttendeeService.ts:88-104`
+**Category:** Testing
+
+**Problem:**
+`getAttendeeActivitiesDetailed` now reduces over `activities` to compute totals, but the only new test seeds three activities. An attendee with no activities hits `activities[0].eventId` and throws.
+
+**Impact:**
+Any attendee who has registered but not yet checked in will get a 500 from the activities endpoint, and nothing in CI would catch it.
+
+**Suggested Fix:**
+```diff
+-  const eventId = activities[0].eventId;
++  if (activities.length === 0) {
++    return { activities: [], totalMinutes: 0 };
++  }
++  const eventId = activities[0].eventId;
+```
+
+**Handoff Prompt:**
+```
+In the file `src/services/AttendeeService.ts`, around lines 88-104:
+
+Return an empty result `{ activities: [], totalMinutes: 0 }` when `activities` is empty, before reading `activities[0]`.
+
+Then add a test in `src/services/__tests__/AttendeeService.test.ts` that seeds an attendee with zero activities and asserts the empty result is returned without throwing.
+```
+
 ### PR Summary
-This PR adds attendee activity tracking to the event endpoint. The core direction is sound and follows existing patterns, but one High issue should be fixed before merge.
+This PR adds attendee activity tracking to the event endpoint. The core direction is sound and follows existing patterns, but one High and one Medium issue should be fixed before merge.
 
 ### Recommendations
 - [ ] Fix the null-check issue
-- [ ] Add coverage for the not-found path
+- [ ] Guard the empty-activities case and add its test
+
+### Coverage
+- Files reviewed: 4 of 4
+- Callers checked: `getAttendeeByAttendeeId` (2 call sites, both unaffected)
 
 ### Statistics
 - Files changed: 4
-- Issues found: 1 (Critical: 0, High: 1, Medium: 0, Low: 0)
+- Issues found: 2 (Critical: 0, High: 1, Medium: 1)
 - Checks run: `npm test -- AttendeeService`
 ````
 
 ## GitHub PR Comment Template
 
-Use this one-comment format when posting a review to a GitHub PR. Keep the summary and statistics visible, and wrap every finding in its own collapsible section.
+Use this one-comment format when posting a review to a GitHub PR. Keep the summary and statistics visible, and wrap every material finding in its own collapsible section.
 
 ````markdown
 # Code Review
 
 [Short overall assessment. State whether the PR looks mergeable, has blocking issues, or needs specific follow-up.]
 
+### Coverage
+- Files reviewed: X of Y
+- Callers checked: [symbols whose call sites were verified, or "none changed"]
+
 ### Statistics
 - Files changed: X
-- Issues found: Y (Critical: A, High: B, Medium: C, Low: D)
+- Issues found: Y (Critical: A, High: B, Medium: C)
 - Checks run: [commands or "not run"]
 
 ### Findings
@@ -121,7 +161,7 @@ Use this one-comment format when posting a review to a GitHub PR. Keep the summa
 <details>
 <summary>[Severity] path/to/file.ext:line - short issue title</summary>
 
-**Category:** Bug | Security | Logic | Reliability | Maintainability | Testing | Performance | Style
+**Category:** Bug | Security | Logic | Reliability | Compatibility | Testing | Performance | Maintainability
 
 **Problem:**
 [Clear 1-2 sentence explanation of what is wrong and why it matters.]
@@ -215,5 +255,7 @@ gh api repos/OWNER/REPO/pulls/123/reviews \
 - Do not flag every formatting issue unless `REVIEW.md` explicitly requires it.
 - Do not suggest massive refactors unless the PR itself is a refactor.
 - Do not provide vague feedback like "this could be better".
+- Do not stop reviewing once you have a few findings; every changed file gets the full checklist.
+- Do not report a finding you cannot point to specific lines for.
 - Do not include stale PR numbers, dates, or environment-specific details in reusable templates.
 - If the PR is good, say what is good. Positive signal builds trust.

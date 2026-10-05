@@ -11,13 +11,13 @@
       "source": "Operatorr/skills",
       "sourceType": "github",
       "skillPath": "skills/engineering/code-review/SKILL.md",
-      "computedHash": "8bc6ed0750d21436fea4c6c161d938bd9312a4d6fe53a13c25936d995d045711"
+      "computedHash": "186ef9e33072516c774735417c0aba60c36099c9255feb010f978e108b8d4dd8"
     },
     "deep-review": {
       "source": "Operatorr/skills",
       "sourceType": "github",
       "skillPath": "skills/engineering/deep-review/SKILL.md",
-      "computedHash": "d83fce71d48ff16e141394834f0c285a095d3ffbbd3dfc5f07f0cc6a8d2b4e53"
+      "computedHash": "92382a656f988a9b77085604c54bae62a9148f18e3b0044025987684bdcfdec9"
     },
     "diagnose": {
       "source": "mattpocock/skills",
@@ -67,6 +67,12 @@
       "skillPath": "skills/engineering/prototype/SKILL.md",
       "computedHash": "e4d0c8f8cb3fc096ee99405a15491da466545cf4a3694bee5a0c9db2fa621a43"
     },
+    "rewrite": {
+      "source": "Operatorr/skills",
+      "sourceType": "github",
+      "skillPath": "skills/productivity/rewrite/SKILL.md",
+      "computedHash": "f3a80844ce4ced99c2053a5e7e4447dbcefd39a6b19390ef1ccb8169316eaacc"
+    },
     "setup-matt-pocock-skills": {
       "source": "mattpocock/skills",
       "sourceType": "github",
@@ -102,6 +108,12 @@
       "sourceType": "github",
       "skillPath": "skills/engineering/triage/SKILL.md",
       "computedHash": "2b6efb6da12d92551772fcc04acf331f4e0e6f7bd9d4cb23ce0b301e0b128feb"
+    },
+    "visual-review": {
+      "source": "Operatorr/skills",
+      "sourceType": "github",
+      "skillPath": "skills/engineering/visual-review/SKILL.md",
+      "computedHash": "9aa8b542da2f857edb6bd08a821bcec6c9319a5972f139e2ee06e2389712cb32"
     },
     "write-a-skill": {
       "source": "mattpocock/skills",
