@@ -13,12 +13,21 @@ export type CanonicalityInput = {
   temperature: number
 }
 
-export function isCanonical({ persona, instructions, temperature }: CanonicalityInput): boolean {
+// "Empty persona" means every field that `formatPersona` can render into the
+// translate prompt is absent — including the voice fields (tone, verbosity).
+// Any of them shapes the output, so it must never reach the shared cache.
+export function isCanonical({
+  persona,
+  instructions,
+  temperature,
+}: CanonicalityInput): boolean {
   const hasPersona =
     !!persona &&
     (!!persona.age ||
       !!persona.region ||
       !!persona.formality ||
+      !!persona.tone ||
+      typeof persona.verbosity === 'number' ||
       (persona.traits?.length ?? 0) > 0)
   const hasInstructions = !!instructions && instructions.trim().length > 0
   return !hasPersona && !hasInstructions && temperature === DEFAULT_TEMPERATURE
@@ -52,7 +61,10 @@ export type CacheHit = {
   sourceEmbedding: number[] | null
 }
 
-export async function lookupCache(db: Client, fp: string): Promise<CacheHit | null> {
+export async function lookupCache(
+  db: Client,
+  fp: string,
+): Promise<CacheHit | null> {
   const result = await db.query<{
     target_text: string
     token_alignment: SegmentToken[]
@@ -79,7 +91,11 @@ export type CacheUpsertInput = FingerprintInput & {
   sourceEmbedding: number[] | null
 }
 
-export async function upsertCache(db: Client, fp: string, input: CacheUpsertInput): Promise<void> {
+export async function upsertCache(
+  db: Client,
+  fp: string,
+  input: CacheUpsertInput,
+): Promise<void> {
   await db.query(
     `insert into translation_cache
        (fingerprint, source_language, target_language, vibe, model_id,

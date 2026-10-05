@@ -5,6 +5,7 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { Toaster } from 'sonner'
 
+import { InstallPrompt } from '@/lib/pwa-install'
 import { CacheHydrator } from '@/lib/query-cache-persist'
 import { registerServiceWorker } from '@/lib/register-service-worker'
 import { routeTree } from '@/routeTree.gen'
@@ -47,6 +48,7 @@ createRoot(document.getElementById('root')!).render(
       <QueryClientProvider client={queryClient}>
         <CacheHydrator queryClient={queryClient} />
         <RouterProvider router={router} />
+        <InstallPrompt />
         <Toaster richColors closeButton position="top-right" />
       </QueryClientProvider>
     </ClerkProvider>

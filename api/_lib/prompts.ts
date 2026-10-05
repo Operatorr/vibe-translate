@@ -16,20 +16,27 @@ import type { Persona, VibeStop } from './schemas'
 // description here is a compile error. Keeps the six-stop contract in lockstep
 // with api/_lib/schemas.ts → VIBE_STOPS and the DB `vibe_stop` enum.
 const VIBE_REGISTER: Record<VibeStop, string> = {
-  yakuza: 'Rough, aggressive, hyper-masculine street register; blunt slang, dropped politeness, intimidating.',
-  friend: 'Warm casual register between close friends; relaxed contractions, familiar particles, easy banter.',
-  casual: 'Everyday neutral-casual register; plain form, conversational but not slangy.',
-  keigo: 'Standard polite / business register; teineigo (です・ます equivalents), respectful but not deferential.',
+  yakuza:
+    'Rough, aggressive, hyper-masculine street register; blunt slang, dropped politeness, intimidating.',
+  friend:
+    'Warm casual register between close friends; relaxed contractions, familiar particles, easy banter.',
+  casual:
+    'Everyday neutral-casual register; plain form, conversational but not slangy.',
+  keigo:
+    'Standard polite / business register; teineigo (です・ます equivalents), respectful but not deferential.',
   keigoplus:
     'Elevated honorific register; humble + exalted forms (sonkeigo + kenjougo equivalents), deferential toward a superior.',
-  emperor: 'Maximally grandiose, archaic, ceremonial register; ornate, lofty, imperial phrasing.',
+  emperor:
+    'Maximally grandiose, archaic, ceremonial register; ornate, lofty, imperial phrasing.',
 }
 
 // Belt-and-suspenders runtime guard for the lockstep invariant above; cheap and
 // catches an out-of-sync map even if the type check is somehow bypassed.
 const MISSING_REGISTER = VIBE_STOPS.filter((stop) => !(stop in VIBE_REGISTER))
 if (MISSING_REGISTER.length > 0) {
-  throw new Error(`VIBE_REGISTER is missing guidance for: ${MISSING_REGISTER.join(', ')}`)
+  throw new Error(
+    `VIBE_REGISTER is missing guidance for: ${MISSING_REGISTER.join(', ')}`,
+  )
 }
 
 // Render the structured Persona block into short prompt lines, omitting any
@@ -39,8 +46,21 @@ export function formatPersona(persona: Persona): string {
   if (persona.age) lines.push(`- Age: ${persona.age}`)
   if (persona.region) lines.push(`- Region/dialect: ${persona.region}`)
   if (persona.formality) lines.push(`- Formality: ${persona.formality}`)
-  if (persona.traits.length > 0) lines.push(`- Traits: ${persona.traits.join(', ')}`)
+  if (persona.tone) lines.push(`- Tone: ${persona.tone}`)
+  if (typeof persona.verbosity === 'number')
+    lines.push(`- Verbosity: ${describeVerbosity(persona.verbosity)}`)
+  if (persona.traits.length > 0)
+    lines.push(`- Traits: ${persona.traits.join(', ')}`)
   return lines.join('\n')
+}
+
+// Map the 0..1 verbosity slider onto prompt-friendly guidance. Mirrored on the
+// client in app/lib/system-prompt.ts for the live "compiled prompt" preview.
+export function describeVerbosity(value: number): string {
+  if (value < 0.25) return 'terse — say the minimum, drop filler'
+  if (value < 0.5) return 'concise — natural length, no padding'
+  if (value < 0.75) return 'balanced — natural, may add a softener or two'
+  return 'expansive — elaborate, add warmth and context'
 }
 
 export type ChatMessage = { role: 'system' | 'user'; content: string }
@@ -48,7 +68,9 @@ export type ChatMessage = { role: 'system' | 'user'; content: string }
 // Build the two-message prompt for one translation. The system message is the
 // stable instruction surface (register, persona, output contract, alignment
 // rules); the user message is just the raw source text.
-export function buildTranslateMessages(input: TranslateSegmentInput): ChatMessage[] {
+export function buildTranslateMessages(
+  input: TranslateSegmentInput,
+): ChatMessage[] {
   const persona = formatPersona(input.persona)
   const instructions = input.instructions?.trim()
 
@@ -57,7 +79,9 @@ export function buildTranslateMessages(input: TranslateSegmentInput): ChatMessag
     `Translate from ${input.sourceLanguage} to ${input.targetLanguage}.`,
     ``,
     `REGISTER (vibe = "${input.vibe}"): ${VIBE_REGISTER[input.vibe]}`,
-    persona ? `\nSPEAKER PERSONA (who is speaking / being addressed):\n${persona}` : null,
+    persona
+      ? `\nSPEAKER PERSONA (who is speaking / being addressed):\n${persona}`
+      : null,
     instructions ? `\nADDITIONAL INSTRUCTIONS:\n${instructions}` : null,
     ``,
     `Respond with JSON containing exactly two fields: "targetText" and "tokens".`,
@@ -76,6 +100,9 @@ export function buildTranslateMessages(input: TranslateSegmentInput): ChatMessag
     `4. "src" may be "" when a target token has no source counterpart (particles,`,
     `   inflection, politeness markers).`,
     `5. Segment at word / morpheme granularity — not whole phrases or whole sentences.`,
+    `6. Anything wrapped in backticks or a \`\`\` code fence is code: copy it into`,
+    `   "targetText" verbatim as exactly ONE token per code span ("src" = the same code).`,
+    `   This overrides rule 5: never split a code span into words or morphemes.`,
     ``,
     `EXAMPLE (en-US → ja-JP, casual Kansai register):`,
     `source: "Could you write down your recipe so I don't forget?"`,
@@ -105,7 +132,9 @@ export function isJapaneseTarget(targetLanguage: string): boolean {
 // gloss/note is written in the learner's source language. Japanese targets get
 // the full kanji/morpheme/grammar treatment; other languages get a lighter
 // scaffold. The schema in explain.ts mirrors these field lists. See PRODUCT.md.
-export function buildExplainMessages(input: ExplainGenerateInput): ChatMessage[] {
+export function buildExplainMessages(
+  input: ExplainGenerateInput,
+): ChatMessage[] {
   const common = [
     `You are a patient language tutor for a learner whose native language is ${input.sourceLanguage}.`,
     `Break down the following ${input.targetLanguage} text, translated from a ${input.sourceLanguage} source.`,
@@ -163,8 +192,10 @@ export function buildDictationMessages(prompt: string): ChatMessage[] {
     `- "defaultVibe": one of ${VIBE_STOPS.join(', ')} — the social register that best fits the`,
     `  relationship (e.g. a close friend -> "friend"; a boss or business contact -> "keigo").`,
     `- "temperature": 0.0-1.0 creativity (lower = more literal/formal), or null if unsure.`,
-    `- "persona": { "age", "region", "formality", "traits" (array) }; null fields where unknown,`,
-    `  "traits" is [] when none.`,
+    `- "persona": { "age", "region", "formality", "tone", "verbosity", "traits" (array) }; null`,
+    `  fields where unknown, "traits" is [] when none. "tone" is one word for how they sound`,
+    `  (e.g. "warm", "dry", "playful"); "verbosity" is 0.0 (terse) to 1.0 (expansive).`,
+    `  Only fill tone/verbosity when the description clearly implies them.`,
     `- "instructions": a short free-form note capturing relationship/context worth keeping`,
     `  (e.g. "college roommate in Osaka, uses Kansai-ben"), or null.`,
   ].join('\n')

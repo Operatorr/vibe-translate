@@ -105,9 +105,21 @@ create table if not exists threads (
   character_id uuid not null references characters (id) on delete cascade,
   user_id text not null references users (clerk_user_id) on delete cascade,
   title text not null,
+  starred boolean not null default false,
   archived_at timestamptz,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
+);
+
+-- One read-only public share link per Thread. The token is unguessable and
+-- resolved without auth by GET /api/share/:token; revoking sets revoked_at.
+create table if not exists thread_shares (
+  id uuid primary key default gen_random_uuid(),
+  thread_id uuid not null references threads (id) on delete cascade,
+  user_id text not null references users (clerk_user_id) on delete cascade,
+  token text not null unique,
+  created_at timestamptz not null default now(),
+  revoked_at timestamptz
 );
 
 -- Segments power Translation Memory. source_embedding dimension must match
@@ -119,6 +131,7 @@ create table if not exists segments (
   user_id text not null references users (clerk_user_id) on delete cascade,
   source_text text not null,
   target_text text not null,
+  -- Generation-time stop. Nullable only for legacy rows whose stop wasn't recorded.
   vibe vibe_stop,
   token_alignment jsonb not null default '[]'::jsonb,
   token_usage jsonb not null default '{}'::jsonb,
@@ -190,6 +203,12 @@ create table if not exists webhook_events (
 create index if not exists characters_user_id_sort_order_idx on characters (user_id, sort_order);
 create index if not exists threads_character_id_updated_at_idx on threads (character_id, updated_at desc);
 create index if not exists threads_user_id_updated_at_idx on threads (user_id, updated_at desc);
+create index if not exists thread_shares_thread_id_idx on thread_shares (thread_id);
+create index if not exists thread_shares_user_id_idx on thread_shares (user_id);
+-- At most one live (unrevoked) share link per Thread; POST /share mints with
+-- `on conflict (thread_id) where revoked_at is null do nothing`.
+create unique index if not exists thread_shares_live_thread_uniq
+  on thread_shares (thread_id) where revoked_at is null;
 create index if not exists segments_thread_id_created_at_idx on segments (thread_id, created_at desc);
 create index if not exists segments_user_id_created_at_idx on segments (user_id, created_at desc);
 create index if not exists segments_source_embedding_idx

@@ -6,13 +6,13 @@
 
 Two environments only — **Local** and **Production**. There is no staging tier.
 
-| | Local | Production |
-| --- | --- | --- |
-| Runtime | `wrangler dev` / Vite | Cloudflare Workers |
-| Config | top-level `wrangler.toml` + `.dev.vars` overrides | top-level `wrangler.toml` |
-| `APP_ENV` | `development` (set in `.dev.vars`) | `production` (in `wrangler.toml`) |
-| Database | local Neon database, direct via `DATABASE_URL` | production Neon database, via **Hyperdrive** |
-| pgvector | enabled on the local Neon DB | enabled on the prod Neon DB |
+|           | Local                                             | Production                                   |
+| --------- | ------------------------------------------------- | -------------------------------------------- |
+| Runtime   | `wrangler dev` / Vite                             | Cloudflare Workers                           |
+| Config    | top-level `wrangler.toml` + `.dev.vars` overrides | top-level `wrangler.toml`                    |
+| `APP_ENV` | `development` (set in `.dev.vars`)                | `production` (in `wrangler.toml`)            |
+| Database  | local Neon database, direct via `DATABASE_URL`    | production Neon database, via **Hyperdrive** |
+| pgvector  | enabled on the local Neon DB                      | enabled on the prod Neon DB                  |
 
 The committed `wrangler.toml` **is the production config**. Local dev overrides what it needs through `.dev.vars`.
 
@@ -57,7 +57,7 @@ wrangler secret put RESEND_API_KEY
 
 **Manual, via the Neon SQL Editor.** There is no migration runner.
 
-1. For a fresh database: paste [`db/migrations/0001_initial.sql`](../db/migrations) into the Neon SQL Editor and run it (it bootstraps at the current 1536-dim embedding schema), then apply each later migration in order (`0002`…`0004`). All are idempotent (`create … if not exists`, `on conflict do nothing`, type-guarded `alter`s).
+1. For a fresh database: paste [`db/migrations/0001_initial.sql`](../db/migrations) into the Neon SQL Editor and run it (it bootstraps at the current 1536-dim embedding schema), then apply each later migration in order (`0002`…`0005`). All are idempotent (`create … if not exists`, `on conflict do nothing`, type-guarded `alter`s).
 2. For incremental changes: author `db/migrations/000N_<slug>.sql`, keep [`db/schema.sql`](../db/schema.sql) in sync as the canonical bootstrap, and paste the new migration into the Neon SQL Editor for each environment (local DB, then prod DB). **Never edit an already-applied migration in place** — `create … if not exists` means a re-run won't alter existing objects, so a forward migration is the only thing that reaches provisioned databases (e.g. `0004_embed_dims_1536.sql` migrates a pre-1536 DB's `vector(3072)` columns down to 1536).
 3. `pgvector` must be enabled (`create extension if not exists vector;` — included in the migration).
 
@@ -80,7 +80,7 @@ Use Cloudflare's version history: `wrangler rollback` (or pin a prior version vi
 
 ## Pre-launch checklist
 
-- [ ] Production Neon DB created, `pgvector` enabled, all migrations (`0001`…`0004`) applied in order.
+- [ ] Production Neon DB created, `pgvector` enabled, all migrations (`0001`…`0005`) applied in order.
 - [ ] Hyperdrive configured against the prod Neon DB; binding uncommented in `wrangler.toml`.
 - [ ] All production secrets set via `wrangler secret put` (esp. `CREDENTIALS_ENCRYPTION_KEY` before BYOK is usable).
 - [x] Dodo webhook signature verification wired (see [SECURITY.md](./SECURITY.md#webhook-signatures)) — launch blocker. Set `DODO_WEBHOOK_SECRET` (and the `DODO_PRODUCT_*` ids) before go-live.

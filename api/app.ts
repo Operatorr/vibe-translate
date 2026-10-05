@@ -15,8 +15,16 @@ import {
   type Reservation,
 } from './_lib/credits'
 import { createDbClient, withDb } from './_lib/db'
-import { embedText, formatVector, parseVector, sha256Hex } from './_lib/embeddings'
-import { sendTransactionalEmail, subscriptionConfirmationEmail } from './_lib/email'
+import {
+  embedText,
+  formatVector,
+  parseVector,
+  sha256Hex,
+} from './_lib/embeddings'
+import {
+  sendTransactionalEmail,
+  subscriptionConfirmationEmail,
+} from './_lib/email'
 import type { AppEnv } from './_lib/env'
 import { formatError } from './_lib/errors'
 import {
@@ -41,7 +49,12 @@ import { resolveCallTarget } from './_lib/openrouter'
 import { assertUserOwnsResource, canUseFeature } from './_lib/permissions'
 import { encryptSecret, lastFour } from './_lib/secrets'
 import type { Persona, SegmentToken, VibeStop } from './_lib/schemas'
-import { fingerprint, isCanonical, lookupCache, upsertCache } from './_lib/translation-cache'
+import {
+  fingerprint,
+  isCanonical,
+  lookupCache,
+  upsertCache,
+} from './_lib/translation-cache'
 import { getOrCreateUser, toMeResponse } from './_lib/users'
 import {
   cancelSubscription,
@@ -93,7 +106,8 @@ app.get('/api/diagnostics', async (c) => {
       {
         ok: false,
         database: 'unavailable',
-        message: error instanceof Error ? error.message : 'Unknown database error',
+        message:
+          error instanceof Error ? error.message : 'Unknown database error',
       },
       503,
     )
@@ -124,6 +138,35 @@ app.use('/api/billing/cancel', auth())
 app.use('/api/billing/switch-plan', auth())
 app.use('/api/export', auth())
 
+// NOTE: `GET /api/share/:token` has no guard on purpose — the unguessable
+// token is the capability. See the "Thread sharing" routes below.
+//
+// It is never cached (a revoked link must stop resolving at once) and never
+// indexed. Set as middleware so error responses — malformed, unknown, revoked
+// or archived tokens — carry the headers too, not only the 200.
+app.use('/api/share/*', async (c, next) => {
+  await next()
+  c.res.headers.set('Cache-Control', 'no-store')
+  c.res.headers.set('X-Robots-Tag', 'noindex, nofollow')
+  c.res.headers.set('Referrer-Policy', 'no-referrer')
+})
+
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+// Resource ids are uuid columns: a malformed id would make Postgres throw
+// `invalid input syntax for type uuid` and surface as a 500. It is a 404.
+function uuidParam(value: string | undefined, resource: string): string {
+  if (!value || !UUID_RE.test(value))
+    throw new HTTPException(404, { message: `${resource} not found` })
+  return value
+}
+
+// Post-commit bookkeeping (cache seeding, recency bumps, activity rows) must not
+// fail a request whose primary write — and credit charge — already landed.
+const bestEffort = (label: string, work: Promise<unknown>) =>
+  work.catch((error) => console.error(label, error))
+
 app.get('/api/users/me', (c) =>
   withDb(c.env, async (db) => {
     const user = await getOrCreateUser(db, c.get('userId'), c.get('email'))
@@ -137,12 +180,15 @@ app.patch('/api/users/me', zValidator('json', userUpdateSchema), (c) => {
   return withDb(c.env, async (db) => {
     await getOrCreateUser(db, userId, c.get('email'))
     const fields: Array<[string, unknown]> = []
-    if (updates.displayName !== undefined) fields.push(['display_name', updates.displayName])
+    if (updates.displayName !== undefined)
+      fields.push(['display_name', updates.displayName])
     if (updates.onboardingComplete !== undefined)
       fields.push(['onboarding_complete', updates.onboardingComplete])
     if (updates.locale !== undefined) fields.push(['locale', updates.locale])
     if (fields.length > 0) {
-      const setClause = fields.map(([col], idx) => `${col} = $${idx + 2}`).join(', ')
+      const setClause = fields
+        .map(([col], idx) => `${col} = $${idx + 2}`)
+        .join(', ')
       await db.query(
         `update users set ${setClause}, updated_at = now() where clerk_user_id = $1`,
         [userId, ...fields.map(([, value]) => value)],
@@ -160,7 +206,8 @@ app.put('/api/users/me/byok', zValidator('json', byokSetSchema), (c) => {
   const { apiKey } = c.req.valid('json')
   const userId = c.get('userId')
   const encryptionKey = c.env.CREDENTIALS_ENCRYPTION_KEY?.trim()
-  if (!encryptionKey) throw new HTTPException(503, { message: 'BYOK storage is not configured' })
+  if (!encryptionKey)
+    throw new HTTPException(503, { message: 'BYOK storage is not configured' })
   return withDb(c.env, async (db) => {
     await getOrCreateUser(db, userId, c.get('email'))
     const cipher = await encryptSecret(apiKey, encryptionKey)
@@ -191,30 +238,36 @@ app.delete('/api/users/me/byok', (c) => {
 })
 
 // Optional per-task BYOK model override. `null` clears.
-app.patch('/api/users/me/byok/models', zValidator('json', byokModelsSchema), (c) => {
-  const updates = c.req.valid('json')
-  const userId = c.get('userId')
-  return withDb(c.env, async (db) => {
-    await getOrCreateUser(db, userId, c.get('email'))
-    const fields: Array<[string, unknown]> = []
-    if (updates.translateModelId !== undefined)
-      fields.push(['byok_translate_model_id', updates.translateModelId])
-    if (updates.explainModelId !== undefined)
-      fields.push(['byok_explain_model_id', updates.explainModelId])
-    if (fields.length > 0) {
-      const setClause = fields.map(([col], idx) => `${col} = $${idx + 2}`).join(', ')
-      await db.query(
-        `update users set ${setClause}, updated_at = now() where clerk_user_id = $1`,
-        [userId, ...fields.map(([, value]) => value)],
-      )
-    }
-    return c.json({
-      ok: true,
-      translateModelId: updates.translateModelId ?? null,
-      explainModelId: updates.explainModelId ?? null,
+app.patch(
+  '/api/users/me/byok/models',
+  zValidator('json', byokModelsSchema),
+  (c) => {
+    const updates = c.req.valid('json')
+    const userId = c.get('userId')
+    return withDb(c.env, async (db) => {
+      await getOrCreateUser(db, userId, c.get('email'))
+      const fields: Array<[string, unknown]> = []
+      if (updates.translateModelId !== undefined)
+        fields.push(['byok_translate_model_id', updates.translateModelId])
+      if (updates.explainModelId !== undefined)
+        fields.push(['byok_explain_model_id', updates.explainModelId])
+      if (fields.length > 0) {
+        const setClause = fields
+          .map(([col], idx) => `${col} = $${idx + 2}`)
+          .join(', ')
+        await db.query(
+          `update users set ${setClause}, updated_at = now() where clerk_user_id = $1`,
+          [userId, ...fields.map(([, value]) => value)],
+        )
+      }
+      return c.json({
+        ok: true,
+        translateModelId: updates.translateModelId ?? null,
+        explainModelId: updates.explainModelId ?? null,
+      })
     })
-  })
-})
+  },
+)
 
 // ---- DB row mappers (snake_case → API camelCase) -------------------------
 
@@ -258,16 +311,22 @@ function mapCharacter(r: CharacterDbRow) {
   }
 }
 
-const THREAD_COLUMNS = `id, character_id, user_id, title, archived_at, created_at, updated_at`
+// `segment_count` is a correlated subquery so the sidebar can show
+// "N translations" without a second round-trip. Every query using this list
+// selects `from threads` unaliased, so the bare `threads.id` reference holds.
+const THREAD_COLUMNS = `id, character_id, user_id, title, starred, archived_at, created_at, updated_at,
+  (select count(*)::int from segments s where s.thread_id = threads.id) as segment_count`
 
 type ThreadDbRow = {
   id: string
   character_id: string
   user_id: string
   title: string
+  starred: boolean
   archived_at: string | Date | null
   created_at: string | Date
   updated_at: string | Date
+  segment_count: number
 }
 
 function mapThread(r: ThreadDbRow) {
@@ -275,6 +334,8 @@ function mapThread(r: ThreadDbRow) {
     id: r.id,
     characterId: r.character_id,
     title: r.title,
+    starred: r.starred,
+    segmentCount: Number(r.segment_count ?? 0),
     archivedAt: r.archived_at ? new Date(r.archived_at).toISOString() : null,
     createdAt: new Date(r.created_at).toISOString(),
     updatedAt: new Date(r.updated_at).toISOString(),
@@ -332,7 +393,7 @@ app.get('/api/characters/:characterId', (c) =>
     await getOrCreateUser(db, userId, c.get('email'))
     const res = await db.query<CharacterDbRow>(
       `select ${CHARACTER_COLUMNS} from characters where id = $1`,
-      [c.req.param('characterId')],
+      [uuidParam(c.req.param('characterId'), 'Character')],
     )
     const row = res.rows[0]
     if (!row) throw new HTTPException(404, { message: 'Character not found' })
@@ -369,89 +430,108 @@ app.post('/api/characters', zValidator('json', characterCreateSchema), (c) => {
   })
 })
 
-app.patch('/api/characters/:characterId', zValidator('json', characterUpdateSchema), (c) => {
-  const updates = c.req.valid('json')
-  const userId = c.get('userId')
-  const id = c.req.param('characterId')
-  return withDb(c.env, async (db) => {
-    await getOrCreateUser(db, userId, c.get('email'))
-    const owner = await db.query<{ user_id: string }>(
-      `select user_id from characters where id = $1`,
-      [id],
-    )
-    if (!owner.rows[0]) throw new HTTPException(404, { message: 'Character not found' })
-    assertUserOwnsResource(owner.rows[0].user_id, userId)
-
-    const columnByKey: Record<string, string> = {
-      name: 'name',
-      initials: 'initials',
-      color: 'color',
-      sourceLanguage: 'source_language',
-      targetLanguage: 'target_language',
-      defaultVibe: 'default_vibe',
-      temperature: 'temperature',
-      persona: 'persona',
-      instructions: 'instructions',
-    }
-    const fields: Array<[string, unknown]> = []
-    for (const [key, col] of Object.entries(columnByKey)) {
-      const value = (updates as Record<string, unknown>)[key]
-      if (value !== undefined) fields.push([col, key === 'persona' ? JSON.stringify(value) : value])
-    }
-    if (fields.length > 0) {
-      const setClause = fields.map(([col], idx) => `${col} = $${idx + 2}`).join(', ')
-      await db.query(
-        `update characters set ${setClause}, updated_at = now() where id = $1`,
-        [id, ...fields.map(([, value]) => value)],
+app.patch(
+  '/api/characters/:characterId',
+  zValidator('json', characterUpdateSchema),
+  (c) => {
+    const updates = c.req.valid('json')
+    const userId = c.get('userId')
+    const id = uuidParam(c.req.param('characterId'), 'Character')
+    return withDb(c.env, async (db) => {
+      await getOrCreateUser(db, userId, c.get('email'))
+      const owner = await db.query<{ user_id: string }>(
+        `select user_id from characters where id = $1`,
+        [id],
       )
-    }
-    const res = await db.query<CharacterDbRow>(
-      `select ${CHARACTER_COLUMNS} from characters where id = $1`,
-      [id],
-    )
-    return c.json(mapCharacter(res.rows[0]))
-  })
-})
+      if (!owner.rows[0])
+        throw new HTTPException(404, { message: 'Character not found' })
+      assertUserOwnsResource(owner.rows[0].user_id, userId)
+
+      const columnByKey: Record<string, string> = {
+        name: 'name',
+        initials: 'initials',
+        color: 'color',
+        sourceLanguage: 'source_language',
+        targetLanguage: 'target_language',
+        defaultVibe: 'default_vibe',
+        temperature: 'temperature',
+        persona: 'persona',
+        instructions: 'instructions',
+      }
+      const fields: Array<[string, unknown]> = []
+      for (const [key, col] of Object.entries(columnByKey)) {
+        const value = (updates as Record<string, unknown>)[key]
+        if (value !== undefined)
+          fields.push([col, key === 'persona' ? JSON.stringify(value) : value])
+      }
+      if (fields.length > 0) {
+        const setClause = fields
+          .map(([col], idx) => `${col} = $${idx + 2}`)
+          .join(', ')
+        await db.query(
+          `update characters set ${setClause}, updated_at = now() where id = $1`,
+          [id, ...fields.map(([, value]) => value)],
+        )
+      }
+      const res = await db.query<CharacterDbRow>(
+        `select ${CHARACTER_COLUMNS} from characters where id = $1`,
+        [id],
+      )
+      return c.json(mapCharacter(res.rows[0]))
+    })
+  },
+)
 
 app.delete('/api/characters/:characterId', (c) => {
   const userId = c.get('userId')
-  const id = c.req.param('characterId')
+  const id = uuidParam(c.req.param('characterId'), 'Character')
   return withDb(c.env, async (db) => {
     await getOrCreateUser(db, userId, c.get('email'))
-    const res = await db.query(`delete from characters where id = $1 and user_id = $2`, [id, userId])
-    if (res.rowCount === 0) throw new HTTPException(404, { message: 'Character not found' })
+    const res = await db.query(
+      `delete from characters where id = $1 and user_id = $2`,
+      [id, userId],
+    )
+    if (res.rowCount === 0)
+      throw new HTTPException(404, { message: 'Character not found' })
     return c.json({ ok: true, id })
   })
 })
 
-app.post('/api/characters/reorder', zValidator('json', characterReorderSchema), (c) => {
-  const { characterIds } = c.req.valid('json')
-  const userId = c.get('userId')
-  return withDb(c.env, async (db) => {
-    await getOrCreateUser(db, userId, c.get('email'))
-    await db.query('begin')
-    try {
-      for (let i = 0; i < characterIds.length; i += 1) {
-        await db.query(
-          `update characters set sort_order = $3, updated_at = now()
+app.post(
+  '/api/characters/reorder',
+  zValidator('json', characterReorderSchema),
+  (c) => {
+    const { characterIds } = c.req.valid('json')
+    const userId = c.get('userId')
+    return withDb(c.env, async (db) => {
+      await getOrCreateUser(db, userId, c.get('email'))
+      await db.query('begin')
+      try {
+        for (let i = 0; i < characterIds.length; i += 1) {
+          await db.query(
+            `update characters set sort_order = $3, updated_at = now()
             where id = $1 and user_id = $2`,
-          [characterIds[i], userId, i],
-        )
+            [characterIds[i], userId, i],
+          )
+        }
+        await db.query('commit')
+      } catch (error) {
+        await db.query('rollback').catch(() => undefined)
+        throw error
       }
-      await db.query('commit')
-    } catch (error) {
-      await db.query('rollback').catch(() => undefined)
-      throw error
-    }
-    return c.json({ ok: true, characterIds })
-  })
-})
+      return c.json({ ok: true, characterIds })
+    })
+  },
+)
 
 // ---- Threads -------------------------------------------------------------
 
 app.get('/api/threads', (c) => {
   const userId = c.get('userId')
-  const characterId = c.req.query('characterId')
+  const rawCharacterId = c.req.query('characterId')
+  const characterId = rawCharacterId
+    ? uuidParam(rawCharacterId, 'Character')
+    : undefined
   return withDb(c.env, async (db) => {
     await getOrCreateUser(db, userId, c.get('email'))
     const res = characterId
@@ -476,7 +556,7 @@ app.get('/api/threads/:threadId', (c) =>
     await getOrCreateUser(db, userId, c.get('email'))
     const res = await db.query<ThreadDbRow>(
       `select ${THREAD_COLUMNS} from threads where id = $1`,
-      [c.req.param('threadId')],
+      [uuidParam(c.req.param('threadId'), 'Thread')],
     )
     const row = res.rows[0]
     if (!row) throw new HTTPException(404, { message: 'Thread not found' })
@@ -495,7 +575,8 @@ app.post('/api/threads', zValidator('json', threadCreateSchema), (c) => {
       `select user_id from characters where id = $1`,
       [payload.characterId],
     )
-    if (!owner.rows[0]) throw new HTTPException(404, { message: 'Character not found' })
+    if (!owner.rows[0])
+      throw new HTTPException(404, { message: 'Character not found' })
     assertUserOwnsResource(owner.rows[0].user_id, userId)
 
     const res = await db.query<ThreadDbRow>(
@@ -507,54 +588,374 @@ app.post('/api/threads', zValidator('json', threadCreateSchema), (c) => {
   })
 })
 
-app.patch('/api/threads/:threadId', zValidator('json', threadUpdateSchema), (c) => {
-  const updates = c.req.valid('json')
-  const userId = c.get('userId')
-  const id = c.req.param('threadId')
-  return withDb(c.env, async (db) => {
-    await getOrCreateUser(db, userId, c.get('email'))
-    const owner = await db.query<{ user_id: string }>(
-      `select user_id from threads where id = $1`,
-      [id],
-    )
-    if (!owner.rows[0]) throw new HTTPException(404, { message: 'Thread not found' })
-    assertUserOwnsResource(owner.rows[0].user_id, userId)
+app.patch(
+  '/api/threads/:threadId',
+  zValidator('json', threadUpdateSchema),
+  (c) => {
+    const updates = c.req.valid('json')
+    const userId = c.get('userId')
+    const id = uuidParam(c.req.param('threadId'), 'Thread')
+    return withDb(c.env, async (db) => {
+      await getOrCreateUser(db, userId, c.get('email'))
+      const owner = await db.query<{ user_id: string }>(
+        `select user_id from threads where id = $1`,
+        [id],
+      )
+      if (!owner.rows[0])
+        throw new HTTPException(404, { message: 'Thread not found' })
+      assertUserOwnsResource(owner.rows[0].user_id, userId)
 
-    const fields: Array<[string, unknown]> = []
-    if (updates.title !== undefined) fields.push(['title', updates.title])
-    if (updates.archived !== undefined)
-      fields.push(['archived_at', updates.archived ? new Date().toISOString() : null])
-    if (fields.length > 0) {
-      const setClause = fields.map(([col], idx) => `${col} = $${idx + 2}`).join(', ')
-      await db.query(`update threads set ${setClause}, updated_at = now() where id = $1`, [
-        id,
-        ...fields.map(([, value]) => value),
-      ])
-    }
-    const res = await db.query<ThreadDbRow>(
-      `select ${THREAD_COLUMNS} from threads where id = $1`,
-      [id],
-    )
-    return c.json(mapThread(res.rows[0]))
-  })
-})
+      const fields: Array<[string, unknown]> = []
+      if (updates.title !== undefined) fields.push(['title', updates.title])
+      if (updates.archived !== undefined)
+        fields.push([
+          'archived_at',
+          updates.archived ? new Date().toISOString() : null,
+        ])
+      if (updates.starred !== undefined)
+        fields.push(['starred', updates.starred])
+      if (fields.length > 0) {
+        const setClause = fields
+          .map(([col], idx) => `${col} = $${idx + 2}`)
+          .join(', ')
+        // Starring is metadata, not activity — don't bump updated_at for it alone.
+        const touch =
+          updates.title !== undefined || updates.archived !== undefined
+        const userParam = fields.length + 2
+        await db.query(
+          `update threads set ${setClause}${touch ? ', updated_at = now()' : ''}
+          where id = $1 and user_id = $${userParam}`,
+          [id, ...fields.map(([, value]) => value), userId],
+        )
+      }
+      const res = await db.query<ThreadDbRow>(
+        `select ${THREAD_COLUMNS} from threads where id = $1 and user_id = $2`,
+        [id, userId],
+      )
+      if (!res.rows[0])
+        throw new HTTPException(404, { message: 'Thread not found' })
+      return c.json(mapThread(res.rows[0]))
+    })
+  },
+)
 
 app.delete('/api/threads/:threadId', (c) => {
   const userId = c.get('userId')
-  const id = c.req.param('threadId')
+  const id = uuidParam(c.req.param('threadId'), 'Thread')
   return withDb(c.env, async (db) => {
     await getOrCreateUser(db, userId, c.get('email'))
-    const res = await db.query(`delete from threads where id = $1 and user_id = $2`, [id, userId])
-    if (res.rowCount === 0) throw new HTTPException(404, { message: 'Thread not found' })
+    const res = await db.query(
+      `delete from threads where id = $1 and user_id = $2`,
+      [id, userId],
+    )
+    if (res.rowCount === 0)
+      throw new HTTPException(404, { message: 'Thread not found' })
     return c.json({ ok: true, id })
+  })
+})
+
+// ---- Thread sharing ------------------------------------------------------
+//
+// One read-only public link per Thread. POST mints (or returns the live)
+// token; DELETE revokes it. The public resolver lives under /api/share/:token
+// (unauthenticated) and returns a redacted payload: no user ids, no credit or
+// token-usage data. See docs/SECURITY.md#the-unauthenticated-surface.
+
+function mintShareToken(): string {
+  const bytes = new Uint8Array(24)
+  crypto.getRandomValues(bytes)
+  return btoa(String.fromCharCode(...bytes))
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/, '')
+}
+
+// 404 for a missing Thread, 403 for someone else's — same contract as POST.
+async function assertOwnsThread(
+  db: Parameters<typeof resolveCallTarget>[0],
+  threadId: string,
+  userId: string,
+) {
+  const owner = await db.query<{ user_id: string }>(
+    `select user_id from threads where id = $1`,
+    [threadId],
+  )
+  if (!owner.rows[0])
+    throw new HTTPException(404, { message: 'Thread not found' })
+  assertUserOwnsResource(owner.rows[0].user_id, userId)
+}
+
+const shareUrlFor = (env: AppEnv['Bindings'], token: string) =>
+  `${(env.APP_URL ?? 'http://localhost:5173').replace(/\/$/, '')}/share/${encodeURIComponent(token)}`
+
+app.get('/api/threads/:threadId/share', (c) => {
+  const userId = c.get('userId')
+  const threadId = uuidParam(c.req.param('threadId'), 'Thread')
+  return withDb(c.env, async (db) => {
+    await getOrCreateUser(db, userId, c.get('email'))
+    await assertOwnsThread(db, threadId, userId)
+    const res = await db.query<{ token: string }>(
+      `select token from thread_shares
+        where thread_id = $1 and user_id = $2 and revoked_at is null
+        order by created_at desc limit 1`,
+      [threadId, userId],
+    )
+    const row = res.rows[0]
+    if (!row) return c.json({ shared: false, url: null, token: null })
+    return c.json({
+      shared: true,
+      token: row.token,
+      url: shareUrlFor(c.env, row.token),
+    })
+  })
+})
+
+app.post('/api/threads/:threadId/share', (c) => {
+  const userId = c.get('userId')
+  const threadId = uuidParam(c.req.param('threadId'), 'Thread')
+  return withDb(c.env, async (db) => {
+    await getOrCreateUser(db, userId, c.get('email'))
+    const owner = await db.query<{
+      user_id: string
+      archived_at: string | Date | null
+    }>(`select user_id, archived_at from threads where id = $1`, [threadId])
+    if (!owner.rows[0])
+      throw new HTTPException(404, { message: 'Thread not found' })
+    assertUserOwnsResource(owner.rows[0].user_id, userId)
+    // The public resolver 404s archived threads, so a link minted now would be
+    // dead on arrival.
+    if (owner.rows[0].archived_at) {
+      throw new HTTPException(409, {
+        message: 'Archived threads cannot be shared',
+      })
+    }
+
+    // One live link per Thread, enforced by the partial unique index
+    // `thread_shares_live_thread_uniq`. Concurrent mints race on this insert;
+    // the loser's `do nothing` falls through to reading the winner's token, so
+    // every caller converges on a single capability URL.
+    const inserted = await db.query<{ token: string }>(
+      `insert into thread_shares (thread_id, user_id, token) values ($1,$2,$3)
+       on conflict (thread_id) where revoked_at is null do nothing
+       returning token`,
+      [threadId, userId, mintShareToken()],
+    )
+    let token = inserted.rows[0]?.token
+    const created = token !== undefined
+    if (created) {
+      await bestEffort(
+        'share activity log failed',
+        logActivity(db, userId, 'thread.shared', { threadId }),
+      )
+    } else {
+      const existing = await db.query<{ token: string }>(
+        `select token from thread_shares where thread_id = $1 and revoked_at is null`,
+        [threadId],
+      )
+      token = existing.rows[0]?.token
+      // Revoked between the conflicting insert and this read — vanishingly rare.
+      if (!token)
+        throw new HTTPException(409, {
+          message: 'Share link changed — try again',
+        })
+    }
+    return c.json(
+      { shared: true, token, url: shareUrlFor(c.env, token) },
+      created ? 201 : 200,
+    )
+  })
+})
+
+app.delete('/api/threads/:threadId/share', (c) => {
+  const userId = c.get('userId')
+  const threadId = uuidParam(c.req.param('threadId'), 'Thread')
+  return withDb(c.env, async (db) => {
+    await getOrCreateUser(db, userId, c.get('email'))
+    await assertOwnsThread(db, threadId, userId)
+    const revoked = await db.query(
+      `update thread_shares set revoked_at = now()
+        where thread_id = $1 and user_id = $2 and revoked_at is null`,
+      [threadId, userId],
+    )
+    if ((revoked.rowCount ?? 0) > 0)
+      await logActivity(db, userId, 'thread.unshared', { threadId })
+    return c.json({ shared: false, url: null, token: null })
+  })
+})
+
+// Upper bound on Segments served by one public share request, so an
+// unauthenticated caller can't make the worker serialize an unbounded thread.
+const SHARE_SEGMENT_LIMIT = 500
+
+// Public, unauthenticated resolver for a share link. Redacted by construction:
+// the SELECT never touches user ids, token usage, or credits.
+app.get('/api/share/:token', (c) => {
+  const token = c.req.param('token')
+  if (!/^[A-Za-z0-9_-]{16,64}$/.test(token)) {
+    throw new HTTPException(404, { message: 'Share link not found' })
+  }
+  return withDb(c.env, async (db) => {
+    const head = await db.query<{
+      thread_id: string
+      title: string
+      created_at: string | Date
+      updated_at: string | Date
+      name: string
+      initials: string | null
+      color: string | null
+      source_language: string
+      target_language: string
+      default_vibe: VibeStop
+    }>(
+      `select t.id as thread_id, t.title, t.created_at, t.updated_at,
+              c.name, c.initials, c.color, c.source_language, c.target_language, c.default_vibe
+         from thread_shares sh
+         join threads t on t.id = sh.thread_id
+         join characters c on c.id = t.character_id
+        where sh.token = $1 and sh.revoked_at is null and t.archived_at is null`,
+      [token],
+    )
+    const row = head.rows[0]
+    if (!row) throw new HTTPException(404, { message: 'Share link not found' })
+
+    const segs = await db.query<{
+      id: string
+      source_text: string
+      target_text: string
+      vibe: VibeStop | null
+      token_alignment: SegmentToken[]
+      created_at: string | Date
+    }>(
+      `select id, source_text, target_text, vibe, token_alignment, created_at
+         from segments where thread_id = $1 order by created_at asc limit $2`,
+      [row.thread_id, SHARE_SEGMENT_LIMIT],
+    )
+    return c.json({
+      thread: {
+        title: row.title,
+        createdAt: new Date(row.created_at).toISOString(),
+        updatedAt: new Date(row.updated_at).toISOString(),
+      },
+      character: {
+        name: row.name,
+        initials: row.initials ?? undefined,
+        color: row.color ?? undefined,
+        sourceLanguage: row.source_language,
+        targetLanguage: row.target_language,
+        defaultVibe: row.default_vibe,
+      },
+      segments: segs.rows.map((s) => ({
+        id: s.id,
+        sourceText: s.source_text,
+        targetText: s.target_text,
+        // Null is a legacy row whose generation-time stop was not recorded.
+        vibe: s.vibe,
+        tokenAlignment: s.token_alignment,
+        createdAt: new Date(s.created_at).toISOString(),
+      })),
+    })
   })
 })
 
 // ---- Segments ------------------------------------------------------------
 
+// Shared translate-with-credits step for POST /segments (miss path) and
+// POST /segments/:id/retry. Resolves the call target, places the credit hold on
+// the platform path (BYOK skips accounting; adr/0003), runs the model, and
+// hands back `settle` (charge the real cost against a reference row) and
+// `refund` (release the hold) so the caller can finish the transaction around
+// its own persistence step.
+type TranslateCharacterRow = {
+  source_language: string
+  target_language: string
+  temperature: string | number
+  persona: Persona
+  instructions: string | null
+}
+
+async function translateWithCredits(
+  db: Parameters<typeof resolveCallTarget>[0],
+  env: AppEnv['Bindings'],
+  userId: string,
+  character: TranslateCharacterRow,
+  sourceText: string,
+  vibe: VibeStop,
+  // Create already resolved the target for the cache fingerprint; reuse it
+  // rather than decrypting a BYOK key twice.
+  resolvedTarget?: Awaited<ReturnType<typeof resolveCallTarget>>,
+) {
+  const target =
+    resolvedTarget ?? (await resolveCallTarget(db, env, userId, 'translate'))
+  let reservation: Reservation | null = null
+  if (!target.isByok) {
+    const estimate = estimateCredits(sourceText, target.creditCostMultiplier)
+    reservation = await reserveCredits(db, userId, estimate, 'spend.translate')
+    if (!reservation) {
+      throw new HTTPException(402, {
+        message: 'Insufficient credits — add credits or configure BYOK',
+      })
+    }
+  }
+  // Release the hold. The handle is cleared only after the refund commits, and a
+  // failure is logged with the ledger id (the pending ledger row needs manual
+  // reconciliation) and rethrown rather than silently dropped.
+  const refund = async () => {
+    if (!reservation) return
+    const held = reservation
+    try {
+      await refundReservation(db, userId, held)
+      reservation = null
+    } catch (error) {
+      console.error('credit refund failed', {
+        userId,
+        ledgerId: held.ledgerId,
+        error,
+      })
+      throw error
+    }
+  }
+  let result
+  try {
+    result = await translateSegment(
+      {
+        sourceText,
+        sourceLanguage: character.source_language,
+        targetLanguage: character.target_language,
+        vibe,
+        temperature: Number(character.temperature),
+        persona: character.persona,
+        instructions: character.instructions ?? undefined,
+      },
+      {
+        apiKey: target.apiKey,
+        modelId: target.modelId,
+        appUrl: env.APP_URL,
+        reasoning: target.reasoning,
+      },
+    )
+  } catch (error) {
+    // refund() logs its own failure; surface the model error, not the refund's.
+    await refund().catch(() => undefined)
+    throw error
+  }
+  const settle = async (referenceId: string | null) => {
+    if (!reservation) return
+    const cost = computeCredits(
+      result.tokenUsage.promptTokens,
+      result.tokenUsage.completionTokens,
+      result.tokenUsage.modelId,
+      target.creditCostMultiplier,
+    )
+    await reconcileSpend(db, userId, reservation, cost, referenceId)
+    reservation = null
+  }
+  return { result, target, settle, refund }
+}
+
 app.get('/api/segments', (c) => {
   const userId = c.get('userId')
-  const threadId = c.req.query('threadId')
+  const rawThreadId = c.req.query('threadId')
+  const threadId = rawThreadId ? uuidParam(rawThreadId, 'Thread') : undefined
   return withDb(c.env, async (db) => {
     await getOrCreateUser(db, userId, c.get('email'))
     const res = threadId
@@ -599,12 +1000,12 @@ app.post('/api/segments', zValidator('json', segmentCreateSchema), (c) => {
       [payload.threadId],
     )
     const character = charRes.rows[0]
-    if (!character) throw new HTTPException(404, { message: 'Thread not found' })
+    if (!character)
+      throw new HTTPException(404, { message: 'Thread not found' })
     assertUserOwnsResource(character.user_id, userId)
 
     const temperature = Number(character.temperature)
     const resolvedVibe: VibeStop = payload.vibe ?? character.default_vibe
-    const storedVibe = payload.vibe ?? null
 
     const insertSeg = (
       targetText: string,
@@ -622,7 +1023,7 @@ app.post('/api/segments', zValidator('json', segmentCreateSchema), (c) => {
             userId,
             payload.sourceText,
             targetText,
-            storedVibe,
+            resolvedVibe,
             JSON.stringify(tokenAlignment),
             JSON.stringify(tokenUsage),
             embedding ? formatVector(embedding) : null,
@@ -630,12 +1031,13 @@ app.post('/api/segments', zValidator('json', segmentCreateSchema), (c) => {
         )
         .then((r) => r.rows[0])
 
-    // Pre-check 1: identical in-thread request (null-aware vibe) → reuse, 0 credits.
+    // Pre-check 1: same text and generation-time vibe → reuse, 0 credits.
+    // A changed Character default must not reuse a translation at an old stop.
     const dedup = await db.query<SegmentDbRow>(
       `select ${SEGMENT_COLUMNS} from segments
         where thread_id = $1 and source_text = $2 and vibe is not distinct from $3
         order by created_at desc limit 1`,
-      [payload.threadId, payload.sourceText, storedVibe],
+      [payload.threadId, payload.sourceText, resolvedVibe],
     )
     if (dedup.rows[0]) return c.json(mapSegment(dedup.rows[0]), 201)
 
@@ -667,49 +1069,40 @@ app.post('/api/segments', zValidator('json', segmentCreateSchema), (c) => {
         const row = await insertSeg(
           hit.targetText,
           hit.tokenAlignment,
-          {},
-          parseVector(hit.sourceEmbedding as unknown as string | number[] | null),
+          { cached: true },
+          parseVector(
+            hit.sourceEmbedding as unknown as string | number[] | null,
+          ),
         )
         return c.json(mapSegment(row), 201)
       }
     }
 
-    // Reserve an estimated credit hold before the paid model call on the
-    // platform path. The atomic reservation gates concurrent requests (a user
-    // near zero balance can't fan out many in-flight calls); it is reconciled to
-    // the real cost on success, or refunded on failure. BYOK pays OpenRouter
-    // directly and skips all credit accounting (adr/0003).
-    let reservation: Reservation | null = null
-    if (!target.isByok) {
-      const estimate = estimateCredits(payload.sourceText, target.creditCostMultiplier)
-      reservation = await reserveCredits(db, userId, estimate, 'spend.translate')
-      if (!reservation) {
-        throw new HTTPException(402, {
-          message: 'Insufficient credits — add credits or configure BYOK',
-        })
-      }
-    }
+    // Model call with the credit hold placed first (platform path). The atomic
+    // reservation gates concurrent requests (a user near zero balance can't fan
+    // out many in-flight calls); it is reconciled to the real cost on success,
+    // or refunded on failure. BYOK pays OpenRouter directly (adr/0003).
+    const { result, settle, refund } = await translateWithCredits(
+      db,
+      c.env,
+      userId,
+      character,
+      payload.sourceText,
+      resolvedVibe,
+      target,
+    )
 
+    // Persist first. Only a failure up to and including the insert refunds: once
+    // the Segment exists the user has the translation (in-thread dedupe serves
+    // it again at 0 credits), so it is charged and nothing afterwards refunds.
+    let row: SegmentDbRow
+    let embedding: number[] | null = null
     try {
-      const result = await translateSegment(
-        {
-          sourceText: payload.sourceText,
-          sourceLanguage: character.source_language,
-          targetLanguage: character.target_language,
-          vibe: resolvedVibe,
-          temperature,
-          persona: character.persona,
-          instructions: character.instructions ?? undefined,
-        },
-        { apiKey: target.apiKey, modelId: target.modelId, appUrl: c.env.APP_URL, reasoning: target.reasoning },
-      )
-
       // Embeddings are always platform-owned (BYOK never applies; see adr/0003)
       // and best-effort: a failed embedding (provider down, or a BYOK-only deploy
       // with no platform key) must not discard an already-generated, paid-for
       // translation. Store source_embedding null — the Segment is simply excluded
       // from Translation memory search until a backfill (adr/0002, adr/0006).
-      let embedding: number[] | null = null
       try {
         const embed = await embedText({
           text: payload.sourceText,
@@ -717,15 +1110,34 @@ app.post('/api/segments', zValidator('json', segmentCreateSchema), (c) => {
         })
         embedding = embed.vector
       } catch {
-        await logActivity(db, userId, 'segment.embed_failed', { threadId: payload.threadId })
+        await bestEffort(
+          'embed failure log failed',
+          logActivity(db, userId, 'segment.embed_failed', {
+            threadId: payload.threadId,
+          }),
+        )
       }
-      const row = await insertSeg(result.targetText, result.tokenAlignment, result.tokenUsage, embedding)
+      row = await insertSeg(
+        result.targetText,
+        result.tokenAlignment,
+        result.tokenUsage,
+        embedding,
+      )
+    } catch (error) {
+      // refund() logs its own failure; surface the persistence error.
+      await refund().catch(() => undefined)
+      throw error
+    }
 
-      // Only platform-default translations seed the shared cross-user cache:
-      // BYOK output comes from a user-chosen model and must not be served to
-      // other users under the canonical fingerprint (adr/0004).
-      if (canonical && fp && !target.isByok) {
-        await upsertCache(db, fp, {
+    await settle(row.id)
+
+    // Only platform-default translations seed the shared cross-user cache:
+    // BYOK output comes from a user-chosen model and must not be served to
+    // other users under the canonical fingerprint (adr/0004).
+    if (canonical && fp && !target.isByok) {
+      await bestEffort(
+        'translation cache upsert failed',
+        upsertCache(db, fp, {
           sourceText: payload.sourceText,
           sourceLanguage: character.source_language,
           targetLanguage: character.target_language,
@@ -734,81 +1146,179 @@ app.post('/api/segments', zValidator('json', segmentCreateSchema), (c) => {
           targetText: result.targetText,
           tokenAlignment: result.tokenAlignment,
           sourceEmbedding: embedding,
-        })
-      }
-
-      if (reservation) {
-        const cost = computeCredits(
-          result.tokenUsage.promptTokens,
-          result.tokenUsage.completionTokens,
-          result.tokenUsage.modelId,
-          target.creditCostMultiplier,
-        )
-        await reconcileSpend(db, userId, reservation, cost, row.id)
-        reservation = null
-      }
-
-      await logActivity(db, userId, 'segment.created', {
+        }),
+      )
+    }
+    await bestEffort(
+      'thread recency bump failed',
+      db.query(`update threads set updated_at = now() where id = $1`, [
+        payload.threadId,
+      ]),
+    )
+    await bestEffort(
+      'segment activity log failed',
+      logActivity(db, userId, 'segment.created', {
         threadId: payload.threadId,
         vibe: resolvedVibe,
         byok: target.isByok,
-      })
-      return c.json(mapSegment(row), 201)
+      }),
+    )
+    return c.json(mapSegment(row), 201)
+  })
+})
+
+// Retry: re-run the translation for an existing Segment and overwrite its
+// target in place. Deliberately bypasses the in-thread dedupe and the shared
+// cache — the whole point is a fresh sample — and never seeds the cache. The
+// row keeps its id so open Explain panels/links stay valid; stale `explains`
+// rows for the old target are dropped (they were keyed by the old text).
+app.post('/api/segments/:segmentId/retry', (c) => {
+  const userId = c.get('userId')
+  const segmentId = uuidParam(c.req.param('segmentId'), 'Segment')
+  return withDb(c.env, async (db) => {
+    await getOrCreateUser(db, userId, c.get('email'))
+    const segRes = await db.query<
+      SegmentDbRow &
+        TranslateCharacterRow & { user_id: string; default_vibe: VibeStop }
+    >(
+      `select s.id, s.thread_id, s.source_text, s.target_text, s.vibe, s.token_alignment,
+              s.token_usage, s.created_at, s.updated_at, s.user_id,
+              c.source_language, c.target_language, c.temperature, c.persona,
+              c.instructions, c.default_vibe
+         from segments s
+         join threads t on t.id = s.thread_id
+         join characters c on c.id = t.character_id
+        where s.id = $1`,
+      [segmentId],
+    )
+    const seg = segRes.rows[0]
+    if (!seg) throw new HTTPException(404, { message: 'Segment not found' })
+    assertUserOwnsResource(seg.user_id, userId)
+
+    const vibe: VibeStop = seg.vibe ?? seg.default_vibe
+    const { result, target, settle, refund } = await translateWithCredits(
+      db,
+      c.env,
+      userId,
+      seg,
+      seg.source_text,
+      vibe,
+    )
+    let updated: SegmentDbRow | undefined
+    try {
+      // One owner-scoped statement overwrites the target and drops the Explains
+      // keyed by the old text. Zero rows = the Segment was deleted mid-flight.
+      const res = await db.query<SegmentDbRow>(
+        `with updated as (
+           update segments
+              set target_text = $2, token_alignment = $3, token_usage = $4, vibe = $6, updated_at = now()
+            where id = $1 and user_id = $5
+           returning ${SEGMENT_COLUMNS}
+         ), dropped as (
+           delete from explains where segment_id in (select id from updated)
+         )
+         select * from updated`,
+        [
+          segmentId,
+          result.targetText,
+          JSON.stringify(result.tokenAlignment),
+          JSON.stringify(result.tokenUsage),
+          userId,
+          vibe,
+        ],
+      )
+      updated = res.rows[0]
     } catch (error) {
-      // Release the hold on any failure before the spend was reconciled.
-      if (reservation) await refundReservation(db, userId, reservation).catch(() => undefined)
+      await refund().catch(() => undefined)
       throw error
     }
+    if (!updated) {
+      await refund().catch(() => undefined)
+      throw new HTTPException(404, { message: 'Segment not found' })
+    }
+
+    // Stored → charge. Nothing after this point refunds.
+    await settle(segmentId)
+    await bestEffort(
+      'thread recency bump failed',
+      db.query(`update threads set updated_at = now() where id = $1`, [
+        seg.thread_id,
+      ]),
+    )
+    await bestEffort(
+      'segment activity log failed',
+      logActivity(db, userId, 'segment.retried', {
+        threadId: seg.thread_id,
+        vibe,
+        byok: target.isByok,
+      }),
+    )
+    return c.json(mapSegment(updated))
   })
 })
 
 // Manual edit to stored history (a learner tweaking a past translation).
-app.patch('/api/segments/:segmentId', zValidator('json', segmentUpdateSchema), (c) => {
-  const updates = c.req.valid('json')
-  const userId = c.get('userId')
-  const id = c.req.param('segmentId')
-  return withDb(c.env, async (db) => {
-    await getOrCreateUser(db, userId, c.get('email'))
-    const owner = await db.query<{ user_id: string }>(
-      `select user_id from segments where id = $1`,
-      [id],
-    )
-    if (!owner.rows[0]) throw new HTTPException(404, { message: 'Segment not found' })
-    assertUserOwnsResource(owner.rows[0].user_id, userId)
+app.patch(
+  '/api/segments/:segmentId',
+  zValidator('json', segmentUpdateSchema),
+  (c) => {
+    const updates = c.req.valid('json')
+    const userId = c.get('userId')
+    const id = uuidParam(c.req.param('segmentId'), 'Segment')
+    return withDb(c.env, async (db) => {
+      await getOrCreateUser(db, userId, c.get('email'))
+      const owner = await db.query<{ user_id: string }>(
+        `select user_id from segments where id = $1`,
+        [id],
+      )
+      if (!owner.rows[0])
+        throw new HTTPException(404, { message: 'Segment not found' })
+      assertUserOwnsResource(owner.rows[0].user_id, userId)
 
-    const columnByKey: Record<string, string> = {
-      sourceText: 'source_text',
-      targetText: 'target_text',
-      vibe: 'vibe',
-      tokenAlignment: 'token_alignment',
-    }
-    const fields: Array<[string, unknown]> = []
-    for (const [key, col] of Object.entries(columnByKey)) {
-      const value = (updates as Record<string, unknown>)[key]
-      if (value !== undefined) fields.push([col, key === 'tokenAlignment' ? JSON.stringify(value) : value])
-    }
-    if (fields.length > 0) {
-      const setClause = fields.map(([col], idx) => `${col} = $${idx + 2}`).join(', ')
-      await db.query(`update segments set ${setClause}, updated_at = now() where id = $1`, [
-        id,
-        ...fields.map(([, value]) => value),
-      ])
-    }
-    const res = await db.query<SegmentDbRow>(
-      `select ${SEGMENT_COLUMNS} from segments where id = $1`,
-      [id],
-    )
-    return c.json(mapSegment(res.rows[0]))
-  })
-})
+      const columnByKey: Record<string, string> = {
+        sourceText: 'source_text',
+        targetText: 'target_text',
+        vibe: 'vibe',
+        tokenAlignment: 'token_alignment',
+      }
+      const fields: Array<[string, unknown]> = []
+      for (const [key, col] of Object.entries(columnByKey)) {
+        const value = (updates as Record<string, unknown>)[key]
+        if (value !== undefined)
+          fields.push([
+            col,
+            key === 'tokenAlignment' ? JSON.stringify(value) : value,
+          ])
+      }
+      if (fields.length > 0) {
+        const setClause = fields
+          .map(([col], idx) => `${col} = $${idx + 2}`)
+          .join(', ')
+        await db.query(
+          `update segments set ${setClause}, updated_at = now() where id = $1`,
+          [id, ...fields.map(([, value]) => value)],
+        )
+      }
+      const res = await db.query<SegmentDbRow>(
+        `select ${SEGMENT_COLUMNS} from segments where id = $1`,
+        [id],
+      )
+      return c.json(mapSegment(res.rows[0]))
+    })
+  },
+)
 
 app.delete('/api/segments/:segmentId', (c) => {
   const userId = c.get('userId')
-  const id = c.req.param('segmentId')
+  const id = uuidParam(c.req.param('segmentId'), 'Segment')
   return withDb(c.env, async (db) => {
     await getOrCreateUser(db, userId, c.get('email'))
-    const res = await db.query(`delete from segments where id = $1 and user_id = $2`, [id, userId])
-    if (res.rowCount === 0) throw new HTTPException(404, { message: 'Segment not found' })
+    const res = await db.query(
+      `delete from segments where id = $1 and user_id = $2`,
+      [id, userId],
+    )
+    if (res.rowCount === 0)
+      throw new HTTPException(404, { message: 'Segment not found' })
     return c.json({ ok: true, id })
   })
 })
@@ -820,7 +1330,7 @@ app.delete('/api/segments/:segmentId', (c) => {
 //   3) generate via api/_lib/explain.ts, insert, charge, return
 app.get('/api/segments/:segmentId/explain', (c) => {
   const userId = c.get('userId')
-  const segmentId = c.req.param('segmentId')
+  const segmentId = uuidParam(c.req.param('segmentId'), 'Segment')
   return withDb(c.env, async (db) => {
     const user = await getOrCreateUser(db, userId, c.get('email'))
     canUseFeature(tierLimits[user.tier].explain)
@@ -851,7 +1361,12 @@ app.get('/api/segments/:segmentId/explain', (c) => {
       [segmentId, EXPLAIN_PAYLOAD_VERSION],
     )
     if (direct.rows[0]) {
-      return c.json({ segmentId, version: EXPLAIN_PAYLOAD_VERSION, body: direct.rows[0].body, cached: true })
+      return c.json({
+        segmentId,
+        version: EXPLAIN_PAYLOAD_VERSION,
+        body: direct.rows[0].body,
+        cached: true,
+      })
     }
 
     // Lookup 2: cross-segment reuse for identical target text.
@@ -863,7 +1378,12 @@ app.get('/api/segments/:segmentId/explain', (c) => {
       [userId, segment.target_language, targetHash, EXPLAIN_PAYLOAD_VERSION],
     )
     if (shared.rows[0]) {
-      return c.json({ segmentId, version: EXPLAIN_PAYLOAD_VERSION, body: shared.rows[0].body, cached: true })
+      return c.json({
+        segmentId,
+        version: EXPLAIN_PAYLOAD_VERSION,
+        body: shared.rows[0].body,
+        cached: true,
+      })
     }
 
     // Miss → resolve target, reserve credits (platform path), generate, insert,
@@ -884,8 +1404,10 @@ app.get('/api/segments/:segmentId/explain', (c) => {
       }
     }
 
+    let result: Awaited<ReturnType<typeof generateExplain>>
+    let explainId: string
     try {
-      const result = await generateExplain(
+      result = await generateExplain(
         {
           sourceText: segment.source_text,
           sourceLanguage: segment.source_language,
@@ -893,7 +1415,12 @@ app.get('/api/segments/:segmentId/explain', (c) => {
           targetLanguage: segment.target_language,
           persona: segment.persona,
         },
-        { apiKey: target.apiKey, modelId: target.modelId, appUrl: c.env.APP_URL, reasoning: target.reasoning },
+        {
+          apiKey: target.apiKey,
+          modelId: target.modelId,
+          appUrl: c.env.APP_URL,
+          reasoning: target.reasoning,
+        },
       )
       const inserted = await db.query<{ id: string }>(
         `insert into explains
@@ -910,21 +1437,35 @@ app.get('/api/segments/:segmentId/explain', (c) => {
           JSON.stringify(result.tokenUsage),
         ],
       )
-      if (reservation) {
-        const cost = computeCredits(
-          result.tokenUsage.promptTokens,
-          result.tokenUsage.completionTokens,
-          result.tokenUsage.modelId,
-          target.creditCostMultiplier,
-        )
-        await reconcileSpend(db, userId, reservation, cost, inserted.rows[0].id)
-        reservation = null
-      }
-      return c.json({ segmentId, version: result.version, body: result.body, cached: false })
+      explainId = inserted.rows[0].id
     } catch (error) {
-      if (reservation) await refundReservation(db, userId, reservation).catch(() => undefined)
+      if (reservation) {
+        await refundReservation(db, userId, reservation).catch((refundError) =>
+          console.error('credit refund failed', {
+            userId,
+            ledgerId: reservation?.ledgerId,
+            refundError,
+          }),
+        )
+      }
       throw error
     }
+    // Stored (and cached for next time) → charge; never refund after this.
+    if (reservation) {
+      const cost = computeCredits(
+        result.tokenUsage.promptTokens,
+        result.tokenUsage.completionTokens,
+        result.tokenUsage.modelId,
+        target.creditCostMultiplier,
+      )
+      await reconcileSpend(db, userId, reservation, cost, explainId)
+    }
+    return c.json({
+      segmentId,
+      version: result.version,
+      body: result.body,
+      cached: false,
+    })
   })
 })
 
@@ -938,7 +1479,10 @@ app.get('/api/memory', zValidator('query', memorySearchSchema), (c) => {
     const user = await getOrCreateUser(db, userId, c.get('email'))
     canUseFeature(tierLimits[user.tier].translationMemory)
 
-    const embed = await embedText({ text: params.q, apiKey: c.env.OPENROUTER_API_KEY ?? '' })
+    const embed = await embedText({
+      text: params.q,
+      apiKey: c.env.OPENROUTER_API_KEY ?? '',
+    })
     const vector = formatVector(embed.vector)
 
     // $1 user, $2 query vector, $3 limit; optional filters start at $4.
@@ -970,7 +1514,10 @@ app.get('/api/memory', zValidator('query', memorySearchSchema), (c) => {
       query: params.q,
       characterId: params.characterId ?? null,
       targetLanguage: params.targetLanguage ?? null,
-      hits: res.rows.map((r) => ({ segmentId: r.segment_id, similarity: Number(r.similarity) })),
+      hits: res.rows.map((r) => ({
+        segmentId: r.segment_id,
+        similarity: Number(r.similarity),
+      })),
     })
   })
 })
@@ -1004,171 +1551,217 @@ app.get('/api/activity', (c) => {
 // Character draft for the confirmation form. `ok: false` → client falls back to
 // the empty form. Does not charge credits; should be rate-limited per user and
 // only served while onboarding_complete = false.
-app.post('/api/onboarding/dictate', zValidator('json', onboardingDictateSchema), (c) => {
-  const { prompt } = c.req.valid('json')
-  const userId = c.get('userId')
-  return withDb(c.env, async (db) => {
-    const user = await getOrCreateUser(db, userId, c.get('email'))
-    if (user.onboardingComplete) {
-      throw new HTTPException(403, { message: 'Onboarding is already complete' })
-    }
-    // Soft per-user rate limit: at most 5 onboarding dictations per minute.
-    const recent = await db.query<{ count: number }>(
-      `select count(*)::int as count from activity_log
+app.post(
+  '/api/onboarding/dictate',
+  zValidator('json', onboardingDictateSchema),
+  (c) => {
+    const { prompt } = c.req.valid('json')
+    const userId = c.get('userId')
+    return withDb(c.env, async (db) => {
+      const user = await getOrCreateUser(db, userId, c.get('email'))
+      if (user.onboardingComplete) {
+        throw new HTTPException(403, {
+          message: 'Onboarding is already complete',
+        })
+      }
+      // Soft per-user rate limit: at most 5 onboarding dictations per minute.
+      const recent = await db.query<{ count: number }>(
+        `select count(*)::int as count from activity_log
         where user_id = $1 and action = 'onboarding.dictate'
           and created_at > now() - interval '1 minute'`,
-      [userId],
-    )
-    if (Number(recent.rows[0]?.count ?? 0) >= 5) {
-      throw new HTTPException(429, { message: 'Too many dictation attempts — please slow down' })
-    }
-    await logActivity(db, userId, 'onboarding.dictate', {})
+        [userId],
+      )
+      if (Number(recent.rows[0]?.count ?? 0) >= 5) {
+        throw new HTTPException(429, {
+          message: 'Too many dictation attempts — please slow down',
+        })
+      }
+      await logActivity(db, userId, 'onboarding.dictate', {})
 
-    // Free / platform-paid; dictation is never BYOK.
-    const target = await resolveCallTarget(db, c.env, userId, 'dictation')
-    const { draft } = await draftCharacterFromDictation(prompt, {
-      apiKey: target.apiKey,
-      modelId: target.modelId,
-      appUrl: c.env.APP_URL,
-      reasoning: target.reasoning,
+      // Free / platform-paid; dictation is never BYOK.
+      const target = await resolveCallTarget(db, c.env, userId, 'dictation')
+      const { draft } = await draftCharacterFromDictation(prompt, {
+        apiKey: target.apiKey,
+        modelId: target.modelId,
+        appUrl: c.env.APP_URL,
+        reasoning: target.reasoning,
+      })
+      return c.json({ ...draft, prompt })
     })
-    return c.json({ ...draft, prompt })
-  })
-})
+  },
+)
 
 // In-app dictation (Pro+, credit-charged). Same parse, used to spin up
 // additional Characters by voice after onboarding.
-app.post('/api/ai/dictation', zValidator('json', onboardingDictateSchema), (c) => {
-  const { prompt } = c.req.valid('json')
-  const userId = c.get('userId')
-  return withDb(c.env, async (db) => {
-    const user = await getOrCreateUser(db, userId, c.get('email'))
-    canUseFeature(tierLimits[user.tier].aiDictation)
+app.post(
+  '/api/ai/dictation',
+  zValidator('json', onboardingDictateSchema),
+  (c) => {
+    const { prompt } = c.req.valid('json')
+    const userId = c.get('userId')
+    return withDb(c.env, async (db) => {
+      const user = await getOrCreateUser(db, userId, c.get('email'))
+      canUseFeature(tierLimits[user.tier].aiDictation)
 
-    // Dictation is always platform-paid (never BYOK; see adr/0003). Reserve a
-    // hold before the call so concurrent requests can't bypass a stale balance
-    // read, then reconcile to the real cost — or refund when the parse degrades
-    // to the empty-form fallback and there's nothing billable.
-    const target = await resolveCallTarget(db, c.env, userId, 'dictation')
-    const estimate = estimateCredits(prompt, target.creditCostMultiplier)
-    const reservation = await reserveCredits(db, userId, estimate, 'spend.dictation')
-    if (!reservation) {
-      throw new HTTPException(402, { message: 'Insufficient credits — add credits to continue' })
-    }
-
-    const { draft, tokenUsage } = await draftCharacterFromDictation(prompt, {
-      apiKey: target.apiKey,
-      modelId: target.modelId,
-      appUrl: c.env.APP_URL,
-      reasoning: target.reasoning,
-    })
-    if (tokenUsage) {
-      const cost = computeCredits(
-        tokenUsage.promptTokens,
-        tokenUsage.completionTokens,
-        tokenUsage.modelId,
-        target.creditCostMultiplier,
+      // Dictation is always platform-paid (never BYOK; see adr/0003). Reserve a
+      // hold before the call so concurrent requests can't bypass a stale balance
+      // read, then reconcile to the real cost — or refund when the parse degrades
+      // to the empty-form fallback and there's nothing billable.
+      const target = await resolveCallTarget(db, c.env, userId, 'dictation')
+      const estimate = estimateCredits(prompt, target.creditCostMultiplier)
+      const reservation = await reserveCredits(
+        db,
+        userId,
+        estimate,
+        'spend.dictation',
       )
-      await reconcileSpend(db, userId, reservation, cost, null)
-    } else {
-      await refundReservation(db, userId, reservation)
-    }
-    return c.json({ ...draft, prompt })
-  })
-})
+      if (!reservation) {
+        throw new HTTPException(402, {
+          message: 'Insufficient credits — add credits to continue',
+        })
+      }
+
+      const { draft, tokenUsage } = await draftCharacterFromDictation(prompt, {
+        apiKey: target.apiKey,
+        modelId: target.modelId,
+        appUrl: c.env.APP_URL,
+        reasoning: target.reasoning,
+      })
+      if (tokenUsage) {
+        const cost = computeCredits(
+          tokenUsage.promptTokens,
+          tokenUsage.completionTokens,
+          tokenUsage.modelId,
+          target.creditCostMultiplier,
+        )
+        await reconcileSpend(db, userId, reservation, cost, null)
+      } else {
+        await refundReservation(db, userId, reservation)
+      }
+      return c.json({ ...draft, prompt })
+    })
+  },
+)
 
 function getProviderErrorMessage(status: number, body: string) {
   // Log the upstream body server-side; return a generic, status-only message so
   // provider internals (and request ids) aren't surfaced in API responses.
-  if (body.trim()) console.error('text-to-speech provider error', { status, detail: body.slice(0, 500) })
+  if (body.trim())
+    console.error('text-to-speech provider error', {
+      status,
+      detail: body.slice(0, 500),
+    })
   return `Text-to-speech provider request failed (${status})`
 }
 
 const toElevenLabsLanguageCode = (languageCode?: string) =>
   languageCode?.split('-')[0]
 
-app.post('/api/ai/text-to-speech', zValidator('json', textToSpeechSchema), async (c) => {
-  const { text, vibe, languageCode } = c.req.valid('json')
-  const apiKey = c.env.ELEVENLABS_API_KEY?.trim()
-  const voiceIds = {
-    yakuza: c.env.ELEVENLABS_VOICE_YAKUZA,
-    friend: c.env.ELEVENLABS_VOICE_FRIEND,
-    casual: c.env.ELEVENLABS_VOICE_CASUAL,
-    keigo: c.env.ELEVENLABS_VOICE_KEIGO,
-    keigoplus: c.env.ELEVENLABS_VOICE_KEIGOPLUS,
-    emperor: c.env.ELEVENLABS_VOICE_EMPEROR,
-  } satisfies Record<typeof vibe, string | undefined>
-  const voiceId = voiceIds[vibe]?.trim()
-  const modelId = c.env.ELEVENLABS_MODEL_ID?.trim() || 'eleven_multilingual_v2'
-
-  if (!apiKey) {
-    throw new HTTPException(503, { message: 'Text-to-speech is not configured' })
-  }
-
-  if (!voiceId) {
-    throw new HTTPException(503, {
-      message: 'Text-to-speech voice is not configured for this vibe',
-    })
-  }
-
-  let response: Response
-  const elevenLabsLanguageCode = toElevenLabsLanguageCode(languageCode)
-  const supportsLanguageTextNormalization = elevenLabsLanguageCode === 'ja'
-
-  try {
-    response = await fetch(
-      `https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(
-        voiceId,
-      )}?output_format=mp3_44100_128`,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'xi-api-key': apiKey,
-        },
-        body: JSON.stringify({
-          text,
-          model_id: modelId,
-          apply_text_normalization: 'auto',
-          ...(elevenLabsLanguageCode
-            ? { language_code: elevenLabsLanguageCode }
-            : {}),
-          ...(supportsLanguageTextNormalization
-            ? { apply_language_text_normalization: true }
-            : {}),
-        }),
-      },
+// Pro+ only, Japanese only (for now): the free tier and every other target
+// language read back with the browser's speech synthesis on the client, so a
+// 403/400 here is a signal to fall back, not a hard failure. See docs/API.md.
+app.post(
+  '/api/ai/text-to-speech',
+  zValidator('json', textToSpeechSchema),
+  async (c) => {
+    const { text, vibe, languageCode } = c.req.valid('json')
+    const userId = c.get('userId')
+    const user = await withDb(c.env, (db) =>
+      getOrCreateUser(db, userId, c.get('email')),
     )
-  } catch {
-    throw new HTTPException(502, {
-      message: 'Text-to-speech provider is unreachable',
+    canUseFeature(tierLimits[user.tier].elevenLabsTts)
+    if (!/^ja([-_]|$)/i.test(languageCode ?? '')) {
+      throw new HTTPException(400, {
+        message: 'ElevenLabs voices are only available for Japanese today',
+      })
+    }
+    const apiKey = c.env.ELEVENLABS_API_KEY?.trim()
+    const voiceIds = {
+      yakuza: c.env.ELEVENLABS_VOICE_YAKUZA,
+      friend: c.env.ELEVENLABS_VOICE_FRIEND,
+      casual: c.env.ELEVENLABS_VOICE_CASUAL,
+      keigo: c.env.ELEVENLABS_VOICE_KEIGO,
+      keigoplus: c.env.ELEVENLABS_VOICE_KEIGOPLUS,
+      emperor: c.env.ELEVENLABS_VOICE_EMPEROR,
+    } satisfies Record<typeof vibe, string | undefined>
+    const voiceId = voiceIds[vibe]?.trim()
+    const modelId =
+      c.env.ELEVENLABS_MODEL_ID?.trim() || 'eleven_multilingual_v2'
+
+    if (!apiKey) {
+      throw new HTTPException(503, {
+        message: 'Text-to-speech is not configured',
+      })
+    }
+
+    if (!voiceId) {
+      throw new HTTPException(503, {
+        message: 'Text-to-speech voice is not configured for this vibe',
+      })
+    }
+
+    let response: Response
+    const elevenLabsLanguageCode = toElevenLabsLanguageCode(languageCode)
+    const supportsLanguageTextNormalization = elevenLabsLanguageCode === 'ja'
+
+    try {
+      response = await fetch(
+        `https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(
+          voiceId,
+        )}?output_format=mp3_44100_128`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'xi-api-key': apiKey,
+          },
+          body: JSON.stringify({
+            text,
+            model_id: modelId,
+            apply_text_normalization: 'auto',
+            ...(elevenLabsLanguageCode
+              ? { language_code: elevenLabsLanguageCode }
+              : {}),
+            ...(supportsLanguageTextNormalization
+              ? { apply_language_text_normalization: true }
+              : {}),
+          }),
+        },
+      )
+    } catch {
+      throw new HTTPException(502, {
+        message: 'Text-to-speech provider is unreachable',
+      })
+    }
+
+    if (!response.ok) {
+      const providerErrorBody = await response.text().catch(() => '')
+
+      throw new HTTPException(502, {
+        message: getProviderErrorMessage(response.status, providerErrorBody),
+      })
+    }
+
+    if (!response.body) {
+      throw new HTTPException(502, {
+        message: 'Text-to-speech provider returned an empty response',
+      })
+    }
+
+    return new Response(response.body, {
+      status: 200,
+      headers: {
+        'Cache-Control': 'no-store',
+        'Content-Type': 'audio/mpeg',
+      },
     })
-  }
+  },
+)
 
-  if (!response.ok) {
-    const providerErrorBody = await response.text().catch(() => '')
-
-    throw new HTTPException(502, {
-      message: getProviderErrorMessage(response.status, providerErrorBody),
-    })
-  }
-
-  if (!response.body) {
-    throw new HTTPException(502, {
-      message: 'Text-to-speech provider returned an empty response',
-    })
-  }
-
-  return new Response(response.body, {
-    status: 200,
-    headers: {
-      'Cache-Control': 'no-store',
-      'Content-Type': 'audio/mpeg',
-    },
-  })
-})
-
-async function getSubscriptionId(env: AppEnv['Bindings'], userId: string): Promise<string | null> {
+async function getSubscriptionId(
+  env: AppEnv['Bindings'],
+  userId: string,
+): Promise<string | null> {
   const db = createDbClient(env)
   try {
     await db.connect()
@@ -1182,41 +1775,55 @@ async function getSubscriptionId(env: AppEnv['Bindings'], userId: string): Promi
   }
 }
 
-app.post('/api/billing/checkout', zValidator('json', checkoutSchema), async (c) => {
-  const { plan, billingPeriod } = c.req.valid('json')
-  const { checkoutUrl } = await createCheckoutSession({
-    env: c.env,
-    plan,
-    billingPeriod,
-    userId: c.get('userId'),
-    email: c.get('email'),
-  })
-  return c.json({ checkoutUrl, plan })
-})
+app.post(
+  '/api/billing/checkout',
+  zValidator('json', checkoutSchema),
+  async (c) => {
+    const { plan, billingPeriod } = c.req.valid('json')
+    const { checkoutUrl } = await createCheckoutSession({
+      env: c.env,
+      plan,
+      billingPeriod,
+      userId: c.get('userId'),
+      email: c.get('email'),
+    })
+    return c.json({ checkoutUrl, plan })
+  },
+)
 
 app.post('/api/billing/cancel', async (c) => {
   const subscriptionId = await getSubscriptionId(c.env, c.get('userId'))
   if (!subscriptionId) {
-    throw new HTTPException(409, { message: 'No active subscription to cancel' })
+    throw new HTTPException(409, {
+      message: 'No active subscription to cancel',
+    })
   }
   await cancelSubscription(c.env, subscriptionId)
   return c.json({ ok: true })
 })
 
-app.post('/api/billing/switch-plan', zValidator('json', checkoutSchema), async (c) => {
-  const { plan, billingPeriod } = c.req.valid('json')
-  const subscriptionId = await getSubscriptionId(c.env, c.get('userId'))
-  if (!subscriptionId) {
-    throw new HTTPException(409, { message: 'No active subscription to change' })
-  }
-  await switchPlan({ env: c.env, subscriptionId, plan, billingPeriod })
-  return c.json({ ok: true, plan })
-})
+app.post(
+  '/api/billing/switch-plan',
+  zValidator('json', checkoutSchema),
+  async (c) => {
+    const { plan, billingPeriod } = c.req.valid('json')
+    const subscriptionId = await getSubscriptionId(c.env, c.get('userId'))
+    if (!subscriptionId) {
+      throw new HTTPException(409, {
+        message: 'No active subscription to change',
+      })
+    }
+    await switchPlan({ env: c.env, subscriptionId, plan, billingPeriod })
+    return c.json({ ok: true, plan })
+  },
+)
 
 app.post('/api/billing/webhooks/dodo', async (c) => {
   const secret = c.env.DODO_WEBHOOK_SECRET?.trim()
   if (!secret) {
-    throw new HTTPException(500, { message: 'DODO_WEBHOOK_SECRET is not configured' })
+    throw new HTTPException(500, {
+      message: 'DODO_WEBHOOK_SECRET is not configured',
+    })
   }
 
   // Verify the signature on the RAW body before parsing or touching the DB.
@@ -1245,15 +1852,28 @@ app.post('/api/billing/webhooks/dodo', async (c) => {
 
     // Best-effort confirmation email on a fresh activation, sent AFTER the
     // transaction commits. An email failure must never fail the webhook ack.
-    if (result.status === 'processed' && result.activated && result.userId && result.plan !== 'free') {
+    if (
+      result.status === 'processed' &&
+      result.activated &&
+      result.userId &&
+      result.plan !== 'free'
+    ) {
       const emailRow = await db.query<{ email: string | null }>(
         `select email from users where clerk_user_id = $1`,
         [result.userId],
       )
       const to = emailRow.rows[0]?.email
       if (to && result.plan) {
-        const { subject, html, text } = subscriptionConfirmationEmail({ plan: result.plan })
-        await sendTransactionalEmail({ env: c.env, to, subject, html, text }).catch((error) =>
+        const { subject, html, text } = subscriptionConfirmationEmail({
+          plan: result.plan,
+        })
+        await sendTransactionalEmail({
+          env: c.env,
+          to,
+          subject,
+          html,
+          text,
+        }).catch((error) =>
           console.error('subscription confirmation email failed', error),
         )
       }

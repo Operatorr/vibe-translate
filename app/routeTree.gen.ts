@@ -17,6 +17,7 @@ import { Route as AuthRouteImport } from './routes/auth'
 import { Route as AppRouteRouteImport } from './routes/app/route'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AppIndexRouteImport } from './routes/app/index'
+import { Route as ShareTokenRouteImport } from './routes/share.$token'
 import { Route as DevDiagnosticsRouteImport } from './routes/dev/diagnostics'
 
 const PricingRoute = PricingRouteImport.update({
@@ -59,6 +60,11 @@ const AppIndexRoute = AppIndexRouteImport.update({
   path: '/',
   getParentRoute: () => AppRouteRoute,
 } as any)
+const ShareTokenRoute = ShareTokenRouteImport.update({
+  id: '/share/$token',
+  path: '/share/$token',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const DevDiagnosticsRoute = DevDiagnosticsRouteImport.update({
   id: '/dev/diagnostics',
   path: '/dev/diagnostics',
@@ -74,6 +80,7 @@ export interface FileRoutesByFullPath {
   '/legal': typeof LegalRoute
   '/pricing': typeof PricingRoute
   '/dev/diagnostics': typeof DevDiagnosticsRoute
+  '/share/$token': typeof ShareTokenRoute
   '/app/': typeof AppIndexRoute
 }
 export interface FileRoutesByTo {
@@ -84,6 +91,7 @@ export interface FileRoutesByTo {
   '/legal': typeof LegalRoute
   '/pricing': typeof PricingRoute
   '/dev/diagnostics': typeof DevDiagnosticsRoute
+  '/share/$token': typeof ShareTokenRoute
   '/app': typeof AppIndexRoute
 }
 export interface FileRoutesById {
@@ -96,6 +104,7 @@ export interface FileRoutesById {
   '/legal': typeof LegalRoute
   '/pricing': typeof PricingRoute
   '/dev/diagnostics': typeof DevDiagnosticsRoute
+  '/share/$token': typeof ShareTokenRoute
   '/app/': typeof AppIndexRoute
 }
 export interface FileRouteTypes {
@@ -109,6 +118,7 @@ export interface FileRouteTypes {
     | '/legal'
     | '/pricing'
     | '/dev/diagnostics'
+    | '/share/$token'
     | '/app/'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -119,6 +129,7 @@ export interface FileRouteTypes {
     | '/legal'
     | '/pricing'
     | '/dev/diagnostics'
+    | '/share/$token'
     | '/app'
   id:
     | '__root__'
@@ -130,6 +141,7 @@ export interface FileRouteTypes {
     | '/legal'
     | '/pricing'
     | '/dev/diagnostics'
+    | '/share/$token'
     | '/app/'
   fileRoutesById: FileRoutesById
 }
@@ -142,6 +154,7 @@ export interface RootRouteChildren {
   LegalRoute: typeof LegalRoute
   PricingRoute: typeof PricingRoute
   DevDiagnosticsRoute: typeof DevDiagnosticsRoute
+  ShareTokenRoute: typeof ShareTokenRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -202,6 +215,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppIndexRouteImport
       parentRoute: typeof AppRouteRoute
     }
+    '/share/$token': {
+      id: '/share/$token'
+      path: '/share/$token'
+      fullPath: '/share/$token'
+      preLoaderRoute: typeof ShareTokenRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/dev/diagnostics': {
       id: '/dev/diagnostics'
       path: '/dev/diagnostics'
@@ -233,6 +253,7 @@ const rootRouteChildren: RootRouteChildren = {
   LegalRoute: LegalRoute,
   PricingRoute: PricingRoute,
   DevDiagnosticsRoute: DevDiagnosticsRoute,
+  ShareTokenRoute: ShareTokenRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

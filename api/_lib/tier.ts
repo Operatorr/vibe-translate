@@ -10,6 +10,9 @@ export const tierLimits = {
     explain: false,
     translationMemory: false,
     customVibeStops: false,
+    // Per-vibe ElevenLabs voices. Free tier reads back with the browser's
+    // built-in speech synthesis instead (client-side, no API call).
+    elevenLabsTts: false,
   },
   pro: {
     characters: 100,
@@ -20,6 +23,7 @@ export const tierLimits = {
     explain: true,
     translationMemory: true,
     customVibeStops: false,
+    elevenLabsTts: true,
   },
   team: {
     characters: 1000,
@@ -30,6 +34,7 @@ export const tierLimits = {
     explain: true,
     translationMemory: true,
     customVibeStops: true,
+    elevenLabsTts: true,
   },
 } as const
 

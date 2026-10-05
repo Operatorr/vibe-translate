@@ -12,25 +12,27 @@
 
 ## Auth
 
-- Bearer token *or* `__session` cookie, verified against Clerk by `api/_lib/auth.ts → auth()`.
+- Bearer token _or_ `__session` cookie, verified against Clerk by `api/_lib/auth.ts → auth()`.
 - The middleware also **upserts** the Clerk user into the local `users` table on first authenticated call and stores `userId`, `email`, and the DB connection string on Hono context (`c.get('userId')`, etc.).
 - The CORS layer allows the `APP_URL` origin only, with credentials, and the `authorization` + `content-type` headers.
 
-| Guarded prefix | Notes |
-| --- | --- |
-| `/api/users/*` | `auth()` |
-| `/api/characters/*` | `auth()` |
-| `/api/threads/*` | `auth()` |
-| `/api/segments/*` | `auth()` |
-| `/api/memory` | `auth()` |
-| `/api/activity/*` | `auth()` |
-| `/api/onboarding/*` | `auth()` |
-| `/api/ai/dictation` | `auth()` |
+| Guarded prefix           | Notes    |
+| ------------------------ | -------- |
+| `/api/users/*`           | `auth()` |
+| `/api/characters/*`      | `auth()` |
+| `/api/threads/*`         | `auth()` |
+| `/api/segments/*`        | `auth()` |
+| `/api/memory`            | `auth()` |
+| `/api/activity/*`        | `auth()` |
+| `/api/onboarding/*`      | `auth()` |
+| `/api/ai/dictation`      | `auth()` |
 | `/api/ai/text-to-speech` | `auth()` |
-| `/api/billing/*` | `auth()` |
-| `/api/export` | `auth()` |
+| `/api/billing/*`         | `auth()` |
+| `/api/export`            | `auth()` |
 
-Unguarded (intentionally public): `/api/health`, `/api/diagnostics`, `/api/waitlist`. **`/api/ai/text-to-speech` is authenticated** — it proxies to metered ElevenLabs, so the landing demo uses pre-rendered clips instead (see [SECURITY.md](./SECURITY.md#the-unauthenticated-surface)).
+Unguarded (intentionally public): `/api/health`, `/api/diagnostics`, `/api/waitlist`, **`/api/share/:token`** (read-only share links; the unguessable token is the capability — see [SECURITY.md](./SECURITY.md#the-unauthenticated-surface)). **`/api/ai/text-to-speech` is authenticated** — it proxies to metered ElevenLabs, so the landing demo uses pre-rendered clips instead (see [SECURITY.md](./SECURITY.md#the-unauthenticated-surface)).
+
+Resource ids in paths (`:characterId`, `:threadId`, `:segmentId`) and the `characterId`/`threadId` query filters are UUIDs; a malformed id returns `404`, never a database `500`.
 
 ## Surface
 
@@ -63,23 +65,35 @@ A **Character** is the primary navigation surface.
 - `GET /api/threads?characterId=...` → threads under a character (sorted by `updated_at desc`).
 - `GET /api/threads/:threadId` → single thread.
 - `POST /api/threads` → `threadCreateSchema` (`characterId`, `title`).
-- `PATCH /api/threads/:threadId` → `threadUpdateSchema` (`title?`, `archived?`).
+- `PATCH /api/threads/:threadId` → `threadUpdateSchema` (`title?`, `archived?`, `starred?`). Starring alone does not bump `updated_at`.
 - `DELETE /api/threads/:threadId`.
+- Thread rows carry `starred` and `segmentCount` (a correlated subquery) so the sidebar can render "N translations" without a second request.
+
+### Thread sharing (Share links)
+
+One read-only public link per Thread.
+
+- `GET /api/threads/:threadId/share` → `{ shared, token, url }` for the live link, or `{ shared: false, token: null, url: null }`.
+- `POST /api/threads/:threadId/share` → mints a token, or returns the existing live one → `{ shared: true, token, url }` — `201` when minted, `200` when reused. `url` is `${APP_URL}/share/<token>`. At most one live link per Thread is enforced by a partial unique index, so concurrent POSTs converge on one token. `404` missing thread, `403` someone else's, `409` archived thread (the public resolver would 404 it).
+- `DELETE /api/threads/:threadId/share` → revokes (sets `thread_shares.revoked_at`); a later POST mints a fresh token.
+- `GET /api/share/:token` → **public**. Returns `{ thread: { title, createdAt, updatedAt }, character: { name, initials, color, sourceLanguage, targetLanguage, defaultVibe }, segments: [{ id, sourceText, targetText, vibe, tokenAlignment, createdAt }] }`. Redacted by construction: no user ids, no token usage, no credits. `404` for unknown, revoked, or archived-thread tokens. `Cache-Control: no-store`, `X-Robots-Tag: noindex, nofollow`, and `Referrer-Policy: no-referrer` on every response, errors included. At most 500 Segments (oldest first).
 
 ### Segments
 
 - `GET /api/segments?threadId=...` → segments inside a thread.
-- `POST /api/segments` → `segmentCreateSchema` (`threadId`, `sourceText`, `vibe?`). **Sync translate-and-return** — the worker resolves the Character (default_vibe, temperature, persona, source/target language), calls the translation provider, and returns a Segment with **server-produced** `targetText` and `tokenAlignment`. Omit `vibe` to inherit `characters.default_vibe`. Client does **not** supply target text.
-  - **Free, instant pre-checks before any model call:** (1) an existing in-thread Segment for the same `(thread, sourceText, vibe)`, and (2) for *canonical* requests (no persona/instructions, default temperature), a shared `translation_cache` hit. Either path costs **0 credits**.
+- `POST /api/segments` → `segmentCreateSchema` (`threadId`, `sourceText`, `vibe?`). **Sync translate-and-return** — the worker resolves the Character (default_vibe, temperature, persona, source/target language), calls the translation provider, and returns a Segment with **server-produced** `targetText` and `tokenAlignment`. Omit `vibe` to select `characters.default_vibe` for this translation. The resolved stop is stored on the Segment; legacy null stops are returned as null ("Vibe not recorded"), including on public shares. Client does **not** supply target text.
+  - **Free, instant pre-checks before any model call:** (1) an existing in-thread Segment for the same `(thread, sourceText, vibe)`, and (2) for _canonical_ requests (no persona fields — tone and verbosity included — no instructions, default temperature), a shared `translation_cache` hit. Either path costs **0 credits**.
+  - **Charge ordering:** the credit hold is refunded only when the model call or the Segment insert fails. Once the Segment is stored it is charged, and the post-commit steps (cache seeding, thread recency, activity log) are best-effort and never refund. A Segment served from the shared cache carries `tokenUsage: { cached: true }`.
   - Latency budget: ~1–4s depending on model and target length. Clients render a spinner; no streaming today (see [adr/0002](./adr/) if/when streaming lands).
-  - Errors: `402 Payment Required` if the user's `credits_balance` is insufficient and BYOK is not configured (the response includes how many credits are short and the upgrade URL), `502` if the provider returns malformed output, `504` on provider timeout, `400/422` on schema failure. BYOK users skip the credit check entirely.
+  - Errors: `402 Payment Required` if the user's `credits_balance` is insufficient and BYOK is not configured (standard error envelope with a message only; the client links to pricing / BYOK), `502` if the provider returns malformed output, `504` on provider timeout, `400/422` on schema failure. BYOK users skip the credit check entirely.
+- `POST /api/segments/:segmentId/retry` → re-runs the translation for an existing Segment at its stored vibe and **overwrites the row in place** (`targetText`, `tokenAlignment`, `tokenUsage`). Deliberately bypasses the in-thread dedupe and the shared cache (the point is a fresh sample) and never seeds the cache. Drops the Segment's `explains` rows (keyed by the old target text). Same credit/BYOK rules and error codes as create. The overwrite and the Explain drop are one owner-scoped statement; if the Segment was deleted mid-flight the hold is refunded and the route returns `404`. Bumps the Thread's `updatedAt`.
 - `PATCH /api/segments/:segmentId` → partial update. Allows manual edits to `sourceText`, `targetText`, `vibe`, `tokenAlignment` for stored history (e.g. a learner tweaking a translation by hand). Edits to `sourceText` trigger an embedding refresh.
 - `DELETE /api/segments/:segmentId` → cascades to the row's `explains` rows.
 - `GET /api/segments/:segmentId/explain` → returns the Explain payload for a Segment. Generate-on-miss with cross-segment dedupe:
   1. Look up `explains` by `(segment_id, version = EXPLAIN_PAYLOAD_VERSION)`.
   2. If missing, look up by `(user_id, target_language, target_text_hash, version)` — same target text in another Segment reuses one row.
   3. Otherwise generate via `api/_lib/explain.ts → generateExplain`, insert, return.
-  Response: `{ segmentId, version, body, cached }`. Pro+ only.
+     Response: `{ segmentId, version, body, cached }`. Pro+ only.
 
 ### Memory (Translation memory)
 
@@ -96,7 +110,7 @@ A **Character** is the primary navigation surface.
 ### AI
 
 - `POST /api/ai/dictation` → same Character-draft parse as onboarding, but the **Pro+, credit-charged** in-app path for spinning up further Characters by voice.
-- `POST /api/ai/text-to-speech` → `textToSpeechSchema` (`text`, `vibe`, `languageCode?`). **Authenticated.** Proxies to ElevenLabs; returns an `audio/mpeg` stream. Voice IDs per **Vibe stop** are configured via `ELEVENLABS_VOICE_*` env vars. Returns `503` if unconfigured, `502` if ElevenLabs is unreachable or errors. The anonymous landing demo does not call this — it plays pre-rendered `public/demo/vibe-*.mp3` clips.
+- `POST /api/ai/text-to-speech` → `textToSpeechSchema` (`text`, `vibe`, `languageCode?`). **Authenticated, Pro+ only (`tierLimits.*.elevenLabsTts`), Japanese only today** — `403` on the free tier, `400` for a non-`ja` `languageCode`. Both are fall-back signals: the client reads back with the browser's speech synthesis (`app/lib/tts.ts`) for the free tier, other languages, and any ElevenLabs failure. Proxies to ElevenLabs; returns an `audio/mpeg` stream. Voice IDs per **Vibe stop** are configured via `ELEVENLABS_VOICE_*` env vars. Returns `503` if unconfigured, `502` if ElevenLabs is unreachable or errors. The anonymous landing demo does not call this — it plays pre-rendered `public/demo/vibe-*.mp3` clips.
 
 ### Billing
 

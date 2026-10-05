@@ -2,7 +2,7 @@ import { createFileRoute } from '@tanstack/react-router'
 import * as React from 'react'
 import { toast } from 'sonner'
 
-import { VibeAppPage } from '@/components/vibe-design/vibe-pages'
+import { AppExperience } from '@/components/app/app-experience'
 
 export const Route = createFileRoute('/app/')({
   component: AppIndex,
@@ -16,9 +16,13 @@ function AppIndex() {
       toast.success('Subscription active — your new credits are ready.')
       params.delete('upgraded')
       const query = params.toString()
-      window.history.replaceState({}, '', window.location.pathname + (query ? `?${query}` : ''))
+      window.history.replaceState(
+        {},
+        '',
+        window.location.pathname + (query ? `?${query}` : ''),
+      )
     }
   }, [])
 
-  return <VibeAppPage />
+  return <AppExperience />
 }

@@ -19,20 +19,23 @@
 
 Only these routes are intentionally public:
 
-| route | why public | protection |
-| --- | --- | --- |
-| `GET /api/health` | uptime checks | none needed (no data, no cost) |
-| `GET /api/diagnostics` | DB connectivity check | no user data; returns only `now()` |
-| `POST /api/waitlist` | pre-auth signups | edge rate limit + unique-email constraint |
+| route                   | why public              | protection                                                           |
+| ----------------------- | ----------------------- | -------------------------------------------------------------------- |
+| `GET /api/health`       | uptime checks           | none needed (no data, no cost)                                       |
+| `GET /api/diagnostics`  | DB connectivity check   | no user data; returns only `now()`                                   |
+| `POST /api/waitlist`    | pre-auth signups        | edge rate limit + unique-email constraint                            |
+| `GET /api/share/:token` | read-only shared Thread | unguessable revocable token, redacted projection, `no-store` (below) |
 
-**`POST /api/ai/text-to-speech` is authenticated.** It proxies to ElevenLabs, which bills per character — leaving it open is a direct cost-abuse vector. The landing-page demo therefore does **not** call it; it plays pre-rendered per-vibe MP3s from `public/demo/` (fixed translations, no editable source). See [public/demo/README.md](../public/demo/README.md).
+**`GET /api/share/:token` is public by design.** A share link is a capability: the token is 24 random bytes (base64url, 192 bits of entropy), minted only by the Thread's owner via `POST /api/threads/:id/share`, and revocable (`revoked_at`). The resolver selects a redacted projection — thread title, character display fields, segment texts/alignment — and never user ids, token usage, or credits. Tokens are validated against `^[A-Za-z0-9_-]{16,64}$` before touching the DB; unknown/revoked/archived → uniform `404`. Responses are `no-store`. Every `/api/share/*` response — errors included — also sends `X-Robots-Tag: noindex, nofollow` and `Referrer-Policy: no-referrer`; the SPA route `/share/*` gets the same headers from `public/_headers` plus a runtime robots meta tag, `robots.txt` disallows `/share/`, and the client never keeps a resolved share in memory (`staleTime`/`gcTime` 0). A partial unique index on the live `thread_id` guarantees a single live capability per Thread even under concurrent mints; archived threads can't be shared (`409`). The payload is capped at 500 Segments.
+
+**`POST /api/ai/text-to-speech` is authenticated and tier-gated (Pro+).** The free tier reads back with the browser's speech synthesis, which never touches the worker. It proxies to ElevenLabs, which bills per character — leaving it open is a direct cost-abuse vector. The landing-page demo therefore does **not** call it; it plays pre-rendered per-vibe MP3s from `public/demo/` (fixed translations, no editable source). See [public/demo/README.md](../public/demo/README.md).
 
 ## Abuse protection & rate limiting
 
 Two layers (see [adr/0003](./adr/0003-credits-byok-and-model-registry.md) and CLOUDFLARE.md):
 
 1. **Edge (coarse).** Cloudflare Rate Limiting Rules / WAF on `/api/*`, per-IP. Runs before the worker, so abusive traffic never reaches metered providers. This is the first line for the public routes and for burst protection everywhere.
-2. **Application (fine).** The **credits** system is the per-user cost control on the expensive model paths (translate, explain, dictation). Each paid call takes an **atomic credit reservation** (`reserveCredits`, a conditional `credits_balance >= estimate` decrement) *before* the model call, reconciled to the real cost afterwards. A request that can't cover the hold returns `402`. Because the reservation row-locks, concurrent requests serialize — a near-zero-balance user can't fan out many simultaneous paid calls past a single stale balance read. We deliberately do **not** maintain a bespoke KV/Durable-Object limiter unless edge rules prove insufficient.
+2. **Application (fine).** The **credits** system is the per-user cost control on the expensive model paths (translate, explain, dictation). Each paid call takes an **atomic credit reservation** (`reserveCredits`, a conditional `credits_balance >= estimate` decrement) _before_ the model call, reconciled to the real cost afterwards. A request that can't cover the hold returns `402`. Because the reservation row-locks, concurrent requests serialize — a near-zero-balance user can't fan out many simultaneous paid calls past a single stale balance read. We deliberately do **not** maintain a bespoke KV/Durable-Object limiter unless edge rules prove insufficient.
 
 Onboarding dictation is free and costs tokens, so it's bounded three ways: only callable while `onboarding_complete = false`, a lifetime call counter in `activity_log`, and the edge rate limit.
 
@@ -53,7 +56,7 @@ Onboarding dictation is free and costs tokens, so it's bounded three ways: only 
 
 ## Input validation
 
-- Every mutation route validates its body with a **Zod** schema (`api/_lib/schemas.ts`) via `@hono/zod-validator`. No handler calls `c.req.json()` without a schema. The Dodo webhook is the one deliberate exception: it reads the **raw** body with `c.req.text()` and verifies the signature *before* `JSON.parse`, so a Zod middleware (which would parse first) cannot front it.
+- Every mutation route validates its body with a **Zod** schema (`api/_lib/schemas.ts`) via `@hono/zod-validator`. No handler calls `c.req.json()` without a schema. The Dodo webhook is the one deliberate exception: it reads the **raw** body with `c.req.text()` and verifies the signature _before_ `JSON.parse`, so a Zod middleware (which would parse first) cannot front it.
 - Locale fields are constrained to BCP-47 shape; BYOK model IDs to `provider/model` shape; the OpenRouter key to the `sk-` prefix.
 - Validation failures return `422` with `error.flatten()` details; they never reach the database.
 - **Upstream provider errors** (OpenRouter, Dodo, ElevenLabs, embeddings) are logged server-side; client responses carry only a generic message + HTTP status, never the raw provider response body, so provider/model internals and request ids aren't leaked. The one exception is a `401/403` from OpenRouter, surfaced as "check your OpenRouter key" so BYOK users can self-diagnose.

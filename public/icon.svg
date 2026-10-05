@@ -1,7 +1,11 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="VibeTranslate">
-  <rect width="128" height="128" rx="24" fill="#0f766e" />
-  <path
-    fill="#ffffff"
-    d="M30 36h68v18H76c-2 11-7 21-15 29 5 3 10 5 16 7l-7 12c-8-3-15-7-21-12-6 5-13 9-21 12l-7-12c7-2 13-5 18-9-5-6-9-12-12-20h15c2 4 4 8 8 12 5-5 9-11 11-19H30V36Zm54 38h14l20 42h-15l-3-8H82l-3 8H64l20-42Zm2 23h10l-5-13-5 13Z"
-  />
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="Vibe Translate">
+  <rect width="128" height="128" rx="28" fill="#0a0a0a"/>
+  <defs>
+    <mask id="notch">
+      <rect width="128" height="128" fill="white"/>
+      <circle cx="88" cy="44" r="26" fill="black"/>
+    </mask>
+  </defs>
+  <circle cx="64" cy="64" r="50" fill="#ffffff" mask="url(#notch)"/>
+  <circle cx="88" cy="44" r="12" fill="#1f7aff"/>
 </svg>

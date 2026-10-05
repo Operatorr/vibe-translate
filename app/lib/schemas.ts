@@ -29,6 +29,8 @@ export const characterFormSchema = z.object({
       age: z.string().trim().max(60).optional(),
       region: z.string().trim().max(120).optional(),
       formality: z.string().trim().max(120).optional(),
+      tone: z.string().trim().max(60).optional(),
+      verbosity: z.number().min(0).max(1).optional(),
       traits: z.array(z.string().trim().max(120)).max(20).default([]),
     })
     .strict(),
@@ -43,3 +45,37 @@ export const threadFormSchema = z.object({
 })
 
 export type ThreadFormInput = z.infer<typeof threadFormSchema>
+
+// Public share payload (GET /api/share/:token). Parsed on the client because
+// the page is reachable by anyone; a malformed alignment degrades to the
+// whole-text fallback instead of crashing the view.
+const segmentTokenSchema = z.object({
+  t: z.string(),
+  src: z.string().catch(''),
+})
+
+export const sharedThreadSchema = z.object({
+  thread: z.object({
+    title: z.string(),
+    createdAt: z.string(),
+    updatedAt: z.string(),
+  }),
+  character: z.object({
+    name: z.string(),
+    initials: z.string().optional(),
+    color: z.string().optional(),
+    sourceLanguage: z.string(),
+    targetLanguage: z.string(),
+    defaultVibe: vibeStopSchema,
+  }),
+  segments: z.array(
+    z.object({
+      id: z.string(),
+      sourceText: z.string(),
+      targetText: z.string(),
+      vibe: vibeStopSchema.nullable(),
+      tokenAlignment: z.array(segmentTokenSchema).catch([]),
+      createdAt: z.string(),
+    }),
+  ),
+})

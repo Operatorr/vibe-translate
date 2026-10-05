@@ -15,12 +15,16 @@ function AuthPage() {
       ) : isSignedIn ? (
         <div className="rounded-lg border border-border bg-panel p-6">
           <h1 className="text-xl font-semibold">You are signed in.</h1>
-          <Link className="button-primary mt-5 inline-flex" to={'/app' as never}>
+          <Link className="button-primary mt-5 inline-flex" to="/app">
             Continue
           </Link>
         </div>
       ) : (
-        <SignIn routing="hash" signUpUrl="/auth#sign-up" />
+        <SignIn
+          routing="hash"
+          signUpUrl="/auth#sign-up"
+          forceRedirectUrl="/app"
+        />
       )}
     </main>
   )

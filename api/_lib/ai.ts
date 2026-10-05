@@ -47,9 +47,12 @@ export function finalizeTokens(
 ): { targetText: string; tokens: SegmentToken[] } {
   const { targetText, tokens } = data
   if (targetText.trim().length === 0) {
-    throw new HTTPException(502, { message: 'Translation provider returned empty text' })
+    throw new HTTPException(502, {
+      message: 'Translation provider returned empty text',
+    })
   }
-  const reconstructs = tokens.length > 0 && tokens.map((token) => token.t).join('') === targetText
+  const reconstructs =
+    tokens.length > 0 && tokens.map((token) => token.t).join('') === targetText
   return {
     targetText,
     tokens: reconstructs ? tokens : [{ t: targetText, src: input.sourceText }],
@@ -94,6 +97,8 @@ const dictationOutputSchema = z.strictObject({
       age: z.string().nullable(),
       region: z.string().nullable(),
       formality: z.string().nullable(),
+      tone: z.string().nullable(),
+      verbosity: z.number().nullable(),
       traits: z.array(z.string()),
     })
     .nullable(),
@@ -115,7 +120,9 @@ function cleanString(value: string | null): string | undefined {
 // Map the model's nullable output onto the public CharacterDraft, dropping
 // nulls/empties and clamping out-of-range values rather than rejecting the
 // whole draft — dictation is best-effort and the client confirms it anyway.
-function toCharacterDraft(raw: z.infer<typeof dictationOutputSchema>): CharacterDraft {
+function toCharacterDraft(
+  raw: z.infer<typeof dictationOutputSchema>,
+): CharacterDraft {
   if (!raw.ok) return { ok: false }
 
   const draft: CharacterDraft = { ok: true }
@@ -136,14 +143,31 @@ function toCharacterDraft(raw: z.infer<typeof dictationOutputSchema>): Character
   }
 
   if (raw.persona) {
-    const persona: Persona = { traits: raw.persona.traits.map((t) => t.trim()).filter(Boolean) }
+    const persona: Persona = {
+      traits: raw.persona.traits.map((t) => t.trim()).filter(Boolean),
+    }
     const age = cleanString(raw.persona.age)
     const region = cleanString(raw.persona.region)
     const formality = cleanString(raw.persona.formality)
+    const tone = cleanString(raw.persona.tone)
     if (age) persona.age = age
     if (region) persona.region = region
     if (formality) persona.formality = formality
-    if (persona.age || persona.region || persona.formality || persona.traits.length > 0) {
+    if (tone) persona.tone = tone.slice(0, 60)
+    if (
+      typeof raw.persona.verbosity === 'number' &&
+      Number.isFinite(raw.persona.verbosity)
+    ) {
+      persona.verbosity = Math.min(1, Math.max(0, raw.persona.verbosity))
+    }
+    if (
+      persona.age ||
+      persona.region ||
+      persona.formality ||
+      persona.tone ||
+      typeof persona.verbosity === 'number' ||
+      persona.traits.length > 0
+    ) {
       draft.persona = persona
     }
   }
