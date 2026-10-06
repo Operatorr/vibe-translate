@@ -15,6 +15,9 @@
   "preview_urls": false,
   "routes": [{ "pattern": "translate.marrowtech.app", "custom_domain": true }],
 
+  // Preserve dashboard-managed model and reasoning Text variables on every deploy.
+  "keep_vars": true,
+
   "vars": {
     "APP_ENV": "production",
     "APP_URL": "https://translate.marrowtech.app",

@@ -40,7 +40,21 @@ The committed `wrangler.jsonc` **is the production config**. Local dev overrides
 ## Secrets
 
 - **Real secrets** (`BETTER_AUTH_SECRET`, `GOOGLE_CLIENT_*`, `CREDENTIALS_ENCRYPTION_KEY`, `OPENROUTER_API_KEY`, `OPENAI_API_KEY`, `ELEVENLABS_*`, `DODO_*`, `RESEND_API_KEY`/`RESEND_FROM`) are set in production with `wrangler secret put <NAME>` — encrypted in Cloudflare, never committed.
-- **Non-sensitive vars** (`APP_ENV`, `APP_URL`) live in `wrangler.jsonc` `vars`.
+- **Non-sensitive vars** (`APP_ENV`, `APP_URL`) live in `wrangler.jsonc` `vars`. Model and reasoning overrides are dashboard-managed **Text** variables under **Settings → Variables & Secrets**. `keep_vars: true` preserves them across Git and CLI deployments; keep these overrides out of the committed `vars` block so dashboard edits remain authoritative.
+
+Dashboard Text overrides:
+
+```dotenv
+TRANSLATE_MODEL=x-ai/grok-4.3
+TRANSLATE_REASONING=none
+EXPLAIN_MODEL=x-ai/grok-4.3
+EXPLAIN_REASONING=none
+DICTATION_MODEL=
+DICTATION_REASONING=
+ELEVENLABS_MODEL_ID=eleven_multilingual_v2
+```
+
+Blank model/reasoning overrides can be left unset. Models then use the database registry default, and reasoning uses the provider default. For existing overrides stored as Secrets, change their Type to Text and enter the desired value in the dashboard, then Deploy. `keep_vars` preserves Text values but does not convert existing Secrets.
 - **Locally**, everything goes in `.dev.vars` (gitignored). `.env.example` is the checked-in template.
 
 Production uses its **own** `BETTER_AUTH_SECRET` and `CREDENTIALS_ENCRYPTION_KEY`, never the local values. Rotating `BETTER_AUTH_SECRET` invalidates every session cookie and signs everyone out. Rotating `CREDENTIALS_ENCRYPTION_KEY` means re-encrypting every stored BYOK cipher. Auth email is load-bearing: production needs `RESEND_API_KEY` + `RESEND_FROM` on a Resend-verified domain, or no one can verify an email (and so no one can finish a password sign-up). Dodo is unset until live payments launch, and checkout returns 503 until then.
@@ -58,7 +72,7 @@ wrangler secret put OPENROUTER_API_KEY
 wrangler secret put OPENAI_API_KEY
 wrangler secret put ELEVENLABS_API_KEY
 wrangler secret put ELEVENLABS_VOICE_YAKUZA      # ...and the other 5 voices
-# Optional: ELEVENLABS_MODEL_ID, *_MODEL / *_REASONING overrides
+# Model/reasoning overrides are dashboard Text variables (see above).
 # At payments launch: DODO_API_KEY, DODO_WEBHOOK_SECRET, DODO_PRODUCT_* (live mode)
 ```
 
@@ -96,7 +110,7 @@ Use Cloudflare's version history: `wrangler rollback` (or pin a prior version vi
 - [x] Production Neon DB created, `pgvector` enabled, all migrations (`0001`…`0006`) applied in order.
 - [x] Hyperdrive `vibe-translate-prod` created against the prod Neon DB (query caching **disabled**) and bound in `wrangler.jsonc`.
 - [x] Deployed (`pnpm run deploy`) to `https://translate.marrowtech.app`; `APP_URL` matches.
-- [x] Secrets set: `BETTER_AUTH_SECRET`, `CREDENTIALS_ENCRYPTION_KEY`, `OPENROUTER_API_KEY`, `TRANSLATE_MODEL`/`TRANSLATE_REASONING`, `EXPLAIN_MODEL`/`EXPLAIN_REASONING`, `ELEVENLABS_MODEL_ID`.
+- [x] Secrets set: `BETTER_AUTH_SECRET`, `CREDENTIALS_ENCRYPTION_KEY`, `OPENROUTER_API_KEY`; model/reasoning overrides were initially provisioned as Secrets and should be converted to dashboard Text variables (see above).
 - [ ] ⚠ `RESEND_API_KEY` + `RESEND_FROM` on a Resend-verified domain. Until then, no one can verify an email, so password sign-up can't complete.
 - [ ] Google OAuth production client (redirect URI `https://translate.marrowtech.app/api/auth/callback/google`); `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET` set.
 - [ ] `ELEVENLABS_API_KEY` + the six `ELEVENLABS_VOICE_*` ids.
