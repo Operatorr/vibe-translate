@@ -12,16 +12,17 @@ Single-page React app served by a Cloudflare Worker API, backed by Postgres (Neo
 
 ```
 Browser (React SPA, app/)
-   │  fetch via app/lib/api.ts  (bearer token / __session cookie)
+   │  fetch via app/lib/api.ts  (same-origin httpOnly session cookie)
    ▼
 Cloudflare Worker (Hono, api/app.ts via functions/api/[[route]].ts)
-   │  auth → Zod validation → handler
-   ├── Clerk            (identity)
+   │  /api/auth/* → Better Auth  (self-hosted identity, in-worker)
+   │  everything else: auth() session guard → Zod validation → handler
+   ├── Google OAuth     (sign-in with Google)
    ├── OpenRouter       (translate / explain / dictation models)
    ├── OpenAI           (embeddings)
    ├── ElevenLabs       (per-vibe TTS)
    ├── Dodo Payments    (subscriptions)
-   └── Resend           (email)
+   └── Resend           (auth + billing email)
    │
    ▼
 Postgres + pgvector  (via Hyperdrive)
@@ -36,7 +37,7 @@ Postgres + pgvector  (via Hyperdrive)
 | Worker / server logic        | `api/app.ts`, `api/_lib/`        | [docs/BACKEND.md](./docs/BACKEND.md)       |
 | HTTP API surface             | `api/app.ts`                     | [docs/API.md](./docs/API.md)               |
 | Data model                   | `db/`                            | [docs/DATABASE.md](./docs/DATABASE.md)     |
-| Platform / runtime           | `wrangler.toml`, `functions/`    | [docs/CLOUDFLARE.md](./docs/CLOUDFLARE.md) |
+| Platform / runtime           | `wrangler.jsonc`, `functions/`   | [docs/CLOUDFLARE.md](./docs/CLOUDFLARE.md) |
 | Deploy & environments        | —                                | [docs/DEPLOYMENT.md](./docs/DEPLOYMENT.md) |
 | Security & abuse             | cross-cutting                    | [docs/SECURITY.md](./docs/SECURITY.md)     |
 
@@ -49,12 +50,13 @@ Postgres + pgvector  (via Hyperdrive)
 - [adr/0003](./docs/adr/0003-credits-byok-and-model-registry.md) — credits, BYOK, model registry.
 - [adr/0004](./docs/adr/0004-shared-canonical-translation-cache.md) — shared canonical translation cache.
 - [adr/0007](./docs/adr/0007-segment-vibe-snapshot.md) — generation-time Vibe snapshots and legacy null rows.
+- [adr/0008](./docs/adr/0008-better-auth-replaces-clerk.md) — self-hosted Better Auth replaces Clerk (30-day sliding sessions).
 
 ## Boundaries (load-bearing rules)
 
 - **The SPA never imports from `api/_lib/`; the worker never imports from `app/`.** The only browser↔worker channel is `app/lib/api.ts` → `/api/*`.
 - **Every API input is validated with Zod** at the boundary (`api/_lib/schemas.ts`).
-- **Every per-user row is scoped by `clerk_user_id`.** See [docs/SECURITY.md](./docs/SECURITY.md#per-user-scoping).
+- **Every per-user row is scoped by `users.auth_user_id`** (the Better Auth user id). See [docs/SECURITY.md](./docs/SECURITY.md#per-user-scoping).
 - **The six Vibe stop IDs are a contract** shared by the DB enum, `api/_lib/schemas.ts → VIBE_STOPS`, and the client preset table. Keep all three in lockstep.
 - **Embeddings are platform-owned** (never BYOK) so the corpus stays cosine-comparable.
 
@@ -63,4 +65,5 @@ Postgres + pgvector  (via Hyperdrive)
 - **Hono** on Workers for the API; **TanStack Router + Query** on the SPA.
 - **Postgres + pgvector** for relational data _and_ embedding retrieval in one store.
 - **Model selection is data** (`models` table), not config — swap defaults with SQL, no deploy.
+- **Identity is self-hosted**: Better Auth runs in the worker against our Postgres (`auth_*` tables), with no auth vendor. Email + password (verified) and Google sign-in. See [docs/SECURITY.md](./docs/SECURITY.md#authentication).
 - Two environments only — **Local + Production** — with separate Neon databases. See [docs/DEPLOYMENT.md](./docs/DEPLOYMENT.md).

@@ -36,7 +36,7 @@ _Avoid_: notes, prompt, system prompt (that is the whole assembled prompt, not t
 
 **Onboarding**:
 The first-signin flow that produces the user's first **Character**. Dictation-first (a free-form description parsed into a draft) with a fallback to the **Character form**. Completes when the first Character is created (`users.onboarding_complete = true`).
-_Avoid_: setup, signup (signup is the Clerk auth step, distinct)
+_Avoid_: setup, signup (signup is the account-creation auth step, distinct)
 
 **Dictation**:
 Parsing a free-form spoken/typed description into a **Character draft**. Free and one-shot during **Onboarding**; a Pro+ feature for spinning up further Characters in-app. Uses the `dictation` **Model registry** task.
@@ -109,6 +109,16 @@ _Avoid_: translation memory (different mechanism), shared memory
 **Canonical translation**:
 A translation produced with empty **Persona** (every field, including the voice fields tone and verbosity), empty **Instructions**, and default **Temperature** — the only kind eligible for the shared **Translation cache**. Personalized translations are per-user only.
 _Avoid_: default translation, vanilla
+
+### Identity
+
+**User**:
+The signed-in person. Identity (email, password hash, Google link, **Sessions**) lives in Better Auth's `auth_*` tables. The app-side `users` row (tier, **Credits**, **BYOK**, onboarding) is keyed by `auth_user_id` and created on the first authenticated request. Deleting the identity cascades through all of the User's data.
+_Avoid_: customer (billing context only), member, account (Better Auth's `auth_accounts` are sign-in methods, not users)
+
+**Session**:
+A signed-in browser, carried by an httpOnly same-origin cookie, never a token in JS. Expiry slides over 30 days, so a User who visits daily stays signed in, and 30 idle days end it.
+_Avoid_: token, login
 
 ### Voices
 

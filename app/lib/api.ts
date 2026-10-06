@@ -9,22 +9,17 @@ export class ApiError extends Error {
   }
 }
 
+// Auth is the Better Auth session cookie (same origin), sent automatically.
 type ApiFetchOptions = RequestInit & {
-  getToken?: () => Promise<string | null>
   responseType?: 'json' | 'blob'
 }
 
 export async function apiFetch<TData>(path: string, options: ApiFetchOptions = {}): Promise<TData> {
-  const { getToken, headers, responseType = 'json', ...init } = options
-  const token = await getToken?.()
+  const { headers, responseType = 'json', ...init } = options
   const requestHeaders = new Headers(headers)
 
   if (!requestHeaders.has('content-type') && init.body) {
     requestHeaders.set('content-type', 'application/json')
-  }
-
-  if (token) {
-    requestHeaders.set('authorization', `Bearer ${token}`)
   }
 
   const response = await fetch(path, {

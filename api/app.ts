@@ -5,7 +5,7 @@ import { zValidator } from '@hono/zod-validator'
 
 import { draftCharacterFromDictation, translateSegment } from './_lib/ai'
 import { logActivity } from './_lib/activity'
-import { auth } from './_lib/auth'
+import { auth, authBaseURL, authHandler } from './_lib/auth'
 import {
   computeCredits,
   estimateCredits,
@@ -71,8 +71,8 @@ const app = new Hono<AppEnv>()
 app.use(
   '*',
   cors({
-    origin: (_origin, c) => c.env.APP_URL ?? 'http://localhost:5173',
-    allowHeaders: ['authorization', 'content-type'],
+    origin: (_origin, c) => authBaseURL(c.env),
+    allowHeaders: ['content-type'],
     allowMethods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
     credentials: true,
   }),
@@ -121,6 +121,11 @@ app.post('/api/waitlist', zValidator('json', waitlistSchema), async (c) => {
   return c.json({ ok: true, email: payload.email }, 201)
 })
 
+// Better Auth's endpoints: sign-up/in, email verification, password reset,
+// Google OAuth callback, session. Public by design — Better Auth enforces its
+// own origin (trustedOrigins) and rate-limit checks. See api/_lib/auth.ts.
+app.on(['GET', 'POST'], '/api/auth/*', authHandler)
+
 app.use('/api/users/*', auth())
 app.use('/api/characters/*', auth())
 app.use('/api/threads/*', auth())
@@ -131,7 +136,7 @@ app.use('/api/onboarding/*', auth())
 app.use('/api/ai/dictation', auth())
 app.use('/api/ai/text-to-speech', auth())
 // Billing routes are authenticated EXCEPT the Dodo webhook, which is
-// unauthenticated by design (Dodo cannot present a Clerk session) and instead
+// unauthenticated by design (Dodo cannot present a session cookie) and instead
 // verifies a Standard Webhooks signature. See SECURITY.md#webhook-signatures.
 app.use('/api/billing/checkout', auth())
 app.use('/api/billing/cancel', auth())
@@ -190,7 +195,7 @@ app.patch('/api/users/me', zValidator('json', userUpdateSchema), (c) => {
         .map(([col], idx) => `${col} = $${idx + 2}`)
         .join(', ')
       await db.query(
-        `update users set ${setClause}, updated_at = now() where clerk_user_id = $1`,
+        `update users set ${setClause}, updated_at = now() where auth_user_id = $1`,
         [userId, ...fields.map(([, value]) => value)],
       )
     }
@@ -215,7 +220,7 @@ app.put('/api/users/me/byok', zValidator('json', byokSetSchema), (c) => {
     await db.query(
       `update users
           set openrouter_api_key_cipher = $2, openrouter_api_key_last4 = $3, updated_at = now()
-        where clerk_user_id = $1`,
+        where auth_user_id = $1`,
       [userId, cipher, last4],
     )
     return c.json({ ok: true, configured: true, last4 })
@@ -230,7 +235,7 @@ app.delete('/api/users/me/byok', (c) => {
       `update users
           set openrouter_api_key_cipher = null, openrouter_api_key_last4 = null,
               byok_translate_model_id = null, byok_explain_model_id = null, updated_at = now()
-        where clerk_user_id = $1`,
+        where auth_user_id = $1`,
       [userId],
     )
     return c.json({ ok: true, configured: false })
@@ -256,7 +261,7 @@ app.patch(
           .map(([col], idx) => `${col} = $${idx + 2}`)
           .join(', ')
         await db.query(
-          `update users set ${setClause}, updated_at = now() where clerk_user_id = $1`,
+          `update users set ${setClause}, updated_at = now() where auth_user_id = $1`,
           [userId, ...fields.map(([, value]) => value)],
         )
       }
@@ -1766,7 +1771,7 @@ async function getSubscriptionId(
   try {
     await db.connect()
     const result = await db.query<{ subscription_id: string | null }>(
-      `select subscription_id from users where clerk_user_id = $1`,
+      `select subscription_id from users where auth_user_id = $1`,
       [userId],
     )
     return result.rows[0]?.subscription_id ?? null
@@ -1780,6 +1785,9 @@ app.post(
   zValidator('json', checkoutSchema),
   async (c) => {
     const { plan, billingPeriod } = c.req.valid('json')
+    await withDb(c.env, (db) =>
+      getOrCreateUser(db, c.get('userId'), c.get('email')),
+    )
     const { checkoutUrl } = await createCheckoutSession({
       env: c.env,
       plan,
@@ -1859,7 +1867,7 @@ app.post('/api/billing/webhooks/dodo', async (c) => {
       result.plan !== 'free'
     ) {
       const emailRow = await db.query<{ email: string | null }>(
-        `select email from users where clerk_user_id = $1`,
+        `select email from users where auth_user_id = $1`,
         [result.userId],
       )
       const to = emailRow.rows[0]?.email

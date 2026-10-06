@@ -12,29 +12,48 @@
 
 ## Auth
 
-- Bearer token _or_ `__session` cookie, verified against Clerk by `api/_lib/auth.ts → auth()`.
-- The middleware also **upserts** the Clerk user into the local `users` table on first authenticated call and stores `userId`, `email`, and the DB connection string on Hono context (`c.get('userId')`, etc.).
-- The CORS layer allows the `APP_URL` origin only, with credentials, and the `authorization` + `content-type` headers.
+- The credential is the **Better Auth session cookie**: httpOnly, same origin, sent automatically (`credentials: 'include'`). There is no bearer token. `api/_lib/auth.ts → auth()` resolves the session (signed cookie cache, else DB), sets `userId` and `email` on Hono context (`c.get('userId')`, etc.), and returns `401` without one. Refreshed session cookies ride back on the handler's response. See [SECURITY.md](./SECURITY.md#authentication).
+- `auth()` doesn't touch the DB's `users` table. App-data handlers and billing checkout call `getOrCreateUser`, which upserts the app-side row and refreshes its email. Cancel, switch-plan, and export do not provision profiles.
+- The CORS layer allows the `APP_URL` origin only, with credentials and the `content-type` header.
 
-| Guarded prefix           | Notes    |
-| ------------------------ | -------- |
-| `/api/users/*`           | `auth()` |
-| `/api/characters/*`      | `auth()` |
-| `/api/threads/*`         | `auth()` |
-| `/api/segments/*`        | `auth()` |
-| `/api/memory`            | `auth()` |
-| `/api/activity/*`        | `auth()` |
-| `/api/onboarding/*`      | `auth()` |
-| `/api/ai/dictation`      | `auth()` |
-| `/api/ai/text-to-speech` | `auth()` |
-| `/api/billing/*`         | `auth()` |
-| `/api/export`            | `auth()` |
+| Guarded prefix                                                             | Notes    |
+| -------------------------------------------------------------------------- | -------- |
+| `/api/users/*`                                                             | `auth()` |
+| `/api/characters/*`                                                        | `auth()` |
+| `/api/threads/*`                                                           | `auth()` |
+| `/api/segments/*`                                                          | `auth()` |
+| `/api/memory`                                                              | `auth()` |
+| `/api/activity/*`                                                          | `auth()` |
+| `/api/onboarding/*`                                                        | `auth()` |
+| `/api/ai/dictation`                                                        | `auth()` |
+| `/api/ai/text-to-speech`                                                   | `auth()` |
+| `/api/billing/checkout`, `/api/billing/cancel`, `/api/billing/switch-plan` | `auth()` |
+| `/api/export`                                                              | `auth()` |
 
-Unguarded (intentionally public): `/api/health`, `/api/diagnostics`, `/api/waitlist`, **`/api/share/:token`** (read-only share links; the unguessable token is the capability — see [SECURITY.md](./SECURITY.md#the-unauthenticated-surface)). **`/api/ai/text-to-speech` is authenticated** — it proxies to metered ElevenLabs, so the landing demo uses pre-rendered clips instead (see [SECURITY.md](./SECURITY.md#the-unauthenticated-surface)).
+Unguarded (intentionally public): **`/api/auth/*`** (Better Auth's own endpoints, which enforce their own origin and rate-limit checks — see [Auth endpoints](#auth-endpoints-better-auth)), `/api/health`, `/api/diagnostics`, `/api/waitlist`, **`POST /api/billing/webhooks/dodo`** (signature-verified), **`/api/share/:token`** (read-only share links; the unguessable token is the capability — see [SECURITY.md](./SECURITY.md#the-unauthenticated-surface)). **`/api/ai/text-to-speech` is authenticated** — it proxies to metered ElevenLabs, so the landing demo uses pre-rendered clips instead (see [SECURITY.md](./SECURITY.md#the-unauthenticated-surface)).
 
 Resource ids in paths (`:characterId`, `:threadId`, `:segmentId`) and the `characterId`/`threadId` query filters are UUIDs; a malformed id returns `404`, never a database `500`.
 
 ## Surface
+
+### Auth endpoints (Better Auth) {#auth-endpoints-better-auth}
+
+`app.on(['GET', 'POST'], '/api/auth/*')` passes the raw request to Better Auth's handler (`authHandler(c)`, with production email-configuration checks before dispatch). These routes are Better Auth's contract, not ours: no Zod schemas, and Better Auth's error shape (`{ code, message }`). The SPA calls them through `authClient` (`app/lib/auth-client.ts`). The ones the app uses:
+
+| endpoint                                | used for                                                                                                |
+| --------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| `POST /api/auth/sign-up/email`          | create account (`name`, `email`, `password`, `callbackURL`); sends the verification email               |
+| `POST /api/auth/sign-in/email`          | password sign-in; `403 EMAIL_NOT_VERIFIED` when unverified, and the verification link is re-sent        |
+| `POST /api/auth/sign-in/social`         | start Google OAuth (`provider: 'google'`) → returns the Google redirect URL                             |
+| `GET /api/auth/callback/google`         | Google OAuth redirect URI (`<APP_URL>/api/auth/callback/google`); sets the session, redirects to `/app` |
+| `GET /api/auth/verify-email`            | the emailed verification link (`?token=`); verifies, signs in, redirects to `/auth` → `/app`            |
+| `POST /api/auth/request-password-reset` | send the reset email (answers the same whether or not the address exists)                               |
+| `GET /api/auth/reset-password/:token`   | the emailed reset link; redirects to `/auth?token=…`                                                    |
+| `POST /api/auth/reset-password`         | set the new password (`newPassword`, `token`); revokes all sessions                                     |
+| `GET /api/auth/get-session`             | current session + user, or `null` (`authClient.useSession()`)                                           |
+| `POST /api/auth/sign-out`               | end the session and clear its cookies                                                                   |
+
+Failed links and OAuth errors redirect to `/auth?error=<code>` (`onAPIError.errorURL`). In every environment, requests from an `Origin` other than `APP_URL` get `403 INVALID_ORIGIN`. In production, email-sending endpoints are rate-limited to 3/min. Missing production `APP_URL` fails with `500`; email-dependent POSTs fail with `503` when `RESEND_API_KEY` is missing.
 
 ### Health & diagnostics
 
@@ -114,7 +133,7 @@ One read-only public link per Thread.
 
 ### Billing
 
-- `POST /api/billing/checkout` → `checkoutSchema` (`plan: 'pro' | 'team'`, `billingPeriod: 'monthly' | 'annual'` default `monthly`) → `{ checkoutUrl, plan }`. Creates a Dodo checkout session stamped with `metadata.clerk_user_id`; the client redirects to `checkoutUrl`. `503` if Dodo / the plan's product id is unconfigured, `502` on a Dodo error.
+- `POST /api/billing/checkout` → `checkoutSchema` (`plan: 'pro' | 'team'`, `billingPeriod: 'monthly' | 'annual'` default `monthly`) → `{ checkoutUrl, plan }`. Creates a Dodo checkout session stamped with `metadata.user_id` (the Better Auth user id); the client redirects to `checkoutUrl`. `503` if Dodo / the plan's product id is unconfigured, `502` on a Dodo error.
 - `POST /api/billing/switch-plan` → `checkoutSchema` → `{ ok, plan }`. Calls Dodo change-plan (prorated immediately) on the user's `subscription_id`. `409` if the user has no active subscription.
 - `POST /api/billing/cancel` → `{ ok }`. Cancels at end of the billing period (`cancel_at_next_billing_date`). `409` if no active subscription.
 - Cancel and switch-plan do **not** mutate `users.tier` directly — the resulting `subscription.cancelled` / `subscription.plan_changed` webhook is the single source of truth (see [adr/0005](./adr/0005-commerce-checkout-and-webhook-idempotency.md)).
@@ -134,5 +153,5 @@ One read-only public link per Thread.
 
 ## Open questions
 
-- Webhook surface: do we need Clerk webhooks (user-deleted, email-changed) wired to the DB? Today auth-on-request upserts on first call only.
+- ~~Webhook surface: do we need identity-provider webhooks (user-deleted, email-changed) wired to the DB?~~ **Resolved:** no. Identity lives in our own DB ([adr/0008](./adr/0008-better-auth-replaces-clerk.md)). Deleting an `auth_users` row cascades through all app data, and `users.email` is refreshed whenever an app-data handler or billing checkout calls `getOrCreateUser`.
 - Should `/api/memory` also return embedding-similarity scores normalized 0..1, or expose raw cosine distance? (Today: similarity 0..1.)

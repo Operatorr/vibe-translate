@@ -1,6 +1,6 @@
 ---
 name: deep-review
-description: Perform a maximally thorough, CodeRabbit-style code review that fans out one focused sub-agent per changed file, runs every available linter/SAST/secret scanner, and reports every issue down to nitpicks. Use when the user asks for a deep, exhaustive, thorough, or nitpick-level review, a CodeRabbit-style review, to "find everything", to "leave no stone unturned", or wants maximum coverage on a PR or branch. Optimizes for recall; some noise is acceptable. For a fast, conservative, senior-engineer review that flags only what matters, use code-review instead.
+description: Perform a maximally thorough, CodeRabbit-style code review that fans out one focused sub-agent per changed file, runs every available linter/SAST/secret scanner, and reports every issue down to nitpicks. Use for /deep-review or when the user asks for a deep, exhaustive, thorough, or nitpick-level review, a CodeRabbit-style review, to "find everything", to "leave no stone unturned", or wants maximum coverage on a PR or branch. Optimizes for recall; some noise is acceptable. For a fast, conservative, senior-engineer review that flags only what matters, use code-review instead.
 ---
 
 # Deep Review
@@ -12,10 +12,11 @@ This skill optimizes for **recall, not precision**. Some noise is expected and a
 ## Use Cases
 
 ```bash
+/deep-review https://github.com/OWNER/REPO/pull/123
 Exhaustively review PR #123 — find everything
 /skill:deep-review https://github.com/OWNER/REPO/pull/123
 CodeRabbit-style deep review of the current branch
-Thorough review of this PR with inline comments
+Thorough review of this PR, post the summary
 Nitpick-level review of these local changes, terminal only
 ```
 
@@ -47,7 +48,7 @@ Output destination rules (identical to `code-review`):
 3. Local branch, uncommitted, or file-only review — terminal only unless the user asks to post and provides a PR target.
 4. Any "do not post" / "terminal only" wording — terminal only.
 
-For a direct PR URL with posting enabled, the **default posting style is CodeRabbit-style: inline review comments anchored to lines plus one summary comment.** Resolve an `inline` flag: on by default for PR-URL posting; the user can request "summary only" (no inline) or "terminal only".
+When posting is enabled, post **exactly one summary comment** on the PR. Never post inline review comments or a PR review — every finding lives inside the summary comment.
 
 ### Phase 1: Gather the Diff & Build the Changed-File Manifest
 
@@ -77,7 +78,7 @@ Build a **changed-file manifest**. For each changed file, record:
 - `language` (from extension)
 - `hunk_ranges` — the changed line ranges parsed from each `@@ -a,b +c,d @@` header
 
-Keep the `hunk_ranges` — Phase 7 reuses them to validate that inline comments land inside a diff hunk (GitHub rejects out-of-hunk inline lines).
+Keep the `hunk_ranges` — Phase 4 hands them to the sub-agents as their assigned changed line ranges.
 
 ### Phase 2: Build the Repo-Context Packet
 
@@ -194,9 +195,9 @@ If no issues are found at any tier, say so clearly — but on a non-trivial PR t
 
 ## GitHub PR Posting
 
-When posting is permitted, default to **inline comments + a summary comment** (see `REFERENCE.md` for exact commands and the JSON payload recipe).
+When posting is permitted, post **one summary comment and nothing else** (see `REFERENCE.md` for the template and exact commands).
 
 1. Run `gh auth status`. On failure or `gh` missing, print the full review to terminal with the reason.
-2. **Summary comment** — one comment with the overall assessment and statistics, each blocking/notable finding (Critical/High/Medium) in its own `<details>`, and a single outer collapsed `🪶 Nitpicks & minor issues` `<details>` wrapping each Low/Nitpick finding individually.
-3. **Inline review** — one review via `gh api repos/OWNER/REPO/pulls/<n>/reviews` with `event=COMMENT` and a `comments` array, each comment anchored to a line. Build the payload as JSON and post with `gh api … --input <payload>`. Validate each finding's line against the Phase 1 hunk ranges; demote any out-of-hunk finding into the summary comment. The review `body` repeats the summary + statistics so nothing is lost if a reader sees only the summary.
-4. If the user asked for "summary only", post the summary comment alone. If posting fails, print the full review to terminal with the error.
+2. **Summary comment** — one comment via `gh pr comment <url-or-number> --body-file <tmp.md>` with the overall assessment and statistics, each blocking/notable finding (Critical/High/Medium) in its own `<details>`, and a single outer collapsed `🪶 Nitpicks & minor issues` `<details>` wrapping each Low/Nitpick finding individually.
+3. **No inline comments, no PR review.** Do not call `gh api repos/OWNER/REPO/pulls/<n>/reviews` or `gh pr review`. A review with a `comments` array creates a resolvable conversation per finding and duplicates the summary; the single comment already carries every finding with its `path:line`.
+4. If posting fails, print the full review to terminal with the error.

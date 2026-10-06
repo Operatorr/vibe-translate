@@ -115,7 +115,7 @@ export const SiteNav = ({
   route: VibeRoute
   onNavigate: NavigateFn
   onOpenPalette: () => void
-  // Right-hand account slot on the app route (Clerk's UserButton).
+  // Right-hand account slot on the app route (AccountMenu).
   account?: React.ReactNode
 }) => {
   const navLink = (to: VibeRoute, label: string) => (
@@ -180,7 +180,7 @@ export const SiteNav = ({
             <span>Search or jump to</span>
             <kbd>{MOD_KEY === '⌘' ? '⌘K' : 'Ctrl K'}</kbd>
           </button>
-        ) : (
+        ) : route === '/auth' ? null : (
           <a
             className="vt-navlink"
             href="/app"
@@ -200,7 +200,8 @@ export const SiteNav = ({
         >
           <Icon name={theme === 'dark' ? 'sun' : 'moon'} />
         </button>
-        {route !== '/app' && (
+        {/* On /auth the sign-in CTAs would just point back at this page. */}
+        {route !== '/app' && route !== '/auth' && (
           <button
             type="button"
             className="vt-btn vt-btn--primary"

@@ -3,4 +3,4 @@ Allow: /
 # Share links carry a capability token in the path; never crawl them.
 Disallow: /share/
 
-Sitemap: https://example.com/sitemap.xml
+Sitemap: https://translate.marrowtech.app/sitemap.xml

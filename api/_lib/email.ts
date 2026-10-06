@@ -19,13 +19,18 @@ export type EmailMessage = {
 // Sends one transactional email. No-ops (with a warning) when RESEND_API_KEY is
 // unset, so a missing email key never breaks a paid flow such as an upgrade.
 // Throws only on an actual send failure, so non-critical callers can swallow it.
-export async function sendTransactionalEmail(message: EmailMessage): Promise<void> {
+export async function sendTransactionalEmail(
+  message: EmailMessage,
+): Promise<void> {
   const apiKey = message.env.RESEND_API_KEY?.trim()
   if (!apiKey) {
-    console.warn('sendTransactionalEmail: RESEND_API_KEY not set; skipping send', {
-      to: message.to,
-      subject: message.subject,
-    })
+    console.warn(
+      'sendTransactionalEmail: RESEND_API_KEY not set; skipping send',
+      {
+        to: message.to,
+        subject: message.subject,
+      },
+    )
     return
   }
 
@@ -50,6 +55,50 @@ export async function sendTransactionalEmail(message: EmailMessage): Promise<voi
       `Resend send failed (${res.status})${detail ? `: ${detail.slice(0, 200)}` : ''}`,
     )
   }
+}
+
+type EmailContent = { subject: string; html: string; text: string }
+
+// Single-link auth emails (Better Auth supplies the signed URL).
+function linkEmail(
+  subject: string,
+  lead: string,
+  cta: string,
+  url: string,
+): EmailContent {
+  const safeUrl = url.replace(
+    /[&"<>]/g,
+    (char) =>
+      ({
+        '&': '&amp;',
+        '"': '&quot;',
+        '<': '&lt;',
+        '>': '&gt;',
+      })[char]!,
+  )
+  return {
+    subject,
+    html: `<p>${lead}</p><p><a href="${safeUrl}">${cta}</a></p><p>If you didn't request this, you can ignore this email.</p>`,
+    text: `${lead}\n\n${cta}: ${url}\n\nIf you didn't request this, you can ignore this email.`,
+  }
+}
+
+export function verifyEmailContent(url: string): EmailContent {
+  return linkEmail(
+    'Verify your Vibe Translate email',
+    'Confirm your email address to finish setting up your Vibe Translate account. The link expires in one hour.',
+    'Verify email',
+    url,
+  )
+}
+
+export function resetPasswordContent(url: string): EmailContent {
+  return linkEmail(
+    'Reset your Vibe Translate password',
+    'Someone asked to reset the password for your Vibe Translate account. The link expires in one hour.',
+    'Choose a new password',
+    url,
+  )
 }
 
 // Content for the subscription-activation confirmation email. Kept minimal on

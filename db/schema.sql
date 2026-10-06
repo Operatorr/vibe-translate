@@ -11,10 +11,73 @@ begin
   end if;
 end$$;
 
--- Users carry tier, credit balance, and optional BYOK credentials.
+-- Identity: Better Auth core schema (see api/_lib/auth.ts, adr/0008).
+create table if not exists auth_users (
+  id text primary key,
+  name text not null,
+  email text not null unique,
+  email_verified boolean not null,
+  image text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists auth_sessions (
+  id text primary key,
+  expires_at timestamptz not null,
+  token text not null unique,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null,
+  ip_address text,
+  user_agent text,
+  user_id text not null references auth_users (id) on delete cascade
+);
+
+-- One row per sign-in method: provider_id 'credential' carries the scrypt
+-- password hash; 'google' carries the OAuth tokens.
+create table if not exists auth_accounts (
+  id text primary key,
+  account_id text not null,
+  provider_id text not null,
+  user_id text not null references auth_users (id) on delete cascade,
+  access_token text,
+  refresh_token text,
+  id_token text,
+  access_token_expires_at timestamptz,
+  refresh_token_expires_at timestamptz,
+  scope text,
+  password text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null
+);
+
+-- Email-verification and password-reset tokens.
+create table if not exists auth_verifications (
+  id text primary key,
+  identifier text not null,
+  value text not null,
+  expires_at timestamptz not null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists auth_rate_limits (
+  id text primary key,
+  key text not null unique,
+  count integer not null,
+  last_request bigint not null
+);
+
+create index if not exists auth_sessions_user_id_idx on auth_sessions (user_id);
+create unique index if not exists auth_accounts_provider_account_idx on auth_accounts (provider_id, account_id);
+create index if not exists auth_accounts_user_id_idx on auth_accounts (user_id);
+create index if not exists auth_verifications_identifier_idx on auth_verifications (identifier);
+
+-- Users carry tier, credit balance, and optional BYOK credentials. Keyed by the
+-- Better Auth user; created by app-data handlers and checkout (users.ts).
 create table if not exists users (
   id uuid primary key default gen_random_uuid(),
-  clerk_user_id text not null unique,
+  auth_user_id text not null unique references auth_users (id) on delete cascade,
   email text,
   display_name text,
   tier text not null default 'free' check (tier in ('free', 'pro', 'team')),
@@ -70,7 +133,7 @@ on conflict (task, provider, provider_model_id) do nothing;
 -- Append-only audit log of every credit grant and every credit spend.
 create table if not exists credit_ledger (
   id uuid primary key default gen_random_uuid(),
-  user_id text not null references users (clerk_user_id) on delete cascade,
+  user_id text not null references users (auth_user_id) on delete cascade,
   delta integer not null,                                  -- +grant, -spend
   reason text not null,                                    -- e.g. 'grant.monthly', 'spend.translate'
   reference_id uuid,                                       -- e.g. segment_id or explain_id
@@ -80,7 +143,7 @@ create table if not exists credit_ledger (
 
 create table if not exists characters (
   id uuid primary key default gen_random_uuid(),
-  user_id text not null references users (clerk_user_id) on delete cascade,
+  user_id text not null references users (auth_user_id) on delete cascade,
   name text not null,
   initials text,
   color text,
@@ -103,7 +166,7 @@ create table if not exists characters (
 create table if not exists threads (
   id uuid primary key default gen_random_uuid(),
   character_id uuid not null references characters (id) on delete cascade,
-  user_id text not null references users (clerk_user_id) on delete cascade,
+  user_id text not null references users (auth_user_id) on delete cascade,
   title text not null,
   starred boolean not null default false,
   archived_at timestamptz,
@@ -116,7 +179,7 @@ create table if not exists threads (
 create table if not exists thread_shares (
   id uuid primary key default gen_random_uuid(),
   thread_id uuid not null references threads (id) on delete cascade,
-  user_id text not null references users (clerk_user_id) on delete cascade,
+  user_id text not null references users (auth_user_id) on delete cascade,
   token text not null unique,
   created_at timestamptz not null default now(),
   revoked_at timestamptz
@@ -128,7 +191,7 @@ create table if not exists thread_shares (
 create table if not exists segments (
   id uuid primary key default gen_random_uuid(),
   thread_id uuid not null references threads (id) on delete cascade,
-  user_id text not null references users (clerk_user_id) on delete cascade,
+  user_id text not null references users (auth_user_id) on delete cascade,
   source_text text not null,
   target_text text not null,
   -- Generation-time stop. Nullable only for legacy rows whose stop wasn't recorded.
@@ -144,7 +207,7 @@ create table if not exists segments (
 create table if not exists explains (
   id uuid primary key default gen_random_uuid(),
   segment_id uuid not null references segments (id) on delete cascade,
-  user_id text not null references users (clerk_user_id) on delete cascade,
+  user_id text not null references users (auth_user_id) on delete cascade,
   target_language text not null,
   target_text text not null,
   target_text_hash text not null,
@@ -176,7 +239,7 @@ create table if not exists translation_cache (
 
 create table if not exists activity_log (
   id uuid primary key default gen_random_uuid(),
-  user_id text not null references users (clerk_user_id) on delete cascade,
+  user_id text not null references users (auth_user_id) on delete cascade,
   action text not null,
   metadata jsonb not null default '{}'::jsonb,
   created_at timestamptz not null default now()

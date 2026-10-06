@@ -1,8 +1,11 @@
 export type Bindings = {
   APP_ENV?: 'development' | 'preview' | 'production'
   APP_URL?: string
-  CLERK_SECRET_KEY: string
-  CLERK_PUBLISHABLE_KEY?: string
+  // Better Auth session/cookie signing secret (openssl rand -base64 32).
+  BETTER_AUTH_SECRET?: string
+  // Google OAuth client; the Google button errors until both are set.
+  GOOGLE_CLIENT_ID?: string
+  GOOGLE_CLIENT_SECRET?: string
   DATABASE_URL?: string
   HYPERDRIVE?: Hyperdrive
   RESEND_API_KEY?: string
@@ -42,8 +45,7 @@ export type Bindings = {
 
 export type Variables = {
   userId: string
-  email: string | null
-  databaseUrl?: string
+  email: string
 }
 
 export type AppEnv = {

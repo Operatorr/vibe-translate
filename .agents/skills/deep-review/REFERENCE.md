@@ -74,7 +74,7 @@ Order findings Critical → High → Medium → Low → Nitpick, then by file an
 
 ## GitHub summary comment template
 
-One comment. Blocking/notable findings expanded individually; Low/Nitpick wrapped in a single outer collapsed section (CodeRabbit-style).
+One comment — the only thing posted to the PR. Blocking/notable findings expanded individually; Low/Nitpick wrapped in a single outer collapsed section (CodeRabbit-style).
 
 ````markdown
 # Deep Review
@@ -134,34 +134,22 @@ One comment. Blocking/notable findings expanded individually; Low/Nitpick wrappe
 
 If a tier is empty, omit its section. Never omit a finding to shorten the comment — collapse it instead.
 
-## GitHub inline review (default for PR-URL posting)
+## Posting the summary comment
 
-Post one review carrying a `comments` array so each finding lands on its line. Build the payload as JSON and pipe it to `gh api --input -`.
+Write the summary markdown to a temp file and post it as a single PR comment:
 
 ```bash
 gh auth status  # bail to terminal output on failure
 
-cat > /tmp/deep-review-payload.json <<'JSON'
-{
-  "event": "COMMENT",
-  "body": "# Deep Review\n\n<summary + statistics — same content as the summary comment>",
-  "comments": [
-    { "path": "src/file.ts", "line": 42, "side": "RIGHT", "body": "[High] Missing null check — ..." },
-    { "path": "src/file.ts", "start_line": 88, "line": 91, "side": "RIGHT", "body": "[Medium] ..." }
-  ]
-}
-JSON
-
-gh api repos/OWNER/REPO/pulls/<number>/reviews \
-  -X POST --input /tmp/deep-review-payload.json
+tmp_review="$(mktemp -t deep-review.XXXXXX.md)"
+# Write the summary comment markdown to "$tmp_review" first.
+gh pr comment <url-or-number> --body-file "$tmp_review"
 ```
 
 Rules:
 
-- Each comment's `line` (and `start_line` for ranges) must fall inside a diff hunk for that file, or GitHub rejects the whole review. Validate every finding's line against the Phase 1 `hunk_ranges`; **demote out-of-hunk findings into the summary comment** instead of inlining them.
-- `side: RIGHT` targets the new version of the file (use `LEFT` only for deleted lines).
-- The review `body` repeats the summary + statistics so nothing is lost if a reader sees only the summary.
-- "Summary only" requested → skip the inline review, post only the summary comment with `gh pr comment <url-or-number> --body-file <tmp.md>`.
+- Post exactly one comment per review run. Do not post a PR review (`gh pr review`, `gh api repos/OWNER/REPO/pulls/<number>/reviews`) and do not post inline/line-anchored comments — they create a resolvable conversation per finding and duplicate the summary.
+- Every finding keeps its `path:line` in its `<details>` summary line, so nothing is lost by not anchoring it to the diff.
 
 ## Auth & fallback commands
 
@@ -187,6 +175,6 @@ fi
 - Do not let thoroughness become vagueness — every finding still needs an exact location and a concrete fix.
 - Do not collapse the Nitpick tier into a count; collapse it into a `<details>`, but list each item.
 - Do not run any tool with `--fix`/`--write`, and do not run global installs without asking.
-- Do not inline a comment on a line outside a diff hunk — it rejects the entire review payload.
+- Do not post inline comments or a PR review — one summary comment is the entire GitHub output.
 - Do not skip Phase 6 on a non-trivial PR; a suspiciously low count is usually under-reporting, not a clean PR.
 - Do still say what is good. Even an exhaustive review benefits from noting solid patterns.

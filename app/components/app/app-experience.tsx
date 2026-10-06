@@ -1,4 +1,3 @@
-import { UserButton, useAuth, useClerk } from '@clerk/react'
 import { Link } from '@tanstack/react-router'
 import * as React from 'react'
 import { toast } from 'sonner'
@@ -36,6 +35,7 @@ import {
   type CharacterInput,
 } from '@/hooks/use-app-data'
 import { ApiError } from '@/lib/api'
+import { authClient, signOut } from '@/lib/auth-client'
 import { cssVars } from '@/lib/css-vars'
 import {
   downloadTextFile,
@@ -48,6 +48,7 @@ import type { Character, Thread, VibeStop } from '@/lib/types'
 import { copyText } from '@/lib/clipboard'
 import { initialsFor } from '@/lib/initials'
 
+import { AccountMenu } from './account-menu'
 import { CharacterPanel } from './character-panel'
 import { Composer, type ComposerHandle } from './composer'
 import {
@@ -79,7 +80,7 @@ function errorMessage(error: unknown, fallback: string): string {
   return error instanceof Error ? error.message : fallback
 }
 
-// Scoped per Clerk user so switching accounts on one device doesn't carry the
+// Scoped per signed-in user so switching accounts on one device doesn't carry the
 // previous user's selection over.
 const activeCharKey = (userId: string | null | undefined) =>
   `${ACTIVE_CHAR_KEY}:${userId ?? 'anon'}`
@@ -125,8 +126,7 @@ function ThreadRow({
 
 export function AppExperience() {
   const frame = useVibeFrame('/app')
-  const { signOut } = useClerk()
-  const { userId } = useAuth()
+  const userId = authClient.useSession().data?.user.id
 
   // ---- data ---------------------------------------------------------------
   const me = useMe()
@@ -740,7 +740,7 @@ export function AppExperience() {
     else if (id === 'focus')
       requestAnimationFrame(() => composerRef.current?.focus())
     else if (id === 'new-character') setPanel({ mode: 'create' })
-    else if (id === 'logout') void signOut({ redirectUrl: '/' })
+    else if (id === 'logout') void signOut()
     else if (id.startsWith('char:')) selectCharacter(id.slice(5))
     else if (id.startsWith('thread:')) selectThread(id.slice(7))
   }
@@ -773,7 +773,7 @@ export function AppExperience() {
         route="/app"
         onNavigate={frame.onNavigate}
         onOpenPalette={() => frame.setPaletteOpen(true)}
-        account={<UserButton />}
+        account={<AccountMenu />}
       />
       <div className="app-body" data-pane={pane}>
         {/* CHARACTERS sidebar */}
