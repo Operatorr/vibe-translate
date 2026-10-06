@@ -2,6 +2,10 @@
 import * as React from 'react'
 import { toast } from 'sonner'
 
+import { CtaBackdrop } from '@/components/landing/cta-backdrop'
+import { SpectrumBackdrop } from '@/components/landing/spectrum-backdrop'
+import { RevealHeading } from '@/components/landing/reveal-heading'
+
 import { apiFetch } from '@/lib/api'
 import { useSignedIn } from '@/lib/auth-client'
 import { cssVars } from '@/lib/css-vars'
@@ -177,6 +181,8 @@ const LandingDemo = () => {
           <div className="demo__panes">
             <div className="demo__pane">
               <textarea
+                aria-label="Demo source text"
+                data-lenis-prevent
                 className="demo__textarea"
                 value={text}
                 onChange={(e) => setText(e.target.value)}
@@ -319,26 +325,67 @@ const FAQItem = ({
   defaultOpen?: boolean
 }) => {
   const [open, setOpen] = React.useState(!!defaultOpen)
+  const answerId = React.useId()
   return (
-    <div
-      className={'faq__item ' + (open ? 'faq__item--open' : '')}
-      onClick={() => setOpen((o) => !o)}
-    >
+    <div className={'faq__item ' + (open ? 'faq__item--open' : '')}>
       <h3 className="faq__q">
-        {q}
-        <Icon name="plus" />
+        <button
+          type="button"
+          className="faq__trigger"
+          aria-expanded={open}
+          aria-controls={answerId}
+          onClick={() => setOpen((value) => !value)}
+        >
+          {q}
+          <Icon name="plus" />
+        </button>
       </h3>
-      <p className="faq__a">{a}</p>
+      <p id={answerId} className="faq__a" hidden={!open}>
+        {a}
+      </p>
     </div>
   )
 }
 
 const LandingContent = ({ onNavigate }: { onNavigate: NavigateFn }) => {
+  const root = React.useRef<HTMLElement>(null)
+  const [paused, setPaused] = React.useState(false)
+  React.useEffect(() => {
+    if (paused) return
+    let disposed = false
+    let cleanup: (() => void) | undefined
+    void import('@/components/landing/landing-motion')
+      .then(({ createLandingMotion }) => {
+        if (!disposed && root.current)
+          cleanup = createLandingMotion(root.current)
+      })
+      .catch(() => {
+        /* Static content is complete if motion cannot load. */
+      })
+    return () => {
+      disposed = true
+      cleanup?.()
+    }
+  }, [paused])
   return (
-    <main className="site-main">
+    <main
+      ref={root}
+      id="landing-main"
+      className="site-main landing-main"
+      data-motion={paused ? 'paused' : 'running'}
+    >
       {/* HERO */}
       <section className="hero">
-        <div className="hero__halo"></div>
+        <SpectrumBackdrop paused={paused} />
+        <button
+          className="landing-motion-toggle"
+          type="button"
+          aria-pressed={paused}
+          onClick={() => setPaused((value) => !value)}
+        >
+          {paused ? 'Motion off' : 'Motion on'}
+          <span aria-hidden="true">{paused ? ' ▶' : ' Ⅱ'}</span>
+        </button>
         <div className="container">
           <div className="hero__content">
             <div className="hero__eyebrow">
@@ -348,8 +395,10 @@ const LandingContent = ({ onNavigate }: { onNavigate: NavigateFn }) => {
               </span>
             </div>
             <h1 className="hero__title">
-              Translate the <em>vibe</em>,<br />
-              not just the words.
+              <span className="hero__line">
+                Translate the <em>vibe</em>,
+              </span>
+              <span className="hero__line">not just the words.</span>
             </h1>
             <p className="hero__sub">
               A translation engine for developers, technical writers, and anyone
@@ -403,9 +452,9 @@ const LandingContent = ({ onNavigate }: { onNavigate: NavigateFn }) => {
               <div className="section__eyebrow">
                 <span className="tag">How it works</span>
               </div>
-              <h2 className="section__title">
+              <RevealHeading className="section__title">
                 Four steps. Zero translation memory baggage.
-              </h2>
+              </RevealHeading>
             </div>
             <p className="section__sub">
               No glossary upload. No pre-training. Drop a character config, pick
@@ -529,7 +578,9 @@ const LandingContent = ({ onNavigate }: { onNavigate: NavigateFn }) => {
               <div className="section__eyebrow">
                 <span className="tag tag--magenta">Vibe</span>
               </div>
-              <h2 className="section__title">One sentence. Six registers.</h2>
+              <RevealHeading className="section__title">
+                One sentence. Six registers.
+              </RevealHeading>
             </div>
             <p className="section__sub">
               A loanwords-and-keigo problem nobody else solves. We dial register
@@ -593,9 +644,9 @@ const LandingContent = ({ onNavigate }: { onNavigate: NavigateFn }) => {
               <div className="section__eyebrow">
                 <span className="tag">Features</span>
               </div>
-              <h2 className="section__title">
+              <RevealHeading className="section__title">
                 Built for people who actually have to use the output.
-              </h2>
+              </RevealHeading>
             </div>
             <p className="section__sub">
               Localization shops, language learners, technical writers, support
@@ -684,9 +735,9 @@ const LandingContent = ({ onNavigate }: { onNavigate: NavigateFn }) => {
               <div className="section__eyebrow">
                 <span className="tag">FAQ</span>
               </div>
-              <h2 className="section__title">
+              <RevealHeading className="section__title">
                 Things people ask before they trust us with their words.
-              </h2>
+              </RevealHeading>
             </div>
             <p className="section__sub">
               Short answers. Click for the full version. The docs have the rest.
@@ -733,14 +784,14 @@ const LandingContent = ({ onNavigate }: { onNavigate: NavigateFn }) => {
 
       {/* CTA */}
       <section className="cta-strip">
-        <div className="cta-strip__halo"></div>
+        <CtaBackdrop paused={paused} />
         <div className="cta-strip__inner">
           <span className="tag tag--accent">
             <span className="dot"></span> READY WHEN YOU ARE
           </span>
-          <h2 className="cta-strip__title">
+          <RevealHeading className="cta-strip__title">
             Translate something nobody else can.
-          </h2>
+          </RevealHeading>
           <p className="cta-strip__sub">
             Free to start. No credit card. The first 10,000 tokens are on us.
           </p>
@@ -1592,7 +1643,10 @@ export function VibeLandingPage() {
   const frame = useVibeFrame('/')
 
   return (
-    <div className="site">
+    <div className="site site--landing">
+      <a className="landing-skip" href="#landing-main">
+        Skip to content
+      </a>
       <SiteNav
         theme={frame.theme}
         onToggleTheme={frame.onToggleTheme}

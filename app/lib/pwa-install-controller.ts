@@ -63,6 +63,7 @@ export function startInstallPrompt(): () => void {
     !recentlyDismissed()
   const options = {
     id: TOAST_ID,
+    className: 'pwa-install-toast',
     position: 'bottom-center' as const,
     duration: Infinity,
     onDismiss: markDismissed,

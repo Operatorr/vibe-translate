@@ -118,6 +118,19 @@ export const SiteNav = ({
   // Right-hand account slot on the app route (AccountMenu).
   account?: React.ReactNode
 }) => {
+  const mobileNav = React.useRef<HTMLDetailsElement>(null)
+  React.useEffect(() => {
+    const closeOutside = (event: PointerEvent) => {
+      if (
+        event.target instanceof Node &&
+        !mobileNav.current?.contains(event.target) &&
+        mobileNav.current
+      )
+        mobileNav.current.open = false
+    }
+    document.addEventListener('pointerdown', closeOutside)
+    return () => document.removeEventListener('pointerdown', closeOutside)
+  }, [])
   const navLink = (to: VibeRoute, label: string) => (
     <a
       className={'vt-navlink ' + (route === to ? 'vt-navlink--active' : '')}
@@ -182,7 +195,7 @@ export const SiteNav = ({
           </button>
         ) : route === '/auth' ? null : (
           <a
-            className="vt-navlink"
+            className="vt-navlink vt-topnav__signin"
             href="/app"
             onClick={(e) => {
               e.preventDefault()
@@ -204,14 +217,37 @@ export const SiteNav = ({
         {route !== '/app' && route !== '/auth' && (
           <button
             type="button"
-            className="vt-btn vt-btn--primary"
+            className="vt-btn vt-btn--primary vt-topnav__start"
             style={{ padding: '8px 14px', fontSize: 13 }}
             onClick={() => onNavigate('/app')}
           >
-            Start translating
+            <span className="vt-topnav__start-full">Start translating</span>
+            <span className="vt-topnav__start-short">Start</span>
           </button>
         )}
         {route === '/app' && <div className="vt-account">{account}</div>}
+        {route !== '/app' && (
+          <details
+            ref={mobileNav}
+            className="vt-mobile-nav"
+            onKeyDown={(event) => {
+              if (event.key === 'Escape' && mobileNav.current) {
+                mobileNav.current.open = false
+                mobileNav.current.querySelector('summary')?.focus()
+              }
+            }}
+          >
+            <summary aria-label="Navigation menu">
+              <Icon name="menu" />
+            </summary>
+            <nav aria-label="Mobile navigation">
+              <a href="/">Product</a>
+              <a href="/pricing">Pricing</a>
+              <a href="/changelog">Changelog</a>
+              <a href="/auth">Sign in</a>
+            </nav>
+          </details>
+        )}
       </div>
     </header>
   )

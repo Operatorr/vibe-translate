@@ -7,7 +7,7 @@
 - **Tailwind CSS v4** via `@tailwindcss/vite`. Theme tokens are declared in `app/styles/app.css` under `@theme`, mapping semantic names (`--color-background`, `--color-panel`, `--color-accent`, …) onto a raw palette.
 - **Dark-default, with a light theme.** Themes switch on `[data-theme='dark']` / `[data-theme='light']` at the document root. Dark is the primary, designed-first surface.
 - **Radix primitives** for accessible interactive components, composed with `class-variance-authority` (variants), `tailwind-merge` + `clsx` (class composition), and `lucide-react` icons.
-- **Framer Motion** for animation; local helpers in `app/lib/animation.ts`.
+- **Framer Motion** for product animation; local helpers in `app/lib/animation.ts`. The landing uses lazy-loaded **GSAP + ScrollTrigger**, **Lenis** on fine pointers, and an original **Three.js spectral shader** in its hero. The hero adds local pointer-driven RGB separation; the CTA keeps its original broad rainbow wash, rotating every 24 seconds with a stronger pointer pull and RGB separation. Its shader uses a spinning CSS wash as the fallback. The headline’s color cycle takes 4.5 seconds. Touch scroll stays native. Static CSS posters and finished text remain when effects are disabled; system reduced motion and a page Motion toggle bypass animation.
 
 ### Palette gotcha
 
