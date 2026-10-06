@@ -33,7 +33,17 @@ createRoot(document.getElementById('root')!).render(
         <RouterProvider router={router} />
       </CacheHydrator>
       <InstallPrompt />
-      <Toaster richColors closeButton position="top-right" />
+      <Toaster
+        richColors
+        closeButton
+        position="top-right"
+        mobileOffset={{
+          top: 'calc(16px + env(safe-area-inset-top))',
+          bottom: 'calc(16px + env(safe-area-inset-bottom))',
+          left: 'calc(16px + env(safe-area-inset-left))',
+          right: 'calc(16px + env(safe-area-inset-right))',
+        }}
+      />
     </QueryClientProvider>
   </StrictMode>,
 )

@@ -4,6 +4,7 @@ import tailwindcss from '@tailwindcss/vite'
 import { existsSync, readFileSync } from 'node:fs'
 import { fileURLToPath, URL } from 'node:url'
 import { defineConfig } from 'vite'
+import { pwaPrecache } from './build/pwa-precache'
 
 // Wrangler local secrets live in `.dev.vars`. Vite only auto-loads `.env*`,
 // so copy VITE_* keys into process.env here — existing process.env wins.
@@ -55,6 +56,7 @@ export default defineConfig(({ mode }) => {
       }),
       react(),
       tailwindcss(),
+      pwaPrecache(),
     ],
     resolve: {
       alias: {

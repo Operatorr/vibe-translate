@@ -4,19 +4,43 @@ export function registerServiceWorker() {
   }
 
   if (import.meta.env.DEV) {
-    void navigator.serviceWorker.getRegistrations().then(async (registrations) => {
-      await Promise.all(registrations.map((registration) => registration.unregister()))
-      if ('caches' in window) {
-        const keys = await caches.keys()
-        await Promise.all(keys.map((key) => caches.delete(key)))
-      }
-    })
+    void navigator.serviceWorker
+      .getRegistrations()
+      .then(async (registrations) => {
+        await Promise.all(
+          registrations
+            .filter((registration) =>
+              [
+                registration.active,
+                registration.waiting,
+                registration.installing,
+              ].some(
+                (worker) =>
+                  worker?.scriptURL === new URL('/sw.js', location.origin).href,
+              ),
+            )
+            .map((registration) => registration.unregister()),
+        )
+        if ('caches' in window) {
+          const keys = await caches.keys()
+          await Promise.all(
+            keys
+              .filter((key) => key.startsWith('vibe-translate-static-'))
+              .map((key) => caches.delete(key)),
+          )
+        }
+      })
+      .catch((error) => console.error('Service worker cleanup failed', error))
     return
   }
 
-  window.addEventListener('load', () => {
-    navigator.serviceWorker.register('/sw.js').catch((error) => {
-      console.error('Service worker registration failed', error)
-    })
-  })
+  const register = () => {
+    navigator.serviceWorker
+      .register('/sw.js', { updateViaCache: 'none' })
+      .catch((error) => {
+        console.error('Service worker registration failed', error)
+      })
+  }
+  if (document.readyState === 'complete') register()
+  else window.addEventListener('load', register, { once: true })
 }

@@ -1,105 +1,90 @@
-/* global self, caches, URL, fetch */
+/* global self, caches, URL, fetch, Response, Request */
 
-// Vibe Translate service worker.
-//   - App shell + static assets: cache-first (Vite emits content-hashed files
-//     under /assets/, so a cached copy is always the right copy).
-//   - Navigations: network-first, falling back to the cached shell so the
-//     installed PWA opens offline (TanStack Query rehydrates list data from
-//     IndexedDB; see app/lib/query-cache-persist.tsx).
-//   - /api/*: never cached — every response is user-scoped or metered.
-// Bump CACHE_NAME whenever a precached file changes — the list OR the bytes of
-// an entry (icons, manifest) — since those URLs are not content-hashed.
-
-const CACHE_NAME = 'vibe-translate-static-v3'
+// Vite fills in the version and every JS/CSS/asset URL at build time.
+const CACHE_PREFIX = 'vibe-translate-static-'
+const CACHE_NAME = `${CACHE_PREFIX}__BUILD_VERSION__`
+const BUILD_ASSETS = /* __BUILD_ASSETS__ */ []
 const SHELL_URL = '/'
-const PRECACHE = [
-  SHELL_URL,
-  '/manifest.webmanifest',
-  '/icon.svg',
-  '/icons/icon-192.png',
-  '/icons/icon-512.png',
-  '/icons/icon-maskable-192.png',
-  '/icons/icon-maskable-512.png',
-  '/icons/apple-touch-icon.png',
-]
+const BUILD_SHELL = /* __BUILD_SHELL__ */ ''
+const OPTIONAL_ASSETS = /* __OPTIONAL_ASSETS__ */ []
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then(async (cache) => {
-      // The shell is the offline fallback. If it can't be cached, fail the
-      // install: the previous worker stays active and the browser retries,
-      // instead of activating a worker that opens to a blank page offline.
-      await cache.add(SHELL_URL)
-      // Icons/manifest are nice-to-have; one missing file must not block updates.
-      await Promise.allSettled(
-        PRECACHE.filter((url) => url !== SHELL_URL).map((url) =>
-          cache.add(url),
+      // Integrity rejects missing assets served as SPA fallback HTML, or bytes
+      // from another release. addAll commits only when every asset succeeds.
+      await cache.addAll(
+        BUILD_ASSETS.map(
+          ({ url, integrity }) =>
+            new Request(url, { cache: 'reload', integrity }),
         ),
       )
-      await self.skipWaiting()
+      // The HTML travels inside this worker, so it cannot come from a newer deploy.
+      await cache.put(
+        SHELL_URL,
+        new Response(BUILD_SHELL, {
+          headers: { 'Content-Type': 'text/html; charset=utf-8' },
+        }),
+      )
+      await Promise.allSettled(OPTIONAL_ASSETS.map((url) => cache.add(url)))
+      // Updates wait for open tabs to close. Replacing the worker immediately
+      // would delete chunks still needed by an older running app.
     }),
   )
 })
 
-// Runtime cache writes are opportunistic (quota, private mode); never let them
-// surface as unhandled rejections.
-const putInCache = (key, response) =>
-  caches
-    .open(CACHE_NAME)
-    .then((cache) => cache.put(key, response))
-    .catch(() => undefined)
-
 self.addEventListener('activate', (event) => {
   event.waitUntil(
-    caches
-      .keys()
-      .then((keys) =>
-        Promise.all(
-          keys
-            .filter((key) => key !== CACHE_NAME)
-            .map((key) => caches.delete(key)),
-        ),
-      ),
+    caches.keys().then(async (keys) => {
+      await Promise.all(
+        keys
+          .filter((key) => key.startsWith(CACHE_PREFIX) && key !== CACHE_NAME)
+          .map((key) => caches.delete(key)),
+      )
+      await self.clients.claim()
+    }),
   )
-  self.clients.claim()
 })
 
 self.addEventListener('fetch', (event) => {
   const request = event.request
   const url = new URL(request.url)
-
-  if (url.protocol !== 'http:' && url.protocol !== 'https:') return
-  if (url.origin !== self.location.origin) return
-  if (url.pathname.startsWith('/api/')) return
-  if (request.method !== 'GET') return
+  if (url.origin !== self.location.origin || request.method !== 'GET') return
+  // Never cache API/auth responses, shared content, or arbitrary URLs.
+  if (url.pathname === '/api' || url.pathname.startsWith('/api/')) return
 
   if (request.mode === 'navigate') {
     event.respondWith(
-      fetch(request)
-        .then((response) => {
-          // Keep the shell fresh for the offline fallback.
-          if (response.ok) {
-            void putInCache(SHELL_URL, response.clone())
-          }
-          return response
-        })
-        .catch(() => caches.match(SHELL_URL)),
+      fetch(request).catch(async () => {
+        const cache = await caches.open(CACHE_NAME)
+        return (await cache.match(SHELL_URL)) || Response.error()
+      }),
     )
+    // Keep the precached shell paired with this build's assets. An online
+    // navigation may serve a newer deployment while its worker is waiting.
     return
   }
 
+  if (
+    !url.pathname.startsWith('/assets/') &&
+    !OPTIONAL_ASSETS.includes(url.pathname)
+  )
+    return
+
   event.respondWith(
-    caches.match(request).then((cached) => {
+    caches.open(CACHE_NAME).then(async (cache) => {
+      // These are public, same-origin files. Some static servers emit Vary:
+      // Origin; a module request carries Origin while a precache request may
+      // not. Match by URL so that difference cannot break an offline launch.
+      const cached = await cache.match(request, { ignoreVary: true })
       if (cached) return cached
-      return fetch(request).then((response) => {
-        if (
-          response.ok &&
-          (response.type === 'basic' || response.type === 'cors')
-        ) {
-          void putInCache(request, response.clone())
-        }
-        return response
-      })
+      const response = await fetch(request)
+      if (response.ok && response.type === 'basic') {
+        event.waitUntil(
+          cache.put(request, response.clone()).catch(() => undefined),
+        )
+      }
+      return response
     }),
   )
 })
