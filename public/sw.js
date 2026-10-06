@@ -5,25 +5,26 @@ const CACHE_PREFIX = 'vibe-translate-static-'
 const CACHE_NAME = `${CACHE_PREFIX}__BUILD_VERSION__`
 const BUILD_ASSETS = /* __BUILD_ASSETS__ */ []
 const SHELL_URL = '/'
-const OPTIONAL_ASSETS = [
-  '/manifest.webmanifest',
-  '/icon.svg',
-  '/icons/icon-192.png',
-  '/icons/icon-512.png',
-  '/icons/icon-maskable-192.png',
-  '/icons/icon-maskable-512.png',
-  '/icons/apple-touch-icon.png',
-]
+const BUILD_SHELL = /* __BUILD_SHELL__ */ ''
+const OPTIONAL_ASSETS = /* __OPTIONAL_ASSETS__ */ []
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then(async (cache) => {
-      // All code (including lazy chunks) must be ready before activation.
-      // Bypass the HTTP cache so HTML and assets belong to the same release.
+      // Integrity rejects missing assets served as SPA fallback HTML, or bytes
+      // from another release. addAll commits only when every asset succeeds.
       await cache.addAll(
-        [SHELL_URL, ...BUILD_ASSETS].map(
-          (url) => new Request(url, { cache: 'reload' }),
+        BUILD_ASSETS.map(
+          ({ url, integrity }) =>
+            new Request(url, { cache: 'reload', integrity }),
         ),
+      )
+      // The HTML travels inside this worker, so it cannot come from a newer deploy.
+      await cache.put(
+        SHELL_URL,
+        new Response(BUILD_SHELL, {
+          headers: { 'Content-Type': 'text/html; charset=utf-8' },
+        }),
       )
       await Promise.allSettled(OPTIONAL_ASSETS.map((url) => cache.add(url)))
       // Updates wait for open tabs to close. Replacing the worker immediately

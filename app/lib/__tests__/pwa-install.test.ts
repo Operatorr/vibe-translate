@@ -122,6 +122,30 @@ describe('mobile installation', () => {
     },
   )
 
+  it.each(['Android', 'iPhone'])(
+    'suppresses installation in insecure %s contexts',
+    async (userAgent) => {
+      browser.isSecureContext = false
+      vi.stubGlobal('navigator', { userAgent })
+      cleanup = startInstallPrompt()
+      const event = installEvent()
+      browser.dispatchEvent(event)
+      await vi.runAllTimersAsync()
+      expect(event.defaultPrevented).toBe(false)
+      expect(mocks.toast).not.toHaveBeenCalled()
+    },
+  )
+
+  it('suppresses iOS standalone hints even without display-mode standalone', async () => {
+    vi.stubGlobal('navigator', { userAgent: 'iPhone', standalone: true })
+    cleanup = startInstallPrompt()
+    const event = installEvent()
+    browser.dispatchEvent(event)
+    await vi.runAllTimersAsync()
+    expect(event.defaultPrevented).toBe(false)
+    expect(mocks.toast).not.toHaveBeenCalled()
+  })
+
   it('suppresses hints in installed standalone apps', async () => {
     standalone = true
     vi.stubGlobal('navigator', { userAgent: 'iPhone' })
