@@ -201,8 +201,17 @@ const LandingDemo = () => {
                       TO · {activeVibe.label.toUpperCase()}
                     </span>
                     <span className="demo__head-lang">
-                      {demoTarget.name} ·{' '}
-                      <span lang={targetLanguage}>{demoTarget.nativeName}</span>
+                      <span>
+                        {demoTarget.name.split(' ').map((word, index) => (
+                          <React.Fragment key={index}>
+                            {index > 0 && ' '}
+                            <span className="demo__language-word">{word}</span>
+                          </React.Fragment>
+                        ))}
+                      </span>
+                      <span className="demo__head-native" lang={targetLanguage}>
+                        {demoTarget.nativeName}
+                      </span>
                     </span>
                   </span>
                   <Icon name="chevron-down" className="demo__target-caret" />
@@ -251,13 +260,9 @@ const LandingDemo = () => {
 
           <div className="demo__panes">
             <div className="demo__pane">
-              <textarea
-                aria-label="Demo source text"
-                data-lenis-prevent
-                className="demo__textarea"
-                value={text}
-                readOnly
-              />
+              <p aria-label="Demo source text" className="demo__source">
+                {text}
+              </p>
             </div>
             <div className="demo__divider"></div>
             <div className="demo__pane demo__pane--output">
@@ -301,12 +306,19 @@ const LandingDemo = () => {
           <div className="demo__ctrls">
             <div className="demo__vibe">
               <div className="vibe-mini__head">
-                <span className="vibe-mini__head-l">VIBE · 6 stops</span>
+                <span className="vibe-mini__head-l">VIBE</span>
                 <span
                   className="vibe-mini__head-r"
                   style={{ color: activeVibe.color }}
                 >
-                  {activeVibe.label} · {activeVibe.hint}
+                  {[activeVibe.label, ...activeVibe.hint.split(' · ')].map(
+                    (part, index) => (
+                      <span className="demo__vibe-detail" key={index}>
+                        {index > 0 && '· '}
+                        {part}
+                      </span>
+                    ),
+                  )}
                 </span>
               </div>
               <div className="vibe-mini__rail-wrap">

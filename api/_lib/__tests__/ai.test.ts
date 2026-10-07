@@ -170,6 +170,27 @@ describe('draftCharacterFromDictation', () => {
     expect(tokenUsage?.promptTokens).toBe(8)
   })
 
+  it('drops unsupported languages from a dictation draft without substituting another language', async () => {
+    mockChatJson.mockResolvedValue({
+      data: {
+        ok: true,
+        name: 'Alex',
+        sourceLanguage: 'ko-KR',
+        targetLanguage: 'en-US',
+        defaultVibe: null,
+        temperature: null,
+        persona: null,
+        instructions: null,
+      },
+      tokenUsage: { modelId: 'g', promptTokens: 1, completionTokens: 1 },
+    })
+    const { draft } = await draftCharacterFromDictation(
+      'translate Korean to English',
+      config,
+    )
+    expect(draft).toEqual({ ok: true, name: 'Alex' })
+  })
+
   it('extracts voice fields (tone, clamped verbosity) into the persona', async () => {
     mockChatJson.mockResolvedValue({
       data: {

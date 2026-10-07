@@ -63,7 +63,7 @@ The source-text side and target-text side of one **Segment**, word-aligned so th
 _Avoid_: source/target string, input/output
 
 **Temperature** (per-Character):
-A 0.0–1.0 model creativity setting stored on the **Character**. Lower = more literal/consistent (business, formal); higher = more playful/varied (friends, intimate).
+A 0.0–1.0 model sampling setting stored on the **Character**. Lower = more predictable wording; higher = more varied phrasing. It does not set politeness, length, or meaning: **Vibe** controls the register, and **Persona** verbosity controls phrasing length. Identical wording is not guaranteed even at zero; stored/cache hits may reuse the same result.
 _Avoid_: creativity, variance — `temperature` is the canonical name (matches the LLM API term).
 
 **Explain**:

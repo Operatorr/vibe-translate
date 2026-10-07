@@ -1,11 +1,5 @@
 import * as z from 'zod'
-
-const localeSchema = z
-  .string()
-  .trim()
-  .min(2)
-  .max(12)
-  .regex(/^[a-z]{2,3}(-[a-z0-9]{2,8})?$/i, 'Use a BCP-47 code, e.g. ja-JP')
+import { CHARACTER_LANGUAGES, SOURCE_LANGUAGES } from './character-options'
 
 export const VIBE_STOPS = [
   'yakuza',
@@ -20,8 +14,12 @@ export const vibeStopSchema = z.enum(VIBE_STOPS)
 
 export const characterFormSchema = z.object({
   name: z.string().trim().min(1).max(80),
-  sourceLanguage: localeSchema,
-  targetLanguage: localeSchema,
+  sourceLanguage: z.enum(SOURCE_LANGUAGES, {
+    error: 'Choose English or one of the four supported source languages',
+  }),
+  targetLanguage: z.enum(CHARACTER_LANGUAGES, {
+    error: 'Choose Simplified Chinese, Traditional Chinese, Thai or Japanese',
+  }),
   defaultVibe: vibeStopSchema,
   temperature: z.number().min(0).max(1),
   persona: z
