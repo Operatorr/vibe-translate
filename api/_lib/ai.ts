@@ -3,7 +3,12 @@ import * as z from 'zod'
 
 import { chatJson, type ProviderConfig, type TokenUsage } from './openrouter'
 import { buildDictationMessages, buildTranslateMessages } from './prompts'
-import { VIBE_STOPS, segmentTokenSchema } from './schemas'
+import {
+  VIBE_STOPS,
+  segmentTokenSchema,
+  sourceLanguageSchema,
+  targetLanguageSchema,
+} from './schemas'
 import type { CharacterDraft, Persona, SegmentToken, VibeStop } from './schemas'
 
 export type TranslationProviderResult = {
@@ -105,13 +110,6 @@ const dictationOutputSchema = z.strictObject({
   instructions: z.string().nullable(),
 })
 
-const LOCALE_RE = /^[a-z]{2,3}(-[a-z0-9]{2,8})?$/i
-
-function cleanLocale(value: string | null): string | undefined {
-  const trimmed = value?.trim()
-  return trimmed && LOCALE_RE.test(trimmed) ? trimmed : undefined
-}
-
 function cleanString(value: string | null): string | undefined {
   const trimmed = value?.trim()
   return trimmed ? trimmed : undefined
@@ -130,11 +128,15 @@ function toCharacterDraft(
   const name = cleanString(raw.name)
   if (name) draft.name = name.slice(0, 80)
 
-  const sourceLanguage = cleanLocale(raw.sourceLanguage)
-  if (sourceLanguage) draft.sourceLanguage = sourceLanguage
+  const sourceLanguage = sourceLanguageSchema.safeParse(
+    raw.sourceLanguage?.trim(),
+  )
+  if (sourceLanguage.success) draft.sourceLanguage = sourceLanguage.data
 
-  const targetLanguage = cleanLocale(raw.targetLanguage)
-  if (targetLanguage) draft.targetLanguage = targetLanguage
+  const targetLanguage = targetLanguageSchema.safeParse(
+    raw.targetLanguage?.trim(),
+  )
+  if (targetLanguage.success) draft.targetLanguage = targetLanguage.data
 
   if (raw.defaultVibe) draft.defaultVibe = raw.defaultVibe
 

@@ -1,11 +1,5 @@
 import * as z from 'zod'
-
-const localeSchema = z
-  .string()
-  .trim()
-  .min(2)
-  .max(12)
-  .regex(/^[a-z]{2,3}(-[a-z0-9]{2,8})?$/i, 'Use a BCP-47 code, e.g. ja-JP')
+import { CHARACTER_LANGUAGES, SOURCE_LANGUAGES } from './character-options'
 
 export const VIBE_STOPS = [
   'yakuza',
@@ -18,10 +12,15 @@ export const VIBE_STOPS = [
 
 export const vibeStopSchema = z.enum(VIBE_STOPS)
 
+const SOURCE_LANGUAGE_ERROR =
+  'Choose English or one of the four supported source languages'
+const TARGET_LANGUAGE_ERROR =
+  'Choose Simplified Chinese, Traditional Chinese, Thai or Japanese'
+
 export const characterFormSchema = z.object({
   name: z.string().trim().min(1).max(80),
-  sourceLanguage: localeSchema,
-  targetLanguage: localeSchema,
+  sourceLanguage: z.enum(SOURCE_LANGUAGES, { error: SOURCE_LANGUAGE_ERROR }),
+  targetLanguage: z.enum(CHARACTER_LANGUAGES, { error: TARGET_LANGUAGE_ERROR }),
   defaultVibe: vibeStopSchema,
   temperature: z.number().min(0).max(1),
   persona: z
@@ -38,6 +37,33 @@ export const characterFormSchema = z.object({
 })
 
 export type CharacterFormInput = z.infer<typeof characterFormSchema>
+
+// Editing a Character created before the language list narrowed: its saved
+// (legacy) languages stay valid while unchanged, so unrelated edits still save.
+// Any language the user actually picks must be a supported one. The PATCH
+// omits unchanged languages (see lib/character-draft.ts), so the worker's
+// strict enums never see the legacy codes either.
+export function characterEditSchema(original: {
+  sourceLanguage: string
+  targetLanguage: string
+}) {
+  const keepOr = (supported: readonly string[], saved: string, error: string) =>
+    z.string().refine((value) => value === saved || supported.includes(value), {
+      error,
+    })
+  return characterFormSchema.extend({
+    sourceLanguage: keepOr(
+      SOURCE_LANGUAGES,
+      original.sourceLanguage,
+      SOURCE_LANGUAGE_ERROR,
+    ),
+    targetLanguage: keepOr(
+      CHARACTER_LANGUAGES,
+      original.targetLanguage,
+      TARGET_LANGUAGE_ERROR,
+    ),
+  })
+}
 
 export const threadFormSchema = z.object({
   characterId: z.string().uuid(),

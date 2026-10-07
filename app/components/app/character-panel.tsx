@@ -1,61 +1,34 @@
 import * as React from 'react'
 
+import { CharacterSettingHelp } from './character-setting-help'
+
 import { Icon } from '@/components/vibe-design/icon'
 import {
   LANG_NAME,
   getVibesForLang,
 } from '@/components/vibe-design/design-data'
 import type { CharacterInput } from '@/hooks/use-app-data'
+import {
+  type Draft,
+  draftFrom,
+  switchTargetLanguage,
+  toInput,
+} from '@/lib/character-draft'
+import {
+  CHARACTER_LANGUAGES,
+  SOURCE_LANGUAGES,
+  getRegionsForLanguage,
+  getTraitsForLanguage,
+} from '@/lib/character-options'
 import { initialsFor } from '@/lib/initials'
-import { characterFormSchema } from '@/lib/schemas'
+import { characterEditSchema, characterFormSchema } from '@/lib/schemas'
 import { compileSystemPrompt } from '@/lib/system-prompt'
 import type { Character, VibeStop } from '@/lib/types'
 
 const LANGUAGE_NAMES = LANG_NAME as Record<string, string>
-const LANGUAGE_CODES = Object.keys(LANGUAGE_NAMES)
+const LANGUAGE_CODES = CHARACTER_LANGUAGES
 
-const TONE_OPTIONS = [
-  'warm',
-  'dry',
-  'playful',
-  'stern',
-  'ceremonial',
-  'gentle',
-  'brisk',
-]
-// Slider position that means "no verbosity guidance" (omitted from the persona).
-const DEFAULT_VERBOSITY = 0.4
-const REGION_SUGGESTIONS = [
-  'Tokyo',
-  'Osaka',
-  'Kyoto',
-  'Hokkaido',
-  'Okinawa',
-  'Imperial Court',
-  'Seoul',
-  'São Paulo',
-  'Paris',
-  'Berlin',
-  'Madrid',
-  'Beijing',
-]
-const TRAIT_OPTIONS = [
-  'warm',
-  'direct',
-  'playful',
-  'formal',
-  'blunt',
-  'poetic',
-  'technical',
-  'gen-z',
-  'dialect: kansai-ben',
-  'dialect: tohoku',
-  'no slang',
-  'uses 尊敬語',
-  'classical grammar',
-  'occasional code-switch',
-  'casual contractions',
-]
+const TONE_OPTIONS = ['warm', 'dry', 'playful', 'stern', 'gentle', 'brisk']
 const COLORS = [
   'var(--magenta-400)',
   'var(--cyan-400)',
@@ -66,72 +39,16 @@ const COLORS = [
   'var(--red-400)',
 ]
 
-type Draft = {
-  name: string
-  age: string
-  region: string
-  formality: string
-  tone: string
-  verbosity: number
-  temperature: number
-  traits: Set<string>
-  sourceLanguage: string
-  targetLanguage: string
-  defaultVibe: VibeStop
-  color: string
-  instructions: string
-}
-
-function draftFrom(char: Character | null): Draft {
-  return {
-    name: char?.name ?? '',
-    age: char?.persona.age ?? '',
-    region: char?.persona.region ?? '',
-    formality: char?.persona.formality ?? '',
-    tone: char?.persona.tone ?? '',
-    verbosity: char?.persona.verbosity ?? DEFAULT_VERBOSITY,
-    temperature: char?.temperature ?? 0.4,
-    traits: new Set(char?.persona.traits ?? []),
-    sourceLanguage: char?.sourceLanguage ?? 'en-US',
-    targetLanguage: char?.targetLanguage ?? 'ja-JP',
-    defaultVibe: char?.defaultVibe ?? 'casual',
-    color: char?.color ?? COLORS[Math.floor(Math.random() * COLORS.length)],
-    instructions: char?.instructions ?? '',
-  }
-}
-
-function toInput(d: Draft): CharacterInput {
-  const persona: CharacterInput['persona'] = { traits: Array.from(d.traits) }
-  if (d.age.trim()) persona.age = d.age.trim()
-  if (d.region.trim()) persona.region = d.region.trim()
-  if (d.formality.trim()) persona.formality = d.formality.trim()
-  if (d.tone.trim()) persona.tone = d.tone.trim()
-  // Voice fields are persona: any value makes the Character non-canonical and
-  // keeps it out of the shared translation cache (adr/0004). So "Neutral" tone
-  // and the default verbosity are omitted rather than written as a value.
-  if (Math.abs(d.verbosity - DEFAULT_VERBOSITY) > 0.001)
-    persona.verbosity = Math.round(d.verbosity * 100) / 100
-  return {
-    name: d.name.trim(),
-    initials: initialsFor(d.name),
-    color: d.color,
-    sourceLanguage: d.sourceLanguage,
-    targetLanguage: d.targetLanguage,
-    defaultVibe: d.defaultVibe,
-    temperature: Math.round(d.temperature * 100) / 100,
-    persona,
-    instructions: d.instructions.trim() || undefined,
-  }
-}
-
 const Slider = ({
   value,
   onChange,
   label,
+  id,
 }: {
   value: number
   onChange: (v: number) => void
   label: string
+  id: string
 }) => (
   <div className="cust__slider-wrap">
     <div className="cust__slider-track">
@@ -145,6 +62,8 @@ const Slider = ({
         style={{ left: `${value * 100}%` }}
       ></div>
       <input
+        id={id}
+        aria-describedby={`${id}-help`}
         type="range"
         min="0"
         max="1"
@@ -179,7 +98,10 @@ export function CharacterPanel({
   onDelete?: () => void
   saving: boolean
 }) {
-  const [d, setD] = React.useState<Draft>(() => draftFrom(character))
+  const [d, setD] = React.useState<Draft>(() =>
+    draftFrom(character, COLORS[Math.floor(Math.random() * COLORS.length)]),
+  )
+  const [helpOpen, setHelpOpen] = React.useState(false)
   const [error, setError] = React.useState<string | null>(null)
   // Deleting cascades to every Thread and Segment, so it takes typing the
   // Character's name rather than a one-tap browser confirm.
@@ -188,14 +110,19 @@ export function CharacterPanel({
   const patch = (p: Partial<Draft>) => setD((prev) => ({ ...prev, ...p }))
   const vibes = getVibesForLang(d.targetLanguage)
   const isCreate = character === null
+  const regions = getRegionsForLanguage(d.targetLanguage)
+  // The former formality field is edit-only: shown for Characters that saved a
+  // value, and kept mounted while the draft is cleared so it can be retyped.
+  const hasVoiceNotes = !!character?.persona.formality
+  const traitOptions = getTraitsForLanguage(d.targetLanguage)
 
   React.useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose()
+      if (e.key === 'Escape' && !e.defaultPrevented && !helpOpen) onClose()
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [onClose])
+  }, [onClose, helpOpen])
 
   const input = toInput(d)
   const sysprompt = compileSystemPrompt({
@@ -218,7 +145,10 @@ export function CharacterPanel({
     })
 
   const submit = async () => {
-    const parsed = characterFormSchema.safeParse(input)
+    const schema = character
+      ? characterEditSchema(character)
+      : characterFormSchema
+    const parsed = schema.safeParse(input)
     if (!parsed.success) {
       setError(parsed.error.issues[0]?.message ?? 'Check the form')
       return
@@ -303,24 +233,6 @@ export function CharacterPanel({
                 onChange={(e) => patch({ age: e.target.value })}
               />
             </div>
-            <div className="cust__field">
-              <label className="cust__label" htmlFor="cp-region">
-                Region
-              </label>
-              <input
-                id="cp-region"
-                className="cust__input"
-                list="cp-regions"
-                value={d.region}
-                placeholder="Osaka"
-                onChange={(e) => patch({ region: e.target.value })}
-              />
-              <datalist id="cp-regions">
-                {REGION_SUGGESTIONS.map((r) => (
-                  <option key={r} value={r} />
-                ))}
-              </datalist>
-            </div>
           </div>
 
           <div className="cust__group">
@@ -335,7 +247,15 @@ export function CharacterPanel({
                 value={d.sourceLanguage}
                 onChange={(e) => patch({ sourceLanguage: e.target.value })}
               >
-                {LANGUAGE_CODES.map((code) => (
+                {!SOURCE_LANGUAGES.some(
+                  (code) => code === d.sourceLanguage,
+                ) && (
+                  <option value={d.sourceLanguage} disabled>
+                    {LANGUAGE_NAMES[d.sourceLanguage] ?? d.sourceLanguage} ·
+                    choose a supported language
+                  </option>
+                )}
+                {SOURCE_LANGUAGES.map((code) => (
                   <option key={code} value={code}>
                     {LANGUAGE_NAMES[code]}
                   </option>
@@ -350,14 +270,72 @@ export function CharacterPanel({
                 id="cp-tgt"
                 className="cust__select"
                 value={d.targetLanguage}
-                onChange={(e) => patch({ targetLanguage: e.target.value })}
+                onChange={(e) =>
+                  setD((prev) => switchTargetLanguage(prev, e.target.value))
+                }
               >
+                {!LANGUAGE_CODES.some((code) => code === d.targetLanguage) && (
+                  <option value={d.targetLanguage} disabled>
+                    {LANGUAGE_NAMES[d.targetLanguage] ?? d.targetLanguage} ·
+                    choose a supported language
+                  </option>
+                )}
                 {LANGUAGE_CODES.map((code) => (
                   <option key={code} value={code}>
                     {LANGUAGE_NAMES[code]}
                   </option>
                 ))}
               </select>
+            </div>
+            <div className="cust__field cust__field--top">
+              <label className="cust__label" htmlFor="cp-region">
+                Region / dialect
+              </label>
+              <div className="cust__control">
+                <input
+                  id="cp-region"
+                  className="cust__input"
+                  value={d.region}
+                  placeholder={
+                    d.targetLanguage === 'zh-TW'
+                      ? 'e.g. Taichung'
+                      : (regions[0] ?? 'City or region')
+                  }
+                  aria-describedby="cp-region-help"
+                  maxLength={120}
+                  onChange={(e) => patch({ region: e.target.value })}
+                />
+                <p id="cp-region-help" className="cust__helper">
+                  Choose a suggestion or type any city or region, such as
+                  Taichung. Suggestions follow the “To” language.
+                </p>
+                <div
+                  className="cust__chip-row cust__region-suggestions"
+                  role="group"
+                  aria-label="Region suggestions"
+                >
+                  {regions.map((region) => (
+                    <button
+                      type="button"
+                      key={region}
+                      className={
+                        'cust__chip ' + (d.region === region ? 'is-active' : '')
+                      }
+                      aria-pressed={d.region === region}
+                      onClick={() => patch({ region })}
+                    >
+                      {region}
+                    </button>
+                  ))}
+                </div>
+                {d.targetLanguage === 'zh-TW' && (
+                  <p className="cust__helper">
+                    Taiwan uses Taiwanese Mandarin. The Hong Kong and Guangzhou
+                    suggestions use Cantonese wording, written in traditional
+                    characters.
+                  </p>
+                )}
+              </div>
             </div>
             <div className="cust__field">
               <label className="cust__label">Default vibe</label>
@@ -375,6 +353,7 @@ export function CharacterPanel({
                         ? { color: v.color, borderColor: v.color }
                         : undefined
                     }
+                    aria-pressed={d.defaultVibe === v.id}
                     onClick={() => patch({ defaultVibe: v.id as VibeStop })}
                   >
                     {v.label}
@@ -388,17 +367,18 @@ export function CharacterPanel({
             <div className="cust__group-h">VOICE</div>
             <div className="cust__field">
               <label className="cust__label" htmlFor="cp-tone">
-                Tone
+                Personality tone
               </label>
               <select
                 id="cp-tone"
                 className="cust__select"
                 value={d.tone}
+                aria-describedby="cp-tone-help"
                 onChange={(e) => patch({ tone: e.target.value })}
               >
                 <option value="">Neutral</option>
                 {d.tone && !TONE_OPTIONS.includes(d.tone) && (
-                  <option value={d.tone}>{d.tone}</option>
+                  <option value={d.tone}>{d.tone} (existing)</option>
                 )}
                 {TONE_OPTIONS.map((t) => (
                   <option key={t} value={t}>
@@ -407,33 +387,75 @@ export function CharacterPanel({
                 ))}
               </select>
             </div>
-            <div className="cust__field">
-              <label className="cust__label" htmlFor="cp-formality">
-                Formality
-              </label>
-              <input
-                id="cp-formality"
-                className="cust__input"
-                value={d.formality}
-                placeholder="warm but blunt"
-                onChange={(e) => patch({ formality: e.target.value })}
-              />
+            <p id="cp-tone-help" className="cust__helper">
+              Tone adds warmth or attitude within the selected vibe. Vibe
+              controls politeness and formality, so a warm Keigo translation
+              stays polite.
+            </p>
+            {hasVoiceNotes && (
+              <div className="cust__field cust__field--top">
+                <label className="cust__label" htmlFor="cp-formality">
+                  Existing voice notes
+                </label>
+                <div className="cust__control">
+                  <input
+                    id="cp-formality"
+                    className="cust__input"
+                    value={d.formality}
+                    onChange={(e) => patch({ formality: e.target.value })}
+                  />
+                  <p className="cust__helper">
+                    Saved from the former formality field. The selected vibe
+                    takes priority. Clear this to remove it.
+                  </p>
+                </div>
+              </div>
+            )}
+            <div className="cust__field cust__field--top">
+              <div className="cust__label-row">
+                <label className="cust__label" htmlFor="cp-verbosity">
+                  Verbosity
+                </label>
+                <CharacterSettingHelp
+                  setting="verbosity"
+                  onOpenChange={setHelpOpen}
+                />
+              </div>
+              <div className="cust__control">
+                <Slider
+                  value={d.verbosity}
+                  onChange={(v) => patch({ verbosity: v })}
+                  label="Verbosity"
+                  id="cp-verbosity"
+                />
+                <p id="cp-verbosity-help" className="cust__helper">
+                  Brief or fuller phrasing, with the same meaning. Default:
+                  natural length.
+                </p>
+              </div>
             </div>
-            <div className="cust__field">
-              <label className="cust__label">Verbosity</label>
-              <Slider
-                value={d.verbosity}
-                onChange={(v) => patch({ verbosity: v })}
-                label="Verbosity"
-              />
-            </div>
-            <div className="cust__field">
-              <label className="cust__label">Temperature</label>
-              <Slider
-                value={d.temperature}
-                onChange={(v) => patch({ temperature: v })}
-                label="Temperature"
-              />
+            <div className="cust__field cust__field--top">
+              <div className="cust__label-row">
+                <label className="cust__label" htmlFor="cp-temperature">
+                  Temperature
+                </label>
+                <CharacterSettingHelp
+                  setting="temperature"
+                  onOpenChange={setHelpOpen}
+                />
+              </div>
+              <div className="cust__control">
+                <Slider
+                  value={d.temperature}
+                  onChange={(v) => patch({ temperature: v })}
+                  label="Temperature"
+                  id="cp-temperature"
+                />
+                <p id="cp-temperature-help" className="cust__helper">
+                  Lower: predictable wording. Higher: more variation. Vibe still
+                  sets politeness.
+                </p>
+              </div>
             </div>
           </div>
 
@@ -441,9 +463,9 @@ export function CharacterPanel({
             <div className="cust__group-h">TRAITS</div>
             <div className="cust__chip-row">
               {[
-                ...TRAIT_OPTIONS,
+                ...traitOptions,
                 ...Array.from(d.traits).filter(
-                  (t) => !TRAIT_OPTIONS.includes(t),
+                  (t) => !traitOptions.includes(t),
                 ),
               ].map((t) => (
                 <button
@@ -452,6 +474,7 @@ export function CharacterPanel({
                   className={
                     'cust__chip ' + (d.traits.has(t) ? 'is-active' : '')
                   }
+                  aria-pressed={d.traits.has(t)}
                   onClick={() => toggleTrait(t)}
                 >
                   {d.traits.has(t) && '✓ '}

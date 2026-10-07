@@ -74,8 +74,8 @@ A **Character** is the primary navigation surface.
 
 - `GET /api/characters` → list owned by the current user (sorted by `sort_order`).
 - `GET /api/characters/:characterId` → single character.
-- `POST /api/characters` → `characterCreateSchema`: `name`, `sourceLanguage`, `targetLanguage` (BCP-47), `defaultVibe` (one of the 6 **Vibe stops**), `temperature` (0..1), `persona` (`{ age?, region?, formality?, traits: string[] }`).
-- `PATCH /api/characters/:characterId` → partial update.
+- `POST /api/characters` → `characterCreateSchema`: `name`, `sourceLanguage`, `targetLanguage` (supported BCP-47 codes), `defaultVibe` (one of the 6 **Vibe stops**), `temperature` (0..1), `persona` (`{ age?, region?, formality?, tone?, verbosity?, traits: string[] }`). Targets are `zh-CN`, `zh-TW`, `th-TH`, `ja-JP`; sources also allow `en-US`. Create and language updates reject other codes. Region remains free text (up to 120 characters); suggestion lists are a client convenience. Dictation drafts omit unsupported languages without substituting another language.
+- `PATCH /api/characters/:characterId` → partial update. Only the keys sent are written — create-time defaults (vibe, temperature, persona) are never filled in. A language is validated against the supported list only when sent, so the editor omits unchanged languages and Characters saved with a legacy language can still be edited.
 - `DELETE /api/characters/:characterId`.
 - `POST /api/characters/reorder` → `characterReorderSchema` (`{ characterIds: uuid[] }`); rewrites `sort_order`.
 

@@ -22,7 +22,7 @@ Map, not manual. This file is the table of contents; the deep knowledge lives in
 - Local dev runs via `pnpm dev:full` (Wrangler worker + Vite). The user usually has it running already — use the running server for localhost verification rather than starting another.
 - `pnpm build` = `tsc --noEmit && vite build`. `pnpm lint` = ESLint. Run both before considering a change done.
 - Domain model is **Character → Thread → Segment**. The six **Vibe stop** IDs are a contract shared by the DB enum, `api/_lib/schemas.ts → VIBE_STOPS`, and the client preset table — change all three together.
-- Validate every API input with Zod at the boundary. Never import `api/_lib/*` from `app/` or vice versa.
+- Validate every API input with Zod at the boundary. Never import `api/_lib/*` from `app/` or vice versa. The one exception is `app/lib/__tests__/system-prompt-parity.test.ts`, which compares the client prompt preview against the worker prompt.
 
 <!-- context7 -->
 Use the `ctx7` CLI to fetch current documentation whenever the user asks about a library, framework, SDK, API, CLI tool, or cloud service -- even well-known ones like React, Next.js, Prisma, Express, Tailwind, Django, or Spring Boot. This includes API syntax, configuration, version migration, library-specific debugging, setup instructions, and CLI tool usage. Use even when you think you know the answer -- your training data may not reflect recent changes. Prefer this over web search for library docs.

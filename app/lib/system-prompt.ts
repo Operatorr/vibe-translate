@@ -23,9 +23,44 @@ const VIBE_REGISTER: Record<VibeStop, string> = {
 export function describeVerbosity(value: number): string {
   if (value < 0.25) return 'terse — say the minimum, drop filler'
   if (value < 0.5) return 'concise — natural length, no padding'
-  if (value < 0.75) return 'balanced — natural, may add a softener or two'
-  return 'expansive — elaborate, add warmth and context'
+  if (value < 0.75)
+    return 'balanced — fuller phrasing while preserving the source meaning'
+  return 'expansive — use fuller sentences without adding facts or explanations'
 }
+
+const CANTONESE = /cantonese|廣東話|广东话|粵語|粤语/i
+const MANDARIN = /mandarin|國語|国语|普通話|普通话|華語|华语/i
+const NEGATED_CANTONESE =
+  /\b(?:not|no|non|without)[\s-]+(?:in[\s-]+)?cantonese|(?:不|唔|非)(?:說|说|講|讲|用)?(?:廣東話|广东话|粵語|粤语)/i
+
+// Conservative: written Cantonese only when the region asks for Cantonese and
+// neither negates it ("not Cantonese") nor also names Mandarin. Anything
+// ambiguous falls back to Mandarin, which the guidance lets the persona override.
+export function requestsCantonese(region: string | undefined): boolean {
+  if (!region || !CANTONESE.test(region)) return false
+  return !NEGATED_CANTONESE.test(region) && !MANDARIN.test(region)
+}
+
+// Script and spoken variety are separate: Cantonese can use traditional
+// characters even when the speaker's region is Guangzhou.
+export function targetLanguageGuidance(
+  targetLanguage: string,
+  persona: Persona,
+): string | null {
+  if (targetLanguage === 'zh-CN')
+    return 'Use Mandarin in simplified characters, with vocabulary appropriate to the selected region.'
+  if (targetLanguage === 'zh-TW') {
+    return requestsCantonese(persona.region)
+      ? 'Use written Cantonese in traditional characters, with vocabulary appropriate to the selected region. Do not switch to simplified characters for Guangzhou.'
+      : 'Use Taiwanese Mandarin in traditional characters unless the persona explicitly requests another Chinese variety.'
+  }
+  if (targetLanguage === 'th-TH')
+    return 'Use Thai script, with regional vocabulary appropriate to the selected region. Do not infer the speaker’s gender from the region.'
+  return null
+}
+
+const VOICE_PRIORITY =
+  'The selected vibe controls politeness and formality. Tone, traits, legacy formality notes and additional instructions must not override the selected register. Apply personality and regional vocabulary within that register. Do not add facts or omit source meaning to satisfy verbosity; temperature varies wording, not register.'
 
 export function formatPersona(persona: Persona): string {
   const lines: string[] = []
@@ -55,12 +90,14 @@ export function compileSystemPrompt(input: {
     `# Character: ${input.name || '(unnamed)'} · temperature ${input.temperature.toFixed(2)}`,
     `You are an expert translator for a language-learning app.`,
     `Translate from ${input.sourceLanguage} to ${input.targetLanguage}.`,
+    targetLanguageGuidance(input.targetLanguage, input.persona),
     ``,
     `REGISTER (vibe = "${input.vibe}"): ${VIBE_REGISTER[input.vibe]}`,
     persona
       ? `\nSPEAKER PERSONA (who is speaking / being addressed):\n${persona}`
       : null,
     instructions ? `\nADDITIONAL INSTRUCTIONS:\n${instructions}` : null,
+    persona || instructions ? `\nVOICE RULES: ${VOICE_PRIORITY}` : null,
     ``,
     `Respond with JSON: "targetText" plus a word-level "tokens" alignment.`,
     ``,

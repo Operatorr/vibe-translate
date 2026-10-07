@@ -63,7 +63,7 @@ The source-text side and target-text side of one **Segment**, word-aligned so th
 _Avoid_: source/target string, input/output
 
 **Temperature** (per-Character):
-A 0.0–1.0 model creativity setting stored on the **Character**. Lower = more literal/consistent (business, formal); higher = more playful/varied (friends, intimate).
+A 0.0–1.0 model sampling setting stored on the **Character**. Lower = more predictable wording; higher = more varied phrasing. It does not set politeness, length, or meaning: **Vibe** controls the register, and **Persona** verbosity controls phrasing length. Identical wording is not guaranteed even at zero; stored/cache hits may reuse the same result.
 _Avoid_: creativity, variance — `temperature` is the canonical name (matches the LLM API term).
 
 **Explain**:
@@ -103,7 +103,7 @@ A single result row from a **Translation memory** search — a past Segment with
 _Avoid_: match, result
 
 **Translation cache**:
-A _shared, cross-user_ store of **canonical** translations (no persona — tone and verbosity included — no instructions, default temperature), keyed by an exact fingerprint of `(source_text, source_lang, target_lang, vibe, model_id)`. A cache hit returns instantly and costs **0 credits**. Distinct from **Translation memory**: the cache is exact-match and global; memory is semantic and per-user. Privacy-safe — you only hit on inputs you supplied yourself.
+A _shared, cross-user_ store of **canonical** translations (no persona — tone and verbosity included — no instructions, default temperature), keyed by an exact fingerprint of `(source_text, source_lang, target_lang, vibe, model_id, prompt_revision)`. A cache hit returns instantly and costs **0 credits**. Distinct from **Translation memory**: the cache is exact-match and global; memory is semantic and per-user. Privacy-safe — you only hit on inputs you supplied yourself.
 _Avoid_: translation memory (different mechanism), shared memory
 
 **Canonical translation**:

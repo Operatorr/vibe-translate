@@ -1,6 +1,7 @@
 import type { Client } from 'pg'
 
 import { sha256Hex } from './embeddings'
+import { TRANSLATE_PROMPT_REVISION } from './prompts'
 import type { Persona, SegmentToken, VibeStop } from './schemas'
 
 // Only canonical requests are eligible for the shared cache: empty persona,
@@ -42,8 +43,13 @@ export type FingerprintInput = {
 }
 
 // Stable key for a canonical translation. Newlines separate fields so values
-// can't collide across boundaries.
-export function fingerprint(input: FingerprintInput): Promise<string> {
+// can't collide across boundaries. The prompt revision keeps entries produced
+// under an older canonical prompt from being served after the prompt changes;
+// orphaned rows are derived data and age out by `last_used_at`.
+export function fingerprint(
+  input: FingerprintInput,
+  promptRevision: number = TRANSLATE_PROMPT_REVISION,
+): Promise<string> {
   return sha256Hex(
     [
       input.sourceText,
@@ -51,6 +57,7 @@ export function fingerprint(input: FingerprintInput): Promise<string> {
       input.targetLanguage,
       input.vibe,
       input.modelId,
+      `prompt-r${promptRevision}`,
     ].join('\n'),
   )
 }

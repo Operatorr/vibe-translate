@@ -307,6 +307,77 @@ export const VIBE_PRESETS_PER_LANG = {
       color: 'var(--magenta-400)',
     },
   ],
+  'zh-TW': [
+    {
+      id: 'yakuza',
+      label: '粗話',
+      hint: '街頭 · 粗魯',
+      color: 'var(--red-400)',
+    },
+    {
+      id: 'friend',
+      label: '朋友',
+      hint: '熟人 · 輕鬆聊天',
+      color: 'var(--orange-400)',
+    },
+    {
+      id: 'casual',
+      label: '日常',
+      hint: '自然 · 日常用語',
+      color: 'var(--amber-400)',
+    },
+    { id: 'keigo', label: '禮貌', hint: '您 · 尊重', color: 'var(--turq-400)' },
+    {
+      id: 'keigoplus',
+      label: '正式',
+      hint: '敬語 · 商務',
+      color: 'var(--cyan-400)',
+    },
+    {
+      id: 'emperor',
+      label: '皇室',
+      hint: '朕 · 古風',
+      color: 'var(--magenta-400)',
+    },
+  ],
+  'th-TH': [
+    {
+      id: 'yakuza',
+      label: 'หยาบ',
+      hint: 'rough · blunt street language',
+      color: 'var(--red-400)',
+    },
+    {
+      id: 'friend',
+      label: 'เพื่อน',
+      hint: 'friends · familiar language',
+      color: 'var(--orange-400)',
+    },
+    {
+      id: 'casual',
+      label: 'ทั่วไป',
+      hint: 'everyday · conversational',
+      color: 'var(--amber-400)',
+    },
+    {
+      id: 'keigo',
+      label: 'สุภาพ',
+      hint: 'polite · respectful language',
+      color: 'var(--turq-400)',
+    },
+    {
+      id: 'keigoplus',
+      label: 'ทางการ',
+      hint: 'formal · business language',
+      color: 'var(--cyan-400)',
+    },
+    {
+      id: 'emperor',
+      label: 'ราชาศัพท์',
+      hint: 'royal · ceremonial language',
+      color: 'var(--magenta-400)',
+    },
+  ],
 }
 
 // Default fallback
@@ -686,6 +757,8 @@ export const LANG_FLAG = {
   'de-DE': '🇩🇪',
   'es-ES': '🇪🇸',
   'zh-CN': '🇨🇳',
+  'zh-TW': '🇹🇼',
+  'th-TH': '🇹🇭',
   'ar-SA': '🇸🇦',
   'tr-TR': '🇹🇷',
 }
@@ -698,7 +771,9 @@ export const LANG_NAME = {
   'fr-FR': 'French',
   'de-DE': 'German',
   'es-ES': 'Spanish',
-  'zh-CN': 'Chinese (S)',
+  'zh-CN': 'Chinese (Simplified)',
+  'zh-TW': 'Chinese (Traditional)',
+  'th-TH': 'Thai',
   'ar-SA': 'Arabic',
   'tr-TR': 'Turkish',
 }

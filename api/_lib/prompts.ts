@@ -1,6 +1,6 @@
 import type { TranslateSegmentInput } from './ai'
 import type { ExplainGenerateInput } from './explain'
-import { VIBE_STOPS } from './schemas'
+import { VIBE_STOPS, SOURCE_LANGUAGES, TARGET_LANGUAGES } from './schemas'
 import type { Persona, VibeStop } from './schemas'
 
 // Prompt construction for the translate flow. Pure and network-free so it can
@@ -39,6 +39,39 @@ if (MISSING_REGISTER.length > 0) {
   )
 }
 
+const CANTONESE = /cantonese|廣東話|广东话|粵語|粤语/i
+const MANDARIN = /mandarin|國語|国语|普通話|普通话|華語|华语/i
+const NEGATED_CANTONESE =
+  /\b(?:not|no|non|without)[\s-]+(?:in[\s-]+)?cantonese|(?:不|唔|非)(?:說|说|講|讲|用)?(?:廣東話|广东话|粵語|粤语)/i
+
+// Conservative: written Cantonese only when the region asks for Cantonese and
+// neither negates it ("not Cantonese") nor also names Mandarin. Anything
+// ambiguous falls back to Mandarin, which the guidance lets the persona override.
+export function requestsCantonese(region: string | undefined): boolean {
+  if (!region || !CANTONESE.test(region)) return false
+  return !NEGATED_CANTONESE.test(region) && !MANDARIN.test(region)
+}
+
+// Script and spoken variety are separate: Cantonese can use traditional
+// characters even when the speaker's region is Guangzhou.
+export function targetLanguageGuidance(
+  targetLanguage: string,
+  persona: Persona,
+): string | null {
+  if (targetLanguage === 'zh-CN')
+    return 'Use Mandarin in simplified characters, with vocabulary appropriate to the selected region.'
+  if (targetLanguage === 'zh-TW') {
+    return requestsCantonese(persona.region)
+      ? 'Use written Cantonese in traditional characters, with vocabulary appropriate to the selected region. Do not switch to simplified characters for Guangzhou.'
+      : 'Use Taiwanese Mandarin in traditional characters unless the persona explicitly requests another Chinese variety.'
+  }
+  if (targetLanguage === 'th-TH')
+    return 'Use Thai script, with regional vocabulary appropriate to the selected region. Do not infer the speaker’s gender from the region.'
+  return null
+}
+
+const VOICE_PRIORITY =
+  'The selected vibe controls politeness and formality. Tone, traits, legacy formality notes and additional instructions must not override the selected register. Apply personality and regional vocabulary within that register. Do not add facts or omit source meaning to satisfy verbosity; temperature varies wording, not register.'
 // Render the structured Persona block into short prompt lines, omitting any
 // empty field. Returns '' when the persona carries nothing.
 export function formatPersona(persona: Persona): string {
@@ -59,11 +92,18 @@ export function formatPersona(persona: Persona): string {
 export function describeVerbosity(value: number): string {
   if (value < 0.25) return 'terse — say the minimum, drop filler'
   if (value < 0.5) return 'concise — natural length, no padding'
-  if (value < 0.75) return 'balanced — natural, may add a softener or two'
-  return 'expansive — elaborate, add warmth and context'
+  if (value < 0.75)
+    return 'balanced — fuller phrasing while preserving the source meaning'
+  return 'expansive — use fuller sentences without adding facts or explanations'
 }
 
 export type ChatMessage = { role: 'system' | 'user'; content: string }
+
+// Bump whenever the canonical translate prompt (no persona, no instructions)
+// changes what the model is told. It is part of the shared translation-cache
+// fingerprint, so a bump stops serving results produced under the old prompt.
+// 2: script and variety guidance for zh-CN, zh-TW and th-TH targets.
+export const TRANSLATE_PROMPT_REVISION = 2
 
 // Build the two-message prompt for one translation. The system message is the
 // stable instruction surface (register, persona, output contract, alignment
@@ -77,12 +117,14 @@ export function buildTranslateMessages(
   const system = [
     `You are an expert translator for a language-learning app.`,
     `Translate from ${input.sourceLanguage} to ${input.targetLanguage}.`,
+    targetLanguageGuidance(input.targetLanguage, input.persona),
     ``,
     `REGISTER (vibe = "${input.vibe}"): ${VIBE_REGISTER[input.vibe]}`,
     persona
       ? `\nSPEAKER PERSONA (who is speaking / being addressed):\n${persona}`
       : null,
     instructions ? `\nADDITIONAL INSTRUCTIONS:\n${instructions}` : null,
+    persona || instructions ? `\nVOICE RULES: ${VOICE_PRIORITY}` : null,
     ``,
     `Respond with JSON containing exactly two fields: "targetText" and "tokens".`,
     `- "targetText": the full translation, written entirely in the chosen register.`,
@@ -187,11 +229,13 @@ export function buildDictationMessages(prompt: string): ChatMessage[] {
     `Respond with JSON only, matching the provided schema:`,
     `- "ok": true if you extracted anything useful; false if the description is unusable.`,
     `- "name": the addressee's name, or null.`,
-    `- "sourceLanguage" / "targetLanguage": BCP-47 codes (e.g. "en-US", "ja-JP"), or null.`,
+    `- "sourceLanguage": one of ${SOURCE_LANGUAGES.join(', ')}, or null.`,
+    `- "targetLanguage": one of ${TARGET_LANGUAGES.join(', ')}, or null.`,
+    `  Use null for unsupported languages; never substitute a different language.`,
     `  The source is the user's own language; the target is who they are writing to.`,
     `- "defaultVibe": one of ${VIBE_STOPS.join(', ')} — the social register that best fits the`,
     `  relationship (e.g. a close friend -> "friend"; a boss or business contact -> "keigo").`,
-    `- "temperature": 0.0-1.0 creativity (lower = more literal/formal), or null if unsure.`,
+    `- "temperature": 0.0-1.0 wording variation (lower = more predictable; does not set formality), or null if unsure.`,
     `- "persona": { "age", "region", "formality", "tone", "verbosity", "traits" (array) }; null`,
     `  fields where unknown, "traits" is [] when none. "tone" is one word for how they sound`,
     `  (e.g. "warm", "dry", "playful"); "verbosity" is 0.0 (terse) to 1.0 (expansive).`,

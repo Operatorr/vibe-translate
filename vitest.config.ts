@@ -15,6 +15,11 @@ export default defineConfig({
   test: {
     environment: 'node',
     // app/lib holds the SPA's pure helpers (cache updaters, alignment, export).
-    include: ['api/**/*.test.ts', 'app/lib/**/*.test.ts'],
+    // Component tests opt into jsdom per file with `@vitest-environment jsdom`.
+    include: [
+      'api/**/*.test.ts',
+      'app/lib/**/*.test.ts',
+      'app/components/**/*.test.tsx',
+    ],
   },
 })

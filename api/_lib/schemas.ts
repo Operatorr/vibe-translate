@@ -34,7 +34,16 @@ const localeSchema = z
   .max(12)
   .regex(/^[a-z]{2,3}(-[a-z0-9]{2,8})?$/i, 'Use a BCP-47 code, e.g. ja-JP')
 
-export const characterCreateSchema = z.object({
+// Mirrored in app/lib/character-options.ts; neither side imports the other.
+export const TARGET_LANGUAGES = ['zh-CN', 'zh-TW', 'th-TH', 'ja-JP'] as const
+export const SOURCE_LANGUAGES = ['en-US', ...TARGET_LANGUAGES] as const
+export const sourceLanguageSchema = z.enum(SOURCE_LANGUAGES)
+export const targetLanguageSchema = z.enum(TARGET_LANGUAGES)
+
+// Shared Character fields without defaults. Create layers defaults on top;
+// update must not, or a partial PATCH (e.g. the temperature slider) would
+// overwrite the stored vibe and persona with the create-time defaults.
+const characterFields = {
   name: z.string().trim().min(1).max(80),
   initials: z.string().trim().max(4).optional(),
   // Rendered as an inline CSS background (including on public share pages), so
@@ -48,13 +57,20 @@ export const characterCreateSchema = z.object({
       'Invalid color',
     )
     .optional(),
-  sourceLanguage: localeSchema,
-  targetLanguage: localeSchema,
-  defaultVibe: vibeStopSchema.default('casual'),
-  temperature: z.number().min(0).max(1).default(0.4),
-  persona: personaSchema.default({ traits: [] }),
+  sourceLanguage: sourceLanguageSchema,
+  targetLanguage: targetLanguageSchema,
+  defaultVibe: vibeStopSchema,
+  temperature: z.number().min(0).max(1),
+  persona: personaSchema,
   // Free-form system-prompt extension. Appended to the translate prompt.
   instructions: z.string().trim().max(2000).optional(),
+}
+
+export const characterCreateSchema = z.object({
+  ...characterFields,
+  defaultVibe: characterFields.defaultVibe.default('casual'),
+  temperature: characterFields.temperature.default(0.4),
+  persona: characterFields.persona.default({ traits: [] }),
 })
 
 // Onboarding dictation: free-form prompt → Character draft. Free, one-shot,
@@ -68,15 +84,16 @@ export const onboardingDictateSchema = z.object({
 export const characterDraftSchema = z.object({
   ok: z.boolean(),
   name: z.string().trim().max(80).optional(),
-  sourceLanguage: localeSchema.optional(),
-  targetLanguage: localeSchema.optional(),
+  sourceLanguage: sourceLanguageSchema.optional(),
+  targetLanguage: targetLanguageSchema.optional(),
   defaultVibe: vibeStopSchema.optional(),
   temperature: z.number().min(0).max(1).optional(),
   persona: personaSchema.optional(),
   instructions: z.string().trim().max(2000).optional(),
 })
 
-export const characterUpdateSchema = characterCreateSchema
+export const characterUpdateSchema = z
+  .object(characterFields)
   .partial()
   .refine(
     (value) => Object.keys(value).length > 0,
