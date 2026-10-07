@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import * as React from 'react'
+import * as DropdownMenu from '@radix-ui/react-dropdown-menu'
 import { toast } from 'sonner'
 
 import { CtaBackdrop } from '@/components/landing/cta-backdrop'
@@ -11,6 +12,8 @@ import { useSignedIn } from '@/lib/auth-client'
 import { cssVars } from '@/lib/css-vars'
 
 import { DEMO_PAIRS_JA, VIBE_PRESETS_PER_LANG } from './design-data'
+import { DEMO_SOURCE, DEMO_TARGETS, demoAudioPath } from './landing-demo-data'
+import type { DemoLanguage, DemoVibe } from './landing-demo-data'
 import { Icon } from './icon'
 import { SiteNav } from './shell'
 import { useVibeFrame } from './use-vibe-frame'
@@ -20,7 +23,9 @@ const DEMO_PAIRS = DEMO_PAIRS_JA as Record<string, string>
 const VIBE_PRESETS = VIBE_PRESETS_PER_LANG as Record<string, any[]>
 
 const LandingDemo = () => {
-  const text = "Stop talking and follow me. You won't regret it."
+  const text = DEMO_SOURCE
+  const [targetLanguage, setTargetLanguage] =
+    React.useState<DemoLanguage>('ja-JP')
   const [vibeIdx, setVibeIdx] = React.useState(3) // keigo
   const [out, setOut] = React.useState('')
   const [busy, setBusy] = React.useState(false)
@@ -34,9 +39,12 @@ const LandingDemo = () => {
     null,
   )
 
-  const vibes = VIBE_PRESETS['ja-JP']
+  const demoTarget = DEMO_TARGETS.find(
+    (target) => target.id === targetLanguage,
+  )!
+  const vibes = demoTarget.vibes
   const activeVibe = vibes[vibeIdx]
-  const target = DEMO_PAIRS[activeVibe.id] || '...'
+  const target = demoTarget.translations[activeVibe.id as DemoVibe]
   const canUseOutput = out.trim().length > 0 && !busy
   const isAudioBusy = audioStatus !== 'idle'
 
@@ -54,6 +62,8 @@ const LandingDemo = () => {
     if (streamTimerRef.current) clearTimeout(streamTimerRef.current)
     releaseAudio()
     setAudioStatus('idle')
+    setCopied(false)
+    if (copyTimerRef.current) window.clearTimeout(copyTimerRef.current)
     setBusy(true)
     setOut('')
     let i = 0
@@ -94,7 +104,9 @@ const LandingDemo = () => {
     setAudioStatus('loading')
 
     releaseAudio()
-    const audio = new Audio(`/demo/vibe-${activeVibe.id}.mp3`)
+    const audio = new Audio(
+      demoAudioPath(targetLanguage, activeVibe.id as DemoVibe),
+    )
     audioRef.current = audio
     const fail = () => {
       // A media error can also reject play(); report it only once. Ignore a
@@ -124,7 +136,7 @@ const LandingDemo = () => {
 
   React.useEffect(() => {
     run()
-  }, [vibeIdx]) // eslint-disable-line react-hooks/exhaustive-deps -- designer run loop is tied only to vibe changes.
+  }, [vibeIdx, targetLanguage]) // eslint-disable-line react-hooks/exhaustive-deps -- stream the fixed sample when either selection changes.
 
   React.useEffect(() => {
     return () => {
@@ -174,15 +186,67 @@ const LandingDemo = () => {
                 <Icon name="arrow-left-right" />
               </button>
             </div>
-            <div className="demo__head-cell">
-              <span className="demo__head-flag">🇯🇵</span>
-              <div className="demo__head-body">
-                <span className="demo__head-eyebrow">
-                  TO · {activeVibe.label.toUpperCase()}
-                </span>
-                <span className="demo__head-lang">Japanese · 日本語</span>
-              </div>
-            </div>
+            <DropdownMenu.Root>
+              <DropdownMenu.Trigger asChild>
+                <button
+                  type="button"
+                  className="demo__head-cell demo__target-picker"
+                  aria-label={`Target language: ${demoTarget.name}`}
+                >
+                  <span className="demo__head-flag" aria-hidden="true">
+                    {demoTarget.flag}
+                  </span>
+                  <span className="demo__head-body">
+                    <span className="demo__head-eyebrow">
+                      TO · {activeVibe.label.toUpperCase()}
+                    </span>
+                    <span className="demo__head-lang">
+                      {demoTarget.name} ·{' '}
+                      <span lang={targetLanguage}>{demoTarget.nativeName}</span>
+                    </span>
+                  </span>
+                  <Icon name="chevron-down" className="demo__target-caret" />
+                </button>
+              </DropdownMenu.Trigger>
+              <DropdownMenu.Portal>
+                <DropdownMenu.Content
+                  className="vt-popover vt-menu demo__language-menu"
+                  align="end"
+                  sideOffset={6}
+                  collisionPadding={8}
+                  aria-label="Demo target languages"
+                >
+                  <DropdownMenu.RadioGroup
+                    value={targetLanguage}
+                    onValueChange={(value) =>
+                      setTargetLanguage(value as DemoLanguage)
+                    }
+                  >
+                    {DEMO_TARGETS.map((language) => (
+                      <DropdownMenu.RadioItem
+                        key={language.id}
+                        value={language.id}
+                        className="vt-menu__item demo__language-option"
+                      >
+                        <span aria-hidden="true">{language.flag}</span>
+                        <span>
+                          {language.name}
+                          <span
+                            className="demo__language-native"
+                            lang={language.id}
+                          >
+                            {language.nativeName}
+                          </span>
+                        </span>
+                        <DropdownMenu.ItemIndicator className="demo__language-check">
+                          <Icon name="check" />
+                        </DropdownMenu.ItemIndicator>
+                      </DropdownMenu.RadioItem>
+                    ))}
+                  </DropdownMenu.RadioGroup>
+                </DropdownMenu.Content>
+              </DropdownMenu.Portal>
+            </DropdownMenu.Root>
           </div>
 
           <div className="demo__panes">
@@ -197,7 +261,7 @@ const LandingDemo = () => {
             </div>
             <div className="demo__divider"></div>
             <div className="demo__pane demo__pane--output">
-              <div className="demo__output">
+              <div className="demo__output" lang={targetLanguage}>
                 {out || (
                   <span className="demo__output--empty">
                     Output streams here.

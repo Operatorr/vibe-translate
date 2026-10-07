@@ -1,59 +1,47 @@
-# Landing demo audio samples
+# Landing demo audio
 
-The landing page demo (`app/components/vibe-design/vibe-pages.tsx`) plays
-**pre-rendered** per-vibe MP3s from this folder instead of calling the live
-`/api/ai/text-to-speech` endpoint (which is authenticated and metered — see
-`docs/SECURITY.md`).
-
-## Required files
-
-Six clips, one per Vibe stop. The component loads `/demo/vibe-<id>.mp3`:
-
-| file                 | vibe      | demo text (fixed, from `DEMO_PAIRS_JA`)                                                  |
-| -------------------- | --------- | ---------------------------------------------------------------------------------------- |
-| `vibe-yakuza.mp3`    | yakuza    | 黙って俺について来い。後悔はさせねぇ。                                                   |
-| `vibe-friend.mp3`    | friend    | 黙ってついてきてよ。後悔はさせないから！                                                 |
-| `vibe-casual.mp3`    | casual    | 黙ってついてきてください。後悔はさせません。                                             |
-| `vibe-keigo.mp3`     | keigo     | お黙りになって、私についてきてください。ご後悔はさせません。                             |
-| `vibe-keigoplus.mp3` | keigoplus | 恐れ入りますが、お言葉を控えていただき、私の後をご一緒くださいませ。ご後悔はさせません。 |
-| `vibe-emperor.mp3`   | emperor   | 言の葉を慎みて、朕に従ひ来たれ。後の悔ゆることなからしめむ。                             |
-
-## How to generate
-
-The six recordings use distinct Japanese voices from ElevenLabs. The voice
-IDs and names are recorded in [`voices.json`](./voices.json):
-
-| Vibe stop | Voice      | Delivery                         |
-| --------- | ---------- | -------------------------------- |
-| Yakuza    | PiropiroRX | Mature, husky character voice    |
-| Friend    | Sey        | Bright, youthful conversation    |
-| Casual    | Izu        | Natural, calm and friendly       |
-| Keigo     | Rinko      | Clear, polite customer support   |
-| Keigo+    | Kaori      | Composed, elegant female voice   |
-| Emperor   | Ryu        | Deep, dramatic samurai character |
+The landing demo plays 24 **prerecorded** MP3s directly from static assets.
+Playback does not call the authenticated, metered `/api/ai/text-to-speech`
+endpoint or ElevenLabs, so visitors cannot trigger new generation charges.
 
 The fixed English source is “Stop talking and follow me. You won't regret it.”
-It is read-only because this demo previews a fixed set of translations and
-recordings; it does not generate new translations or audio at runtime.
+[`landing-demo-data.ts`](../../app/components/vibe-design/landing-demo-data.ts)
+contains the four targets and six register variants per target:
 
-To regenerate (Node 22.18+):
+| Target             | Script              | Voice-library accent    | Files                   |
+| ------------------ | ------------------- | ----------------------- | ----------------------- |
+| Japanese           | Japanese            | Japanese                | `vibe-<stop>.mp3`       |
+| Chinese            | Simplified Chinese  | `beijing mandarin`      | `zh-CN/vibe-<stop>.mp3` |
+| Taiwanese Mandarin | Traditional Chinese | `taiwan mandarin`       | `zh-TW/vibe-<stop>.mp3` |
+| Thai               | Thai                | Native Thai, `standard` | `th-TH/vibe-<stop>.mp3` |
 
-1. Set `ELEVENLABS_API_KEY` in the ignored `.dev.vars` file or your environment.
-   The key needs **Text to Speech: Access** for generation and **Voices: Read**
-   for discovery. No other permissions are required by this script.
-2. Run `pnpm demo:audio --list-voices` to browse Japanese voices.
-3. Run `pnpm demo:audio` to create missing clips, or `pnpm demo:audio --force`
-   to regenerate all six. Generation uses ElevenLabs credits.
+Every target has six distinct voices. IDs, names, provider descriptions, and
+accent metadata are saved in [`voices.json`](./voices.json). Delivery is matched
+to the register: firm/rough, friendly, everyday, polite, formal, ceremonial.
+The final stop speaks **as a ruler**; it does not address a royal listener.
+Thai polite and formal translations use particles and pronouns appropriate
+to their male and female voices, respectively. The six shared stop IDs remain
+`yakuza`, `friend`, `casual`, `keigo`, `keigoplus`, and `emperor`.
 
-The generator reads the fixed texts directly from `DEMO_PAIRS_JA`. It uses
-standard `eleven_v4` and `language_code: ja`. The older Japanese text
-normalization flag is included only when generating with Multilingual v2;
-v4 rejects it. The model is set in `voices.json`; the live endpoint's model
-is separately configured via `ELEVENLABS_MODEL_ID`. Non-empty
-`ELEVENLABS_VOICE_<STOP>` values override the checked-in voice IDs. Configure
-the live endpoint with the same IDs when it should match the demo's voices.
+## Generation
 
-Commit all six MP3s alongside any demo text changes. `pnpm test` checks that
-every Vibe stop has a real MP3 asset rather than HTML or an error response,
-that its recorded text matches the displayed translation, and that the six
-recordings use distinct voice IDs. Recording hashes detect swapped assets.
+Requires Node 22.18+ and `ELEVENLABS_API_KEY` in the ignored `.dev.vars` file
+or environment. Permissions: **Text to Speech: Access** and **Voices: Read**.
+Generation consumes ElevenLabs credits; regular demo playback does not.
+
+- `pnpm demo:audio`: generate missing or stale clips for all four targets.
+- `pnpm demo:audio --language zh-TW`: generate only one target.
+- `pnpm demo:audio --language th-TH --list-voices`: discover native voices.
+- `pnpm demo:audio --language zh-CN --force`: regenerate a target's six clips.
+
+The generator reads the displayed translations directly from the demo data
+and uses standard `eleven_v4`, with `language_code` `ja`, `zh`, or `th`.
+The live endpoint's `ELEVENLABS_MODEL_ID` is separate from this manifest.
+Japanese overrides use `ELEVENLABS_VOICE_<STOP>`; other targets use
+`ELEVENLABS_VOICE_ZH_CN_<STOP>`, `ELEVENLABS_VOICE_ZH_TW_<STOP>`, or
+`ELEVENLABS_VOICE_TH_TH_<STOP>`. Overrides affect offline generation only.
+
+Commit MP3s and the manifest alongside translation changes. `pnpm test`
+verifies all 24 MP3 signatures, exact texts, voice IDs, accents, models, and
+recording hashes. The generator skips only when all recorded fields and the
+file hash match; interrupted runs can resume without regenerating saved clips.

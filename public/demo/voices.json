@@ -63,5 +63,262 @@
       "model": "eleven_v4",
       "sha256": "bce965aa41fe3253d72ac3f04e033f0e6e6fb3dde3758d95160f7f860eaed9bc"
     }
+  },
+  "languages": {
+    "zh-CN": {
+      "model": "eleven_v4",
+      "voices": {
+        "yakuza": {
+          "id": "bdt3B5N3GXM2nOc0SUW7",
+          "name": "Zhile",
+          "accent": "beijing mandarin",
+          "language": "zh",
+          "description": "Deep, vivid, natural voice for story telling and commercial advertisements"
+        },
+        "friend": {
+          "id": "5s3UifUu3OJ90z17rRMA",
+          "name": "Jun - Bright and energetic",
+          "accent": "beijing mandarin",
+          "language": "zh",
+          "description": "A fresh, vibrant voice of a younger Chinese male with a clear, enthusiastic tone."
+        },
+        "casual": {
+          "id": "Qz42O0rKFmFBzAviAloi",
+          "name": "Aaron Shang - Chinese",
+          "accent": "beijing mandarin",
+          "language": "zh",
+          "description": "A natural, warm, and pleasant voice with an authentic, friendly delivery."
+        },
+        "keigo": {
+          "id": "pz7hOfW7kgI9kF818eDS",
+          "name": "Jerry - Chinese Mandarin",
+          "accent": "beijing mandarin",
+          "language": "zh",
+          "description": "A Mandarin voice representing a Chinese workplace professional—perfect for corporate settings, broadcasting, and commentary."
+        },
+        "keigoplus": {
+          "id": "4AfodMgwXps9oZFhHzoj",
+          "name": "Yun - Prime Mandarin Broadcast Anchor",
+          "accent": "beijing mandarin",
+          "language": "zh",
+          "description": "Female Mandarin voice. Professionally trained broadcaster, two decades of daily on-air news. Certified Putonghua Proficiency Test Level I Grade A — China's highest Mandarin grade. Standard Putonghua, broadcast diction, natural pacing for news, e-learning, corporate video, audiobooks, documentary narration, short-form video, IVR, and conversational AI."
+        },
+        "emperor": {
+          "id": "nss5M23ZSzhG3Tn0b7wN",
+          "name": "Rippel - Mandarin male",
+          "accent": "beijing mandarin",
+          "language": "zh",
+          "description": "Lively yet grounded, artistic yet unpretentious. The voice is clear and resonant, naturally conveying narrative depth, emotional nuance, and vivid imagery. It is well-suited for historical commentary, educational content, brand narration, short-film storytelling, and rhythmic advertising copy—ensuring every word is not only heard more clearly but also truly memorable."
+        }
+      },
+      "recordings": {
+        "yakuza": {
+          "voiceId": "bdt3B5N3GXM2nOc0SUW7",
+          "text": "闭嘴，跟老子走。保你不后悔。",
+          "model": "eleven_v4",
+          "sha256": "d8f017acee77959adce445d8142d3104fd50b0ef55bf3ffdb7e6b2135e33713c"
+        },
+        "friend": {
+          "voiceId": "5s3UifUu3OJ90z17rRMA",
+          "text": "别说啦，跟我来吧。保证你不会后悔！",
+          "model": "eleven_v4",
+          "sha256": "e1608cd3e82bfc812f1165496e52d631cd4d304ce08cef67c12e6555b0a731d4"
+        },
+        "casual": {
+          "voiceId": "Qz42O0rKFmFBzAviAloi",
+          "text": "先别说话，跟我来。你不会后悔的。",
+          "model": "eleven_v4",
+          "sha256": "04f4784348ab53ba20f4bbf835f12dd8ada0fcbeec3a1bac29b66c838976716e"
+        },
+        "keigo": {
+          "voiceId": "pz7hOfW7kgI9kF818eDS",
+          "text": "请您先别说话，跟我来。我保证您不会后悔。",
+          "model": "eleven_v4",
+          "sha256": "7ff81135d0810d3d4b5556326fbafbd0220b7af65061702a63a875c54e583c33"
+        },
+        "keigoplus": {
+          "voiceId": "4AfodMgwXps9oZFhHzoj",
+          "text": "劳驾您暂且停止交谈，随我前来。我向您保证，您不会为此后悔。",
+          "model": "eleven_v4",
+          "sha256": "5cc0b5da77561381e4465be6c86b29de5d5f46a1883f5b13d81331327090c896"
+        },
+        "emperor": {
+          "voiceId": "nss5M23ZSzhG3Tn0b7wN",
+          "text": "噤声，随朕前来。朕保你无悔。",
+          "model": "eleven_v4",
+          "sha256": "7c2cbf19efb468f3fe1b4ae80e960812a707d066cfca0cdab97000d5a0016abb"
+        }
+      }
+    },
+    "zh-TW": {
+      "model": "eleven_v4",
+      "voices": {
+        "yakuza": {
+          "id": "E8c1bekb52tdh7tvpKVK",
+          "name": "Akun - Warm, Magnetic",
+          "accent": "taiwan mandarin",
+          "language": "zh",
+          "description": "A warm, magnetic, and sharp-tongued male voice, living on the West Coast of the United States."
+        },
+        "friend": {
+          "id": "H5cwfyNzXJCflQ525hPa",
+          "name": "Xiaobao",
+          "accent": "taiwan mandarin",
+          "language": "zh",
+          "description": "Xiaobao possesses a youthful, vibrant male voice—clear, clean, and energetic—conveying a sincerity and approachability reminiscent of a student. His delivery is natural and fluid; while his pace is brisk, it never feels rushed. His tone is bright and spirited, radiating sunshine, enthusiasm, and positive energy. Skilled at interacting in a relaxed and friendly manner, he is engaging and full of curiosity, coming across like a reliable, lively younger peer or friend. His voice is clean and magnetic—neither forcedly deep nor overly juvenile—reflecting the confidence and authenticity of the younger generation while making the listener feel at ease, relaxed, and hopeful."
+        },
+        "casual": {
+          "id": "XXxvxx0YUt8icTEFE3c6",
+          "name": "Roy - Taiwanese Youth",
+          "accent": "taiwan mandarin",
+          "language": "zh",
+          "description": "Natural Narration Style (Suitable for video production and commercial shorts).\nStandard Taiwanese-accented Mandarin with a natural, approachable tone. Ideal for commercial voiceovers, digital content creation, and casual conversational interactions."
+        },
+        "keigo": {
+          "id": "4NQthjVhIGGVfL3Si000",
+          "name": "Chen Mandarin Chinese",
+          "accent": "taiwan mandarin",
+          "language": "zh",
+          "description": "Native Mandarin Chinese voice with a gentle Taiwanese accent. Clear, warm, and natural delivery — perfect for daily dialogue, storytelling, audiobooks, narration, podcasts, and lifestyle content. My tone is conversational, friendly, and emotionally expressive while maintaining clarity and professionalism."
+        },
+        "keigoplus": {
+          "id": "qDeYqHQrKRH839xMU4nb",
+          "name": "Door Chow",
+          "accent": "taiwan mandarin",
+          "language": "zh",
+          "description": "Taiwanese Mandarin female voice with a broadcast news background. Clear articulation, measured pace, neutral warmth. Suited to documentary narration, audiobooks, literary and long-form reading, news delivery, and corporate voiceover."
+        },
+        "emperor": {
+          "id": "YBS7vt5CeZiqlZYGamwR",
+          "name": "Jerry Lin - Deep, Calm & Authoritative",
+          "accent": "taiwan mandarin",
+          "language": "zh",
+          "description": "A deep and calm Mandarin voice that perfectly balances a serious, authoritative tone with natural storytelling. Ideal for corporate presentations, high-level finance and trading analysis, as well as engaging documentary narrations. Whether you need to build trust with professional business audiences or captivate general listeners, this voice delivers."
+        }
+      },
+      "recordings": {
+        "yakuza": {
+          "voiceId": "E8c1bekb52tdh7tvpKVK",
+          "text": "閉嘴，跟老子走。保證你不會後悔。",
+          "model": "eleven_v4",
+          "sha256": "c702926983f89f0e61d8564b2a1b02d6c1367025cac256cdeec6daa105af63e0"
+        },
+        "friend": {
+          "voiceId": "H5cwfyNzXJCflQ525hPa",
+          "text": "別講啦，跟我來嘛。保證你不會後悔喔！",
+          "model": "eleven_v4",
+          "sha256": "55c9807a9d335cf05f2db14ae5e295745049fa32012309e9cdf7e181ac41060e"
+        },
+        "casual": {
+          "voiceId": "XXxvxx0YUt8icTEFE3c6",
+          "text": "先別說話，跟我來。你不會後悔的。",
+          "model": "eleven_v4",
+          "sha256": "f54fbfc7cc1301a1221a563d0ed245825686be8277871019edfadf34d7ec6460"
+        },
+        "keigo": {
+          "voiceId": "4NQthjVhIGGVfL3Si000",
+          "text": "請您先別說話，跟我來。我保證您不會後悔。",
+          "model": "eleven_v4",
+          "sha256": "4ac0ea278c570626789473b011923c16583072f5641fae8dcd65f788bcf3b477"
+        },
+        "keigoplus": {
+          "voiceId": "qDeYqHQrKRH839xMU4nb",
+          "text": "不好意思，敬請您暫停交談，隨我前來。我向您保證，您不會因此後悔。",
+          "model": "eleven_v4",
+          "sha256": "263c2673dfc8cd91605116ce9668713d9bc76e9a7196ea8acac4237d567ec972"
+        },
+        "emperor": {
+          "voiceId": "YBS7vt5CeZiqlZYGamwR",
+          "text": "噤聲，隨朕前來。朕保你無悔。",
+          "model": "eleven_v4",
+          "sha256": "9b53de806266d41a1b64b71a636c3fd14c041a81a89b42bd53a306eaeaf433f2"
+        }
+      }
+    },
+    "th-TH": {
+      "model": "eleven_v4",
+      "voices": {
+        "yakuza": {
+          "id": "tAV9ucNkXgK2k9TLxWkM",
+          "name": "Anan - Confident, Deep, Firm",
+          "accent": "standard",
+          "language": "th",
+          "description": "Deep, resonant, and unmistakably confident, Anan closes every line with a hard stop that makes his Thai commercial reads feel final and authoritative. Steady pacing and strong end-of-line stress give ads a firm, trustworthy backbone — well suited to automotive, finance, or big-brand spot work."
+        },
+        "friend": {
+          "id": "H9eYlNHpm1vah6PPgYAk",
+          "name": "Ekkarat - Relaxed, Cheerful, Casual",
+          "accent": "standard",
+          "language": "th",
+          "description": "Loose, casual, and a little unpredictable — Ekkarat sounds like a friend riffing rather than reading a script. His young Thai voice has real overlaps, quick asides, and an easy relaxed pace that never feels performed. Great fit for casual dialogue, conversational ads, and any project that wants authenticity over polish."
+        },
+        "casual": {
+          "id": "nealpwJT5tCyJFKDzEq8",
+          "name": "Aom - Gentle, Confident, Smooth",
+          "accent": "standard",
+          "language": "th",
+          "description": "Smooth and unhurried, Aom brings a soft confidence to Thai commercial reads. She eases off the volume and leaves a small breath before the discount line, letting the offer land gently rather than being shouted. Sounds best for: retail ads, promo spots, and any commercial script that wants warmth over hard sell."
+        },
+        "keigo": {
+          "id": "FaUQoAqt8WX5mfvrvb3A",
+          "name": "Preecha - Patient, Friendly, Clear",
+          "accent": "standard",
+          "language": "th",
+          "description": "Clear, even, and endlessly patient, Preecha sounds like the customer support agent you actually want to get on the phone. His steady Thai delivery puts mild stress on action words, making instructions easy to follow without ever feeling rushed. Best for IVR scripts, help-center audio, and conversational support flows."
+        },
+        "keigoplus": {
+          "id": "v2NF9R77fF8wZRdbGYTg",
+          "name": "Siriporn - Warm, Gentle, Calm",
+          "accent": "standard",
+          "language": "th",
+          "description": "A soft, mellow warmth settles into every line Siriporn reads. She's a middle-aged Thai narrator who takes her time, pausing gently after each clause so nothing feels rushed. Quiet and calm rather than dramatic, she suits bedtime stories, meditative narration, or any long-form Thai content that benefits from a soothing, unhurried presence."
+        },
+        "emperor": {
+          "id": "XLXcyPK1jTjw1pYLLcM9",
+          "name": "Somchai - Warm Baritone, Serious",
+          "accent": "standard",
+          "language": "th",
+          "description": "There's an even, unhurried rhythm to Somchai's Thai narration, delivered in a warm baritone that never rushes past a name or a date. He leans serious rather than playful, giving light emphasis exactly where a listener needs it. Works well for history explainers, corporate narration, or documentary-style storytelling in Thai."
+        }
+      },
+      "recordings": {
+        "yakuza": {
+          "voiceId": "tAV9ucNkXgK2k9TLxWkM",
+          "text": "หุบปากแล้วตามกูมา มึงจะไม่เสียใจทีหลัง",
+          "model": "eleven_v4",
+          "sha256": "a131fe5d42d5f8f45a23184de5de01c40b9a5a700e82f5a1088f267727b4a20e"
+        },
+        "friend": {
+          "voiceId": "H9eYlNHpm1vah6PPgYAk",
+          "text": "หยุดพูดแล้วตามเรามานะ เธอจะไม่เสียใจแน่นอน!",
+          "model": "eleven_v4",
+          "sha256": "29f4911fd8e894520d7478d35899902adae9a78ae2dec9517e2687b18a808c26"
+        },
+        "casual": {
+          "voiceId": "nealpwJT5tCyJFKDzEq8",
+          "text": "หยุดพูดแล้วตามฉันมา คุณจะไม่เสียใจทีหลัง",
+          "model": "eleven_v4",
+          "sha256": "77543239a25b3c5a374dcf40e22626e05c0c1478b662982ae05dc19d25e7e66a"
+        },
+        "keigo": {
+          "voiceId": "FaUQoAqt8WX5mfvrvb3A",
+          "text": "กรุณาหยุดพูดแล้วตามผมมาครับ ผมรับรองว่าคุณจะไม่เสียใจภายหลังครับ",
+          "model": "eleven_v4",
+          "sha256": "39e747d6250b5ce0afe3ae5a5803690fe1ddfc021359479a6e0e0ed5e6f8476b"
+        },
+        "keigoplus": {
+          "voiceId": "v2NF9R77fF8wZRdbGYTg",
+          "text": "ขอความกรุณางดพูดสักครู่และตามดิฉันมาค่ะ ดิฉันขอรับรองว่าท่านจะไม่รู้สึกเสียใจในภายหลังค่ะ",
+          "model": "eleven_v4",
+          "sha256": "c01a3877fbcf416b4775e242fc138058dc661b58f16682414df86010e79cfa66"
+        },
+        "emperor": {
+          "voiceId": "XLXcyPK1jTjw1pYLLcM9",
+          "text": "จงหยุดพูดแล้วตามเรามา เราจะไม่ทำให้เจ้าต้องเสียใจภายหลัง",
+          "model": "eleven_v4",
+          "sha256": "870389391d99faa412af4150360fa049bd17cd82e38a6ef76a56f1edaefc9c97"
+        }
+      }
+    }
   }
 }
