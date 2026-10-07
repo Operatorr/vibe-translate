@@ -1,0 +1,67 @@
+{
+  "model": "eleven_v4",
+  "voices": {
+    "yakuza": {
+      "id": "YkUoVuNq2782tso28g8Q",
+      "name": "PiropiroRX - Anime attractive male"
+    },
+    "friend": {
+      "id": "VjM0zvb6QkS598Vdla0r",
+      "name": "Sey - Bright, Youthful, Conversational"
+    },
+    "casual": {
+      "id": "NFQPFxDUGuX0t5QukIkY",
+      "name": "Izu - Natural, Calm & Friendly"
+    },
+    "keigo": {
+      "id": "HEteSZ3YGHkHosuAQYMF",
+      "name": "Rinko - Friendly Customer Support"
+    },
+    "keigoplus": {
+      "id": "mDxkcO3nsRCNeB4si9qg",
+      "name": "Kaori - Classy"
+    },
+    "emperor": {
+      "id": "D3L9PtKnIVJXdgK444Ey",
+      "name": "Ryu - Characters"
+    }
+  },
+  "recordings": {
+    "yakuza": {
+      "voiceId": "YkUoVuNq2782tso28g8Q",
+      "text": "黙って俺について来い。後悔はさせねぇ。",
+      "model": "eleven_v4",
+      "sha256": "39d9b24d757dc6d7976eedb12372b3c2002e1ca1fdf25ae0cf348b66682ca32b"
+    },
+    "friend": {
+      "voiceId": "VjM0zvb6QkS598Vdla0r",
+      "text": "黙ってついてきてよ。後悔はさせないから！",
+      "model": "eleven_v4",
+      "sha256": "8f2d6d7fa18b71e80779b709bbba9d90c0de3e70ae127696807c81f18bd3d5ff"
+    },
+    "casual": {
+      "voiceId": "NFQPFxDUGuX0t5QukIkY",
+      "text": "黙ってついてきてください。後悔はさせません。",
+      "model": "eleven_v4",
+      "sha256": "bba92d4aa608c63f7b9d0c3fe078064a7abbe6846777d0434dff40384366f06d"
+    },
+    "keigo": {
+      "voiceId": "HEteSZ3YGHkHosuAQYMF",
+      "text": "お黙りになって、私についてきてください。ご後悔はさせません。",
+      "model": "eleven_v4",
+      "sha256": "4807ea6f523df7fb2b5e4a687b8f2e1ea28365743568622fc0861a548691c493"
+    },
+    "keigoplus": {
+      "voiceId": "mDxkcO3nsRCNeB4si9qg",
+      "text": "恐れ入りますが、お言葉を控えていただき、私の後をご一緒くださいませ。ご後悔はさせません。",
+      "model": "eleven_v4",
+      "sha256": "8315de817ab0e56246e5072ec7efa114f4e825ea7b7dbf4b72608ed7fe4bf7a7"
+    },
+    "emperor": {
+      "voiceId": "D3L9PtKnIVJXdgK444Ey",
+      "text": "言の葉を慎みて、朕に従ひ来たれ。後の悔ゆることなからしめむ。",
+      "model": "eleven_v4",
+      "sha256": "bce965aa41fe3253d72ac3f04e033f0e6e6fb3dde3758d95160f7f860eaed9bc"
+    }
+  }
+}

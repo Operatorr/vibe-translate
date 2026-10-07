@@ -7,6 +7,7 @@
     "dev": "wrangler dev",
     "dev:vite": "vite",
     "dev:full": "concurrently -k -n worker,vite -c cyan,magenta \"pnpm dev\" \"pnpm dev:vite\"",
+    "demo:audio": "node scripts/generate-demo-audio.ts",
     "build": "tsc --noEmit && vite build",
     "test": "vitest run",
     "bench": "vitest run --config vitest.bench.config.ts",

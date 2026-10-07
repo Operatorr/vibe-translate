@@ -1656,7 +1656,7 @@ body,
 .demo__output {
   flex: 1;
   min-height: 160px;
-  font: 400 18px/1.55 var(--font-sans);
+  font: 400 22px/1.6 var(--font-sans);
   white-space: pre-wrap;
   color: var(--fg);
 }
@@ -4623,14 +4623,28 @@ body,
   }
   .landing-main .demo__pane {
     padding: 16px;
+    min-height: 0;
   }
   .landing-main .demo__textarea {
     font-size: 16px;
-    min-height: 100px;
+    flex: none;
+    height: 3.1em;
+    min-height: 0;
   }
   .landing-main .demo__pane--output {
     border-top: 1px solid var(--border);
-    min-height: 150px;
+  }
+  .landing-main .demo__output {
+    flex: none;
+    min-height: 3.2em;
+    font-size: 18px;
+  }
+  .landing-main .demo__icon-btn {
+    width: 44px;
+    height: 44px;
+  }
+  .landing-main .hero__bench-item:last-child {
+    grid-column: 1 / -1;
   }
   .landing-main .demo__ctrls {
     padding: 20px 16px;

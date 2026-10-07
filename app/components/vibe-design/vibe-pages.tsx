@@ -20,9 +20,7 @@ const DEMO_PAIRS = DEMO_PAIRS_JA as Record<string, string>
 const VIBE_PRESETS = VIBE_PRESETS_PER_LANG as Record<string, any[]>
 
 const LandingDemo = () => {
-  const [text, setText] = React.useState(
-    "Could you write down your recipe so I don't forget?",
-  )
+  const text = "Stop talking and follow me. You won't regret it."
   const [vibeIdx, setVibeIdx] = React.useState(3) // keigo
   const [out, setOut] = React.useState('')
   const [busy, setBusy] = React.useState(false)
@@ -32,6 +30,9 @@ const LandingDemo = () => {
   >('idle')
   const copyTimerRef = React.useRef<number | null>(null)
   const audioRef = React.useRef<HTMLAudioElement | null>(null)
+  const streamTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  )
 
   const vibes = VIBE_PRESETS['ja-JP']
   const activeVibe = vibes[vibeIdx]
@@ -44,12 +45,13 @@ const LandingDemo = () => {
       audioRef.current.pause()
       audioRef.current.onended = null
       audioRef.current.onerror = null
+      audioRef.current.onplaying = null
       audioRef.current = null
     }
   }, [])
 
   const run = () => {
-    if (busy) return
+    if (streamTimerRef.current) clearTimeout(streamTimerRef.current)
     releaseAudio()
     setAudioStatus('idle')
     setBusy(true)
@@ -59,7 +61,7 @@ const LandingDemo = () => {
       if (i <= target.length) {
         setOut(target.slice(0, i))
         i += Math.max(1, Math.round(target.length / 40))
-        setTimeout(tick, 28)
+        streamTimerRef.current = setTimeout(tick, 28)
       } else {
         setOut(target)
         setBusy(false)
@@ -91,27 +93,32 @@ const LandingDemo = () => {
 
     setAudioStatus('loading')
 
-    try {
-      releaseAudio()
-
-      const audio = new Audio(`/demo/vibe-${activeVibe.id}.mp3`)
-      audioRef.current = audio
-      audio.onended = () => {
-        releaseAudio()
-        setAudioStatus('idle')
-      }
-      audio.onerror = () => {
-        releaseAudio()
-        setAudioStatus('idle')
-        toast.error('Audio playback failed.')
-      }
-
-      setAudioStatus('playing')
-      await audio.play()
-    } catch (error) {
+    releaseAudio()
+    const audio = new Audio(`/demo/vibe-${activeVibe.id}.mp3`)
+    audioRef.current = audio
+    const fail = () => {
+      // A media error can also reject play(); report it only once. Ignore a
+      // pending rejection from a clip cancelled by a Vibe change or unmount.
+      if (audioRef.current !== audio) return
       releaseAudio()
       setAudioStatus('idle')
-      toast.error(error instanceof Error ? error.message : 'Audio failed.')
+      toast.error('Audio playback failed. Please try again.')
+    }
+
+    try {
+      audio.onplaying = () => {
+        if (audioRef.current === audio) setAudioStatus('playing')
+      }
+      audio.onended = () => {
+        if (audioRef.current !== audio) return
+        releaseAudio()
+        setAudioStatus('idle')
+      }
+      audio.onerror = fail
+
+      await audio.play()
+    } catch {
+      fail()
     }
   }
 
@@ -122,6 +129,7 @@ const LandingDemo = () => {
   React.useEffect(() => {
     return () => {
       if (copyTimerRef.current) window.clearTimeout(copyTimerRef.current)
+      if (streamTimerRef.current) clearTimeout(streamTimerRef.current)
       releaseAudio()
     }
   }, [releaseAudio])
@@ -150,7 +158,6 @@ const LandingDemo = () => {
             </div>
             <div className="demo__bar-right">
               <span style={{ color: 'var(--turq-400)' }}>● online</span>
-              <span>vibe-translate-v0.42</span>
             </div>
           </div>
 
@@ -185,16 +192,12 @@ const LandingDemo = () => {
                 data-lenis-prevent
                 className="demo__textarea"
                 value={text}
-                onChange={(e) => setText(e.target.value)}
-                placeholder="Type something to translate..."
+                readOnly
               />
             </div>
             <div className="demo__divider"></div>
             <div className="demo__pane demo__pane--output">
-              <div
-                className="demo__output"
-                style={{ fontSize: 22, lineHeight: 1.6 }}
-              >
+              <div className="demo__output">
                 {out || (
                   <span className="demo__output--empty">
                     Output streams here.
@@ -390,7 +393,7 @@ const LandingContent = ({ onNavigate }: { onNavigate: NavigateFn }) => {
           <div className="hero__content">
             <div className="hero__eyebrow">
               <span className="tag tag--accent">
-                <span className="dot"></span> v0.42 · Japanese keigo levels now
+                <span className="dot"></span> Japanese keigo levels now
                 respected
               </span>
             </div>
@@ -428,10 +431,6 @@ const LandingContent = ({ onNavigate }: { onNavigate: NavigateFn }) => {
               <div className="hero__bench-item">
                 <span className="hero__bench-num">6</span>
                 <span>vibe stops</span>
-              </div>
-              <div className="hero__bench-item">
-                <span className="hero__bench-num">0.42</span>
-                <span>current build</span>
               </div>
               <div className="hero__bench-item">
                 <span className="hero__bench-num">12k</span>
