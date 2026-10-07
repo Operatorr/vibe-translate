@@ -36,6 +36,7 @@ import {
 } from '@/hooks/use-app-data'
 import { ApiError } from '@/lib/api'
 import { authClient, signOut } from '@/lib/auth-client'
+import { toCharacterPatch } from '@/lib/character-draft'
 import { cssVars } from '@/lib/css-vars'
 import {
   downloadTextFile,
@@ -643,7 +644,10 @@ export function AppExperience() {
   const saveCharacter = async (input: CharacterInput) => {
     try {
       if (panel?.mode === 'edit') {
-        await updateCharacter.mutateAsync({ id: panel.character.id, ...input })
+        await updateCharacter.mutateAsync({
+          id: panel.character.id,
+          ...toCharacterPatch(input, panel.character),
+        })
         toast.success('Character saved.')
       } else {
         const created = await createCharacter.mutateAsync(input)

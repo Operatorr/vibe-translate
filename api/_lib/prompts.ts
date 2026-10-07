@@ -39,6 +39,19 @@ if (MISSING_REGISTER.length > 0) {
   )
 }
 
+const CANTONESE = /cantonese|廣東話|广东话|粵語|粤语/i
+const MANDARIN = /mandarin|國語|国语|普通話|普通话|華語|华语/i
+const NEGATED_CANTONESE =
+  /\b(?:not|no|non|without)[\s-]+(?:in[\s-]+)?cantonese|(?:不|唔|非)(?:說|说|講|讲|用)?(?:廣東話|广东话|粵語|粤语)/i
+
+// Conservative: written Cantonese only when the region asks for Cantonese and
+// neither negates it ("not Cantonese") nor also names Mandarin. Anything
+// ambiguous falls back to Mandarin, which the guidance lets the persona override.
+export function requestsCantonese(region: string | undefined): boolean {
+  if (!region || !CANTONESE.test(region)) return false
+  return !NEGATED_CANTONESE.test(region) && !MANDARIN.test(region)
+}
+
 // Script and spoken variety are separate: Cantonese can use traditional
 // characters even when the speaker's region is Guangzhou.
 export function targetLanguageGuidance(
@@ -48,10 +61,7 @@ export function targetLanguageGuidance(
   if (targetLanguage === 'zh-CN')
     return 'Use Mandarin in simplified characters, with vocabulary appropriate to the selected region.'
   if (targetLanguage === 'zh-TW') {
-    const cantonese = /cantonese|廣東話|广东话|粵語|粤语/i.test(
-      persona.region ?? '',
-    )
-    return cantonese
+    return requestsCantonese(persona.region)
       ? 'Use written Cantonese in traditional characters, with vocabulary appropriate to the selected region. Do not switch to simplified characters for Guangzhou.'
       : 'Use Taiwanese Mandarin in traditional characters unless the persona explicitly requests another Chinese variety.'
   }
@@ -88,6 +98,12 @@ export function describeVerbosity(value: number): string {
 }
 
 export type ChatMessage = { role: 'system' | 'user'; content: string }
+
+// Bump whenever the canonical translate prompt (no persona, no instructions)
+// changes what the model is told. It is part of the shared translation-cache
+// fingerprint, so a bump stops serving results produced under the old prompt.
+// 2: script and variety guidance for zh-CN, zh-TW and th-TH targets.
+export const TRANSLATE_PROMPT_REVISION = 2
 
 // Build the two-message prompt for one translation. The system message is the
 // stable instruction surface (register, persona, output contract, alignment

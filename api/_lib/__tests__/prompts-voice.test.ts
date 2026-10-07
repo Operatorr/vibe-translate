@@ -5,6 +5,7 @@ import {
   buildTranslateMessages,
   describeVerbosity,
   formatPersona,
+  requestsCantonese,
 } from '../prompts'
 
 // Voice fields (tone, verbosity) and the code-span rule added with the app shell.
@@ -87,6 +88,40 @@ describe('character voice and language constraints', () => {
     )
     expect(prompt('zh-CN', 'Singapore')).toContain(
       'Use Mandarin in simplified characters',
+    )
+  })
+
+  it.each([
+    'Hong Kong (Mandarin, not Cantonese)',
+    'Guangzhou, non-Cantonese speaker',
+    'Hong Kong, no Cantonese',
+    '香港（不講粵語）',
+  ])('does not force written Cantonese for "%s"', (region) => {
+    expect(requestsCantonese(region)).toBe(false)
+    expect(prompt('zh-TW', region)).toContain(
+      'Use Taiwanese Mandarin in traditional characters',
+    )
+    expect(prompt('zh-TW', region)).not.toContain('written Cantonese')
+  })
+
+  it.each(['Hong Kong (Cantonese)', 'Macau, speaks 粵語', '廣東話'])(
+    'detects an explicit Cantonese request in "%s"',
+    (region) => {
+      expect(requestsCantonese(region)).toBe(true)
+    },
+  )
+
+  it('uses Thai script and regional vocabulary without inferring gender', () => {
+    const thai = prompt('th-TH', 'Chiang Mai (North)')
+    expect(thai).toContain('Use Thai script')
+    expect(thai).toContain('regional vocabulary appropriate to the selected')
+    expect(thai).toContain('Do not infer the speaker’s gender from the region')
+    expect(thai).not.toMatch(/simplified|traditional characters|Cantonese/)
+  })
+
+  it('adds no script guidance for Japanese targets', () => {
+    expect(prompt('ja-JP', 'Osaka (Kansai)')).not.toMatch(
+      /Use (Mandarin|Taiwanese|written Cantonese|Thai script)/,
     )
   })
 })

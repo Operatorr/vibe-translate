@@ -28,6 +28,19 @@ export function describeVerbosity(value: number): string {
   return 'expansive — use fuller sentences without adding facts or explanations'
 }
 
+const CANTONESE = /cantonese|廣東話|广东话|粵語|粤语/i
+const MANDARIN = /mandarin|國語|国语|普通話|普通话|華語|华语/i
+const NEGATED_CANTONESE =
+  /\b(?:not|no|non|without)[\s-]+(?:in[\s-]+)?cantonese|(?:不|唔|非)(?:說|说|講|讲|用)?(?:廣東話|广东话|粵語|粤语)/i
+
+// Conservative: written Cantonese only when the region asks for Cantonese and
+// neither negates it ("not Cantonese") nor also names Mandarin. Anything
+// ambiguous falls back to Mandarin, which the guidance lets the persona override.
+export function requestsCantonese(region: string | undefined): boolean {
+  if (!region || !CANTONESE.test(region)) return false
+  return !NEGATED_CANTONESE.test(region) && !MANDARIN.test(region)
+}
+
 // Script and spoken variety are separate: Cantonese can use traditional
 // characters even when the speaker's region is Guangzhou.
 export function targetLanguageGuidance(
@@ -37,10 +50,7 @@ export function targetLanguageGuidance(
   if (targetLanguage === 'zh-CN')
     return 'Use Mandarin in simplified characters, with vocabulary appropriate to the selected region.'
   if (targetLanguage === 'zh-TW') {
-    const cantonese = /cantonese|廣東話|广东话|粵語|粤语/i.test(
-      persona.region ?? '',
-    )
-    return cantonese
+    return requestsCantonese(persona.region)
       ? 'Use written Cantonese in traditional characters, with vocabulary appropriate to the selected region. Do not switch to simplified characters for Guangzhou.'
       : 'Use Taiwanese Mandarin in traditional characters unless the persona explicitly requests another Chinese variety.'
   }

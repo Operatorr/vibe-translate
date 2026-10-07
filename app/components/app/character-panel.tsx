@@ -9,13 +9,19 @@ import {
 } from '@/components/vibe-design/design-data'
 import type { CharacterInput } from '@/hooks/use-app-data'
 import {
+  type Draft,
+  draftFrom,
+  switchTargetLanguage,
+  toInput,
+} from '@/lib/character-draft'
+import {
   CHARACTER_LANGUAGES,
   SOURCE_LANGUAGES,
-  REGION_SUGGESTIONS,
+  getRegionsForLanguage,
   getTraitsForLanguage,
 } from '@/lib/character-options'
 import { initialsFor } from '@/lib/initials'
-import { characterFormSchema } from '@/lib/schemas'
+import { characterEditSchema, characterFormSchema } from '@/lib/schemas'
 import { compileSystemPrompt } from '@/lib/system-prompt'
 import type { Character, VibeStop } from '@/lib/types'
 
@@ -23,8 +29,6 @@ const LANGUAGE_NAMES = LANG_NAME as Record<string, string>
 const LANGUAGE_CODES = CHARACTER_LANGUAGES
 
 const TONE_OPTIONS = ['warm', 'dry', 'playful', 'stern', 'gentle', 'brisk']
-// Slider position that means "no verbosity guidance" (omitted from the persona).
-const DEFAULT_VERBOSITY = 0.4
 const COLORS = [
   'var(--magenta-400)',
   'var(--cyan-400)',
@@ -34,64 +38,6 @@ const COLORS = [
   'var(--amber-400)',
   'var(--red-400)',
 ]
-
-type Draft = {
-  name: string
-  age: string
-  region: string
-  formality: string
-  tone: string
-  verbosity: number
-  temperature: number
-  traits: Set<string>
-  sourceLanguage: string
-  targetLanguage: string
-  defaultVibe: VibeStop
-  color: string
-  instructions: string
-}
-
-function draftFrom(char: Character | null): Draft {
-  return {
-    name: char?.name ?? '',
-    age: char?.persona.age ?? '',
-    region: char?.persona.region ?? '',
-    formality: char?.persona.formality ?? '',
-    tone: char?.persona.tone ?? '',
-    verbosity: char?.persona.verbosity ?? DEFAULT_VERBOSITY,
-    temperature: char?.temperature ?? 0.4,
-    traits: new Set(char?.persona.traits ?? []),
-    sourceLanguage: char?.sourceLanguage ?? 'en-US',
-    targetLanguage: char?.targetLanguage ?? 'ja-JP',
-    defaultVibe: char?.defaultVibe ?? 'casual',
-    color: char?.color ?? COLORS[Math.floor(Math.random() * COLORS.length)],
-    instructions: char?.instructions ?? '',
-  }
-}
-
-function toInput(d: Draft): CharacterInput {
-  const persona: CharacterInput['persona'] = { traits: Array.from(d.traits) }
-  if (d.age.trim()) persona.age = d.age.trim()
-  if (d.region.trim()) persona.region = d.region.trim()
-  if (d.formality.trim()) persona.formality = d.formality.trim()
-  if (d.tone.trim()) persona.tone = d.tone.trim()
-  // Voice fields are persona: any value makes the Character non-canonical and
-  // keeps it out of the shared translation cache (adr/0004). So "Neutral" tone
-  // and the default verbosity are omitted rather than written as a value.
-  if (Math.abs(d.verbosity - DEFAULT_VERBOSITY) > 0.001)
-    persona.verbosity = Math.round(d.verbosity * 100) / 100
-  return {
-    name: d.name.trim(),
-    initials: initialsFor(d.name),
-    color: d.color,
-    sourceLanguage: d.sourceLanguage,
-    targetLanguage: d.targetLanguage,
-    defaultVibe: d.defaultVibe,
-    temperature: Math.round(d.temperature * 100) / 100,
-    persona,
-    instructions: d.instructions.trim() || undefined,
-  }
-}
 
 const Slider = ({
   value,
@@ -152,7 +98,9 @@ export function CharacterPanel({
   onDelete?: () => void
   saving: boolean
 }) {
-  const [d, setD] = React.useState<Draft>(() => draftFrom(character))
+  const [d, setD] = React.useState<Draft>(() =>
+    draftFrom(character, COLORS[Math.floor(Math.random() * COLORS.length)]),
+  )
   const [helpOpen, setHelpOpen] = React.useState(false)
   const [error, setError] = React.useState<string | null>(null)
   // Deleting cascades to every Thread and Segment, so it takes typing the
@@ -162,7 +110,10 @@ export function CharacterPanel({
   const patch = (p: Partial<Draft>) => setD((prev) => ({ ...prev, ...p }))
   const vibes = getVibesForLang(d.targetLanguage)
   const isCreate = character === null
-  const regions = REGION_SUGGESTIONS[d.targetLanguage] ?? []
+  const regions = getRegionsForLanguage(d.targetLanguage)
+  // The former formality field is edit-only: shown for Characters that saved a
+  // value, and kept mounted while the draft is cleared so it can be retyped.
+  const hasVoiceNotes = !!character?.persona.formality
   const traitOptions = getTraitsForLanguage(d.targetLanguage)
 
   React.useEffect(() => {
@@ -194,7 +145,10 @@ export function CharacterPanel({
     })
 
   const submit = async () => {
-    const parsed = characterFormSchema.safeParse(input)
+    const schema = character
+      ? characterEditSchema(character)
+      : characterFormSchema
+    const parsed = schema.safeParse(input)
     if (!parsed.success) {
       setError(parsed.error.issues[0]?.message ?? 'Check the form')
       return
@@ -316,24 +270,9 @@ export function CharacterPanel({
                 id="cp-tgt"
                 className="cust__select"
                 value={d.targetLanguage}
-                onChange={(e) => {
-                  const targetLanguage = e.target.value
-                  // Reset only language-specific suggestions; preserve custom
-                  // regions and traits rather than silently discarding them.
-                  const oldTraits = getTraitsForLanguage(d.targetLanguage)
-                  const nextTraits = getTraitsForLanguage(targetLanguage)
-                  patch({
-                    targetLanguage,
-                    region: regions.includes(d.region) ? '' : d.region,
-                    traits: new Set(
-                      [...d.traits].filter(
-                        (trait) =>
-                          !oldTraits.includes(trait) ||
-                          nextTraits.includes(trait),
-                      ),
-                    ),
-                  })
-                }}
+                onChange={(e) =>
+                  setD((prev) => switchTargetLanguage(prev, e.target.value))
+                }
               >
                 {!LANGUAGE_CODES.some((code) => code === d.targetLanguage) && (
                   <option value={d.targetLanguage} disabled>
@@ -453,7 +392,7 @@ export function CharacterPanel({
               controls politeness and formality, so a warm Keigo translation
               stays polite.
             </p>
-            {d.formality && (
+            {hasVoiceNotes && (
               <div className="cust__field cust__field--top">
                 <label className="cust__label" htmlFor="cp-formality">
                   Existing voice notes

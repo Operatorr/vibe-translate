@@ -40,7 +40,10 @@ export const SOURCE_LANGUAGES = ['en-US', ...TARGET_LANGUAGES] as const
 export const sourceLanguageSchema = z.enum(SOURCE_LANGUAGES)
 export const targetLanguageSchema = z.enum(TARGET_LANGUAGES)
 
-export const characterCreateSchema = z.object({
+// Shared Character fields without defaults. Create layers defaults on top;
+// update must not, or a partial PATCH (e.g. the temperature slider) would
+// overwrite the stored vibe and persona with the create-time defaults.
+const characterFields = {
   name: z.string().trim().min(1).max(80),
   initials: z.string().trim().max(4).optional(),
   // Rendered as an inline CSS background (including on public share pages), so
@@ -56,11 +59,18 @@ export const characterCreateSchema = z.object({
     .optional(),
   sourceLanguage: sourceLanguageSchema,
   targetLanguage: targetLanguageSchema,
-  defaultVibe: vibeStopSchema.default('casual'),
-  temperature: z.number().min(0).max(1).default(0.4),
-  persona: personaSchema.default({ traits: [] }),
+  defaultVibe: vibeStopSchema,
+  temperature: z.number().min(0).max(1),
+  persona: personaSchema,
   // Free-form system-prompt extension. Appended to the translate prompt.
   instructions: z.string().trim().max(2000).optional(),
+}
+
+export const characterCreateSchema = z.object({
+  ...characterFields,
+  defaultVibe: characterFields.defaultVibe.default('casual'),
+  temperature: characterFields.temperature.default(0.4),
+  persona: characterFields.persona.default({ traits: [] }),
 })
 
 // Onboarding dictation: free-form prompt → Character draft. Free, one-shot,
@@ -82,7 +92,8 @@ export const characterDraftSchema = z.object({
   instructions: z.string().trim().max(2000).optional(),
 })
 
-export const characterUpdateSchema = characterCreateSchema
+export const characterUpdateSchema = z
+  .object(characterFields)
   .partial()
   .refine(
     (value) => Object.keys(value).length > 0,

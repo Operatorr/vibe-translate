@@ -260,9 +260,7 @@ const LandingDemo = () => {
 
           <div className="demo__panes">
             <div className="demo__pane">
-              <p aria-label="Demo source text" className="demo__source">
-                {text}
-              </p>
+              <p className="demo__source">{text}</p>
             </div>
             <div className="demo__divider"></div>
             <div className="demo__pane demo__pane--output">

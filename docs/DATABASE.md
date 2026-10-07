@@ -199,18 +199,18 @@ Index: `(user_id, created_at desc)`.
 
 Shared, cross-user cache of **canonical** translations (no persona — tone and verbosity included — no instructions, default temperature). Privacy-safe — see [adr/0004](./adr/0004-shared-canonical-translation-cache.md). **No `user_id`** by design.
 
-| column                               | type                    | notes                                                                |
-| ------------------------------------ | ----------------------- | -------------------------------------------------------------------- |
-| `id`                                 | uuid pk                 |                                                                      |
-| `fingerprint`                        | text unique             | sha-256 of `(source_text, source_lang, target_lang, vibe, model_id)` |
-| `source_language`, `target_language` | text                    |                                                                      |
-| `vibe`                               | `vibe_stop`             |                                                                      |
-| `model_id`                           | text                    | which translate model produced it (part of the key)                  |
-| `source_text`, `target_text`         | text                    | the cached mapping                                                   |
-| `token_alignment`                    | jsonb                   | copied into the per-user Segment on a hit                            |
-| `source_embedding`                   | `vector(1536)` nullable | copied into the per-user Segment on a hit, avoiding a re-embed       |
-| `hits`                               | int                     | incremented per lookup; supports eviction                            |
-| `created_at`, `last_used_at`         | timestamptz             |                                                                      |
+| column                               | type                    | notes                                                                                 |
+| ------------------------------------ | ----------------------- | ------------------------------------------------------------------------------------- |
+| `id`                                 | uuid pk                 |                                                                                       |
+| `fingerprint`                        | text unique             | sha-256 of `(source_text, source_lang, target_lang, vibe, model_id, prompt_revision)` |
+| `source_language`, `target_language` | text                    |                                                                                       |
+| `vibe`                               | `vibe_stop`             |                                                                                       |
+| `model_id`                           | text                    | which translate model produced it (part of the key)                                   |
+| `source_text`, `target_text`         | text                    | the cached mapping                                                                    |
+| `token_alignment`                    | jsonb                   | copied into the per-user Segment on a hit                                             |
+| `source_embedding`                   | `vector(1536)` nullable | copied into the per-user Segment on a hit, avoiding a re-embed                        |
+| `hits`                               | int                     | incremented per lookup; supports eviction                                             |
+| `created_at`, `last_used_at`         | timestamptz             |                                                                                       |
 
 Index: unique `(fingerprint)`, `(last_used_at desc)`. Derived data — safe to truncate and rebuild.
 

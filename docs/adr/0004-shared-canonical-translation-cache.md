@@ -4,7 +4,7 @@ status: accepted
 
 # Shared canonical translation cache
 
-A global `translation_cache` table lets identical translation requests across users reuse a prior result — instant and **free** (zero credits, zero model call). It is keyed by a SHA-256 **fingerprint** of `(source_text, source_language, target_language, vibe, model_id)` and stores only `target_text`, `token_alignment`, and `source_embedding`. It carries **no `user_id`, no persona, no instructions**.
+A global `translation_cache` table lets identical translation requests across users reuse a prior result — instant and **free** (zero credits, zero model call). It is keyed by a SHA-256 **fingerprint** of `(source_text, source_language, target_language, vibe, model_id, prompt_revision)` and stores only `target_text`, `token_alignment`, and `source_embedding`. It carries **no `user_id`, no persona, no instructions**.
 
 Only **canonical** translations are cached globally: those produced with an empty persona, empty instructions, and the default temperature. Personalized translations (any persona, any instructions, non-default temperature) are saved as per-user **Segments** but are never written to the shared cache.
 
@@ -19,4 +19,5 @@ We rejected sharing the per-user **Translation memory** directly because those S
 - Translate flow gains two pre-checks before any model call: (1) in-thread Segment for `(thread, source_text, vibe)`, (2) global `translation_cache` fingerprint lookup (canonical requests only). Both yield 0-credit, instant results.
 - On a cache miss for a canonical request: translate, write the Segment, and upsert the cache (storing `source_embedding` so future hits copy it without re-embedding).
 - The cache is derived data — safe to truncate and rebuild. `hits` / `last_used_at` support eviction later if it grows.
+- `prompt_revision` is `TRANSLATE_PROMPT_REVISION` in `api/_lib/prompts.ts`. Bump it whenever the canonical prompt (no persona, no instructions) changes; new requests then miss old entries instead of being served output from the previous prompt. Orphaned rows need no migration.
 - Per-user **Translation memory** (semantic embedding search) and the shared **translation cache** (exact fingerprint match) are distinct mechanisms with distinct privacy properties — see [CONTEXT.md](../CONTEXT.md).
