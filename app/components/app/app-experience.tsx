@@ -15,6 +15,7 @@ import {
 import { CommandPalette, SiteNav } from '@/components/vibe-design/shell'
 import { useVibeFrame } from '@/components/vibe-design/use-vibe-frame'
 import {
+  useAppBootstrap,
   useCharacters,
   useCreateCharacter,
   useCreateSegment,
@@ -34,7 +35,7 @@ import {
   useUpdateThread,
   type CharacterInput,
 } from '@/hooks/use-app-data'
-import { ApiError } from '@/lib/api'
+import { ApiError, apiFetch } from '@/lib/api'
 import { authClient, signOut } from '@/lib/auth-client'
 import { toCharacterPatch } from '@/lib/character-draft'
 import { cssVars } from '@/lib/css-vars'
@@ -45,7 +46,7 @@ import {
 } from '@/lib/markdown-export'
 import { timeAgo } from '@/lib/time'
 import { speak, stopSpeaking } from '@/lib/tts'
-import type { Character, Thread, VibeStop } from '@/lib/types'
+import type { Character, Segment, Thread, VibeStop } from '@/lib/types'
 import { copyText } from '@/lib/clipboard'
 import { initialsFor } from '@/lib/initials'
 
@@ -57,6 +58,8 @@ import {
   SegmentCard,
   type SegmentView,
 } from './segment-card'
+import { historySegments } from '@/lib/segment-history'
+
 import { SharePopover, ThreadOptionsMenu } from './thread-menus'
 
 const FLAGS = LANG_FLAG as Record<string, string>
@@ -130,9 +133,11 @@ export function AppExperience() {
   const userId = authClient.useSession().data?.user.id
 
   // ---- data ---------------------------------------------------------------
-  const me = useMe()
-  const characters = useCharacters()
   const [storedCharId] = React.useState(() => readStoredCharacter(userId))
+  const bootstrap = useAppBootstrap(storedCharId)
+  const domainReady = !bootstrap.isFetching
+  const me = useMe(domainReady)
+  const characters = useCharacters(domainReady)
   const [activeCharId, setActiveCharIdState] = React.useState<string | null>(
     storedCharId,
   )
@@ -178,7 +183,10 @@ export function AppExperience() {
   }, [threads.data, thread])
 
   const segments = useSegments(thread?.id ?? null)
-  const segList = React.useMemo(() => segments.data ?? [], [segments.data])
+  const segList = React.useMemo(
+    () => historySegments(segments.data),
+    [segments.data],
+  )
   // Newest first on screen; the API returns oldest first.
   const ordered = React.useMemo(() => [...segList].reverse(), [segList])
 
@@ -192,7 +200,8 @@ export function AppExperience() {
   const createSegment = useCreateSegment()
   const retrySegment = useRetrySegment()
   const updateMe = useUpdateMe()
-  const share = useThreadShare(thread?.id ?? null)
+  const [shareOpen, setShareOpen] = React.useState(false)
+  const share = useThreadShare(thread?.id ?? null, shareOpen)
   const setShare = useSetThreadShare()
   const fetchTts = useTtsFetch()
 
@@ -512,20 +521,24 @@ export function AppExperience() {
     }
   }
 
-  const markdownFor = () =>
+  const markdownFor = async () =>
     thread && char
       ? threadToMarkdown({
           title: thread.title,
           character: char,
-          segments: segList,
+          // Export is deliberately complete, even when only one UI page loaded.
+          segments: await apiFetch<Segment[]>(
+            `/api/segments?threadId=${thread.id}`,
+          ),
           shareUrl: share.data?.url ?? null,
         })
       : null
 
-  const download = () => {
-    const md = markdownFor()
-    if (!md || !thread) return
+  const download = async () => {
+    if (!thread) return
     try {
+      const md = await markdownFor()
+      if (!md) return
       downloadTextFile(`${slugify(thread.title)}.md`, md)
       toast.success('Markdown download started.')
     } catch {
@@ -534,9 +547,9 @@ export function AppExperience() {
   }
 
   const copyMarkdown = async () => {
-    const md = markdownFor()
-    if (!md) return
     try {
+      const md = await markdownFor()
+      if (!md) return
       await copyText(md)
       toast.success('Thread copied as Markdown.')
     } catch {
@@ -1040,8 +1053,11 @@ export function AppExperience() {
                   <Icon name="star" fill={thread.starred} />
                 </button>
                 <SharePopover
+                  onOpenChange={setShareOpen}
+                  error={share.isError}
+                  onRetry={() => void share.refetch()}
                   share={share.data}
-                  loading={share.isLoading || setShare.isPending}
+                  loading={share.isPending || setShare.isPending}
                   onToggle={toggleShare}
                 />
                 <button
@@ -1049,7 +1065,7 @@ export function AppExperience() {
                   className="workspace__icon-btn"
                   title="Download as Markdown"
                   aria-label="Download as Markdown"
-                  onClick={download}
+                  onClick={() => void download()}
                   disabled={segList.length === 0}
                 >
                   <Icon name="download" />
@@ -1155,7 +1171,7 @@ export function AppExperience() {
                   <SegmentCard
                     key={s.id}
                     seg={s}
-                    idx={ordered.length - i}
+                    idx={(thread?.segmentCount ?? ordered.length) - i}
                     isActive={i === 0 && !pendingHere}
                     collapsed={
                       !(i === 0 && !pendingHere) && !expanded.has(s.id)
@@ -1185,6 +1201,22 @@ export function AppExperience() {
                     speaking={speakingId === s.id}
                   />
                 ))}
+                {segments.hasNextPage && (
+                  <button
+                    type="button"
+                    className="vt-btn vt-btn--ghost"
+                    disabled={segments.isFetching}
+                    onClick={() =>
+                      void segments.fetchNextPage({ cancelRefetch: false })
+                    }
+                  >
+                    {segments.isFetchingNextPage
+                      ? 'Loading…'
+                      : segments.isFetchNextPageError
+                        ? 'Try loading older translations again'
+                        : 'Load older translations'}
+                  </button>
+                )}
               </>
             )}
           </div>

@@ -83,10 +83,16 @@ export function ThreadOptionsMenu({
 }
 
 export function SharePopover({
+  onOpenChange,
+  error,
+  onRetry,
   share,
   loading,
   onToggle,
 }: {
+  onOpenChange?: (open: boolean) => void
+  error?: boolean
+  onRetry?: () => void
   share: ThreadShare | undefined
   loading: boolean
   onToggle: (shared: boolean) => void
@@ -108,7 +114,10 @@ export function SharePopover({
   return (
     <Popover
       open={open}
-      onOpenChange={setOpen}
+      onOpenChange={(next) => {
+        setOpen(next)
+        onOpenChange?.(next)
+      }}
       label="Share thread"
       trigger={
         <button
@@ -126,9 +135,11 @@ export function SharePopover({
           <div>
             <div className="vt-share__title">Public link</div>
             <div className="vt-share__sub">
-              {checking
-                ? 'Checking link status…'
-                : 'Anyone with the link can read this thread — no account needed.'}
+              {error
+                ? 'Could not check link status.'
+                : checking
+                  ? 'Checking link status…'
+                  : 'Anyone with the link can read this thread — no account needed.'}
             </div>
           </div>
           <button
@@ -142,12 +153,22 @@ export function SharePopover({
             aria-checked={shared}
             aria-busy={loading}
             aria-label="Public link"
-            disabled={loading}
+            disabled={loading || share === undefined}
             onClick={() => onToggle(!shared)}
           >
             <span />
           </button>
         </div>
+        {error && (
+          <button
+            type="button"
+            className="vt-btn vt-btn--ghost"
+            onClick={onRetry}
+            disabled={loading}
+          >
+            Try again
+          </button>
+        )}
         {shared && share?.url && (
           <div className="vt-share__link">
             <input

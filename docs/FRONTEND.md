@@ -5,7 +5,7 @@
 ## Stack
 
 - **React 19 + Vite + TypeScript** (strict). Source under `app/`.
-- **TanStack Router** — file-based routes in `app/routes/`, generated `app/routeTree.gen.ts` (via `@tanstack/router-plugin` in `vite.config.ts`).
+- **TanStack Router** — automatically split file-based routes in `app/routes/`, generated `app/routeTree.gen.ts` (via `@tanstack/router-plugin` in `vite.config.ts`).
 - **TanStack Query** — server-state cache, invalidation, optimistic updates. Segment creates cancel stale reads before the call and before merging its response; an unloaded segment list is refetched in full.
 - **Better Auth** client (`better-auth/react`, `app/lib/auth-client.ts`) — auth/session over a same-origin httpOnly cookie. See [SECURITY.md](./SECURITY.md#authentication).
 - **Tailwind v4**, Radix, CVA, lucide, Framer Motion (see DESIGN.md).
@@ -55,11 +55,12 @@ Text-to-speech lives in `app/lib/tts.ts`: ElevenLabs via the worker for Pro+ Jap
 
 ## Data flow
 
-1. Components call domain hooks in `app/hooks/`.
-2. Hooks call `app/lib/api.ts`. Auth is the Better Auth session cookie (`credentials: 'include'`, same origin), so there are no tokens or auth headers to plumb. The `use-app-data.ts` queries are enabled only once `useSignedIn()` is `true`.
-3. **`app/lib/api.ts` is the only browser fetch wrapper** — it centralizes JSON handling, credentials, blob responses, and API error normalization (matching the `{ error: { message, status, details? } }` envelope from the worker).
-4. **TanStack Query** owns server-state caching, invalidation, optimistic updates, background refetch.
-5. Shell/UI state that is _not_ server-owned lives in React contexts, not Query.
+1. The cold product shell requests `/api/app/bootstrap`, which seeds the existing Query keys for me, Characters, the selected Character's Threads, and the first Segment page. Nested consumers do not repeat these reads. Bootstrap is a transport query (`gcTime: 0`), not a second snapshot cache; it only seeds missing domain data and cannot overwrite newer data or a cancelled account response. Warm returns use domain caches (30 seconds; me 60 seconds). Bootstrap failures fall back to individual queries and existing retry UI.
+2. Components call domain hooks in `app/hooks/`. Segment history uses 50-row backward cursor pages and an explicit **Load older translations** button; overlapping reads are blocked. Create/retry updates preserve loaded older pages and pagination cursors. Markdown download/copy reads complete history on demand. Share status loads when its popover opens (five-minute browser freshness), with explicit error/retry UI.
+3. Hooks call `app/lib/api.ts`. Auth is the Better Auth session cookie (`credentials: 'include'`, same origin), so there are no tokens or auth headers to plumb. The `use-app-data.ts` queries are enabled only once `useSignedIn()` is `true`.
+4. **`app/lib/api.ts` is the only browser fetch wrapper** — it centralizes JSON handling, credentials, blob responses, and API error normalization (matching the `{ error: { message, status, details? } }` envelope from the worker).
+5. **TanStack Query** owns server-state caching, invalidation, optimistic updates, background refetch.
+6. Shell/UI state that is _not_ server-owned lives in React contexts, not Query.
 
 Domain types in `app/lib/types.ts` (`Character`, `Thread`, `Segment`, `VibeStop`, `Persona`, `CreditBalance`, `ByokState`, …) are defined independently from the server's Zod inferences. They should agree with the API but are not generated from it — agreement is maintained by review, not a codegen step.
 
@@ -72,7 +73,7 @@ Domain types in `app/lib/types.ts` (`Character`, `Thread`, `Segment`, `VibeStop`
 
 - `public/sw.js` is the production service-worker template. The `pwaPrecache` Vite build plugin embeds the exact built HTML, injects all emitted assets (including lazy chunks) with SHA-256 integrity checks, and derives a version from the worker, HTML, bundle, manifest, and icons. The manifest/icon inventory is defined once in `build/pwa-precache.ts`. The entire shell and bundle must be precached before installation succeeds; integrity checks reject mismatched releases and SPA fallback HTML served as JavaScript. The shell is embedded rather than fetched from the mutable deployment root; icons/manifest are best-effort. Static assets are cache-first; navigations are network-first with the build's cached HTML as fallback. Online navigations never overwrite that shell with HTML from another release. Updates wait for open tabs to close before activation and old-cache cleanup. **`/api` and `/api/*` are never intercepted or cached**; only `/assets/*` and explicit public PWA assets enter the static cache. Runtime cache writes never reject unhandled. In `import.meta.env.DEV` the client unregisters this app's leftover worker and removes only its static caches so HMR/WebSocket is not intercepted. `public/_headers` and registration's `updateViaCache: 'none'` ensure service-worker updates bypass stale HTTP caches.
 - **Offline limits.** After a successful online visit, the installed app can open offline and display previously synced, account-scoped data. New translations, explanations, server-generated audio, sign-in, and sync require a connection; there is no offline generation or queued-mutation system.
-- `app/lib/query-cache-persist.tsx` provides cache readiness; the product gate waits for ownership to settle while public auth forms stay mounted. `query-cache-store.ts` persists selected data (`characters`, `threads`, `segments`, `activity`) under an IndexedDB key scoped by Better Auth user id, with original update timestamps. Only a settled session error permits hydration using the last confirmed owner; a confirmed signed-out session deletes their cache. Account changes cancel queries, clear all in-memory data, discard the previous owner’s blob, and hydrate only matching entries. Sign-out pauses the persister before clearing memory, waits for queued writes, then deletes the blob and owner pointer before ending the session and navigating home. The legacy unscoped blob is discarded.
+- `app/lib/query-cache-persist.tsx` provides cache readiness; the product gate waits for ownership to settle while public auth forms stay mounted. `query-cache-store.ts` persists selected data (`characters`, `threads`, `segment-pages`, `activity`) under an IndexedDB key scoped by Better Auth user id, with original update timestamps. Only a settled session error permits hydration using the last confirmed owner; a confirmed signed-out session deletes their cache. Account changes cancel and clear personalized queries (explicitly public share and diagnostics reads survive session hydration), discard the previous owner’s blob, and hydrate only matching entries. Sign-out pauses the persister before clearing memory, waits for queued writes, then deletes the blob and owner pointer before ending the session and navigating home. The legacy unscoped blob is discarded.
 
 ## Vibe presets on the client
 
@@ -85,3 +86,7 @@ The per-language **Vibe preset table** (`VIBE_PRESETS_PER_LANG` in `app/componen
 - `pnpm dev:full` — both together (the usual local command).
 - `pnpm build` — `tsc --noEmit && vite build`.
 - `pnpm lint` / `pnpm format` — ESLint / Prettier.
+
+## Performance and mutation ownership
+
+See [PERFORMANCE.md](./PERFORMANCE.md) for baseline/after evidence, coverage, cache rules, and remaining work. Query reads consume abort signals; a one-microtask check avoids launching the cancelled StrictMode request. Permanent 4xx errors are not automatically retried. Mutation callbacks capture account ownership at mutation start so a late success or rollback cannot repopulate the next account's Query cache. Persistence responds only to successful persisted-data changes and removals, coalesces bursts over 250 ms, and flushes pending work on page hide/visibility loss. Generation checks and serialized deletion still protect sign-out. Account-owned pre-pagination Segment arrays migrate for offline access; their next online refetch is bounded.

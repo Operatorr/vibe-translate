@@ -13,12 +13,12 @@
 ## Auth
 
 - The credential is the **Better Auth session cookie**: httpOnly, same origin, sent automatically (`credentials: 'include'`). There is no bearer token. `api/_lib/auth.ts → auth()` resolves the session (signed cookie cache, else DB), sets `userId` and `email` on Hono context (`c.get('userId')`, etc.), and returns `401` without one. Refreshed session cookies ride back on the handler's response. See [SECURITY.md](./SECURITY.md#authentication).
-- `auth()` doesn't touch the DB's `users` table. App-data handlers and billing checkout call `getOrCreateUser`, which upserts the app-side row and refreshes its email. Cancel, switch-plan, and export do not provision profiles.
+- `auth()` doesn't touch the DB's `users` table. App-data handlers and billing checkout call `getOrCreateUser`, which reads existing app-side rows without writes, synchronizes changed emails, and atomically provisions the row and signup grant on first use. Cancel, switch-plan, and export do not provision profiles.
 - The CORS layer allows the `APP_URL` origin only, with credentials and the `content-type` header.
 
 | Guarded prefix                                                             | Notes    |
 | -------------------------------------------------------------------------- | -------- |
-| `/api/users/*`                                                             | `auth()` |
+| `/api/app/*`, `/api/users/*`                                               | `auth()` |
 | `/api/characters/*`                                                        | `auth()` |
 | `/api/threads/*`                                                           | `auth()` |
 | `/api/segments/*`                                                          | `auth()` |
@@ -32,7 +32,7 @@
 
 Unguarded (intentionally public): **`/api/auth/*`** (Better Auth's own endpoints, which enforce their own origin and rate-limit checks — see [Auth endpoints](#auth-endpoints-better-auth)), `/api/health`, `/api/diagnostics`, `/api/waitlist`, **`POST /api/billing/webhooks/dodo`** (signature-verified), **`/api/share/:token`** (read-only share links; the unguessable token is the capability — see [SECURITY.md](./SECURITY.md#the-unauthenticated-surface)). **`/api/ai/text-to-speech` is authenticated** — it proxies to metered ElevenLabs, so the landing demo uses pre-rendered clips instead (see [SECURITY.md](./SECURITY.md#the-unauthenticated-surface)).
 
-Resource ids in paths (`:characterId`, `:threadId`, `:segmentId`) and the `characterId`/`threadId` query filters are UUIDs; a malformed id returns `404`, never a database `500`.
+Resource ids in paths (`:characterId`, `:threadId`, `:segmentId`) and the `characterId`/`threadId` query filters are UUIDs. Legacy resource routes reject malformed ids with `404`; the Zod-validated bootstrap and cursor-page query endpoints return `400`. Invalid ids never reach Postgres.
 
 ## Surface
 
@@ -68,7 +68,11 @@ Failed links and OAuth errors redirect to `/auth?error=<code>` (`onAPIError.erro
 - `DELETE /api/users/me/byok` → clears stored ciphertext + model overrides.
 - `PATCH /api/users/me/byok/models` → `byokModelsSchema` (`translateModelId?`, `explainModelId?`, may be `null` to clear). Validates `provider/model` shape only; OpenRouter is the authority on whether the model is real.
 
-### Characters
+### App bootstrap
+
+- `GET /api/app/bootstrap?characterId?=<uuid>` → authenticated `{ me, characters, threads, characterId, threadId, segmentPage }`. Only the selected Character's active Threads and the newest 50 Segments of its newest Thread are included. An unavailable or foreign Character selection falls back to the user's first active Character. Two SQL statements for an existing user: a read-only account lookup, then one scoped snapshot query. No shared personalized cache.
+
+## Characters
 
 A **Character** is the primary navigation surface.
 
@@ -99,7 +103,8 @@ One read-only public link per Thread.
 
 ### Segments
 
-- `GET /api/segments?threadId=...` → segments inside a thread.
+- `GET /api/segments/page?threadId=<uuid>&beforeCreatedAt?=<ISO timestamp>&beforeId?=<uuid>` → `{ segments, nextCursor }`. Newest 50 rows, returned chronologically; 51st row determines whether older history exists. Both cursor fields are required together. The strict `(created_at, id)` cursor preserves Postgres microseconds. All reads are user-scoped. The product uses this endpoint.
+- `GET /api/segments?threadId=...` → complete thread history, retained for explicit Markdown export; the unfiltered endpoint remains capped at 200 rows.
 - `POST /api/segments` → `segmentCreateSchema` (`threadId`, `sourceText`, `vibe?`). **Sync translate-and-return** — the worker resolves the Character (default_vibe, temperature, persona, source/target language), calls the translation provider, and returns a Segment with **server-produced** `targetText` and `tokenAlignment`. Omit `vibe` to select `characters.default_vibe` for this translation. The resolved stop is stored on the Segment; legacy null stops are returned as null ("Vibe not recorded"), including on public shares. Client does **not** supply target text.
   - **Free, instant pre-checks before any model call:** (1) an existing in-thread Segment for the same `(thread, sourceText, vibe)`, and (2) for _canonical_ requests (no persona fields — tone and verbosity included — no instructions, default temperature), a shared `translation_cache` hit. Either path costs **0 credits**.
   - **Charge ordering:** the credit hold is refunded only when the model call or the Segment insert fails. Once the Segment is stored it is charged, and the post-commit steps (cache seeding, thread recency, activity log) are best-effort and never refund. A Segment served from the shared cache carries `tokenUsage: { cached: true }`.

@@ -28,6 +28,7 @@ import {
 import type { AppEnv } from './_lib/env'
 import { formatError } from './_lib/errors'
 import {
+  appBootstrapSchema,
   byokModelsSchema,
   byokSetSchema,
   characterCreateSchema,
@@ -37,6 +38,7 @@ import {
   memorySearchSchema,
   onboardingDictateSchema,
   segmentCreateSchema,
+  segmentPageSchema,
   segmentUpdateSchema,
   textToSpeechSchema,
   threadCreateSchema,
@@ -126,6 +128,7 @@ app.post('/api/waitlist', zValidator('json', waitlistSchema), async (c) => {
 // own origin (trustedOrigins) and rate-limit checks. See api/_lib/auth.ts.
 app.on(['GET', 'POST'], '/api/auth/*', authHandler)
 
+app.use('/api/app/*', auth())
 app.use('/api/users/*', auth())
 app.use('/api/characters/*', auth())
 app.use('/api/threads/*', auth())
@@ -376,6 +379,65 @@ function mapSegment(r: SegmentDbRow) {
   }
 }
 
+// One authenticated snapshot removes browser waterfalls without a shared
+// personalized server cache. The CTEs all share one database snapshot.
+app.get('/api/app/bootstrap', zValidator('query', appBootstrapSchema), (c) => {
+  const { characterId } = c.req.valid('query')
+  const userId = c.get('userId')
+  return withDb(c.env, async (db) => {
+    const user = await getOrCreateUser(db, userId, c.get('email'))
+    const result = await db.query<{
+      characters: CharacterDbRow[]
+      threads: ThreadDbRow[]
+      segments: (SegmentDbRow & { cursor_created_at: string })[]
+      character_id: string | null
+      thread_id: string | null
+    }>(
+      `with character_list as (
+         select ${CHARACTER_COLUMNS} from characters
+         where user_id = $1 and archived_at is null
+       ), chosen_character as (
+         select id from character_list
+         order by (id = $2::uuid) desc nulls last, sort_order, created_at, id limit 1
+       ), thread_list as (
+         select ${THREAD_COLUMNS} from threads
+         where user_id = $1 and archived_at is null
+           and character_id = (select id from chosen_character)
+       ), chosen_thread as (
+         select id from thread_list order by updated_at desc, id desc limit 1
+       ), segment_page as (
+         select ${SEGMENT_COLUMNS},
+           to_char(created_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as cursor_created_at
+         from segments where user_id = $1 and thread_id = (select id from chosen_thread)
+         order by created_at desc, id desc limit 51
+       ) select
+         coalesce((select json_agg(c order by sort_order, created_at, id) from character_list c), '[]') as characters,
+         coalesce((select json_agg(t order by updated_at desc, id desc) from thread_list t), '[]') as threads,
+         coalesce((select json_agg(s order by created_at desc, id desc) from segment_page s), '[]') as segments,
+         (select id from chosen_character) as character_id,
+         (select id from chosen_thread) as thread_id`,
+      [userId, characterId ?? null],
+    )
+    const snapshot = result.rows[0]
+    const segments = snapshot.segments.slice(0, 50)
+    const oldest = segments.at(-1)
+    return c.json({
+      me: toMeResponse(user),
+      characters: snapshot.characters.map(mapCharacter),
+      threads: snapshot.threads.map(mapThread),
+      characterId: snapshot.character_id,
+      threadId: snapshot.thread_id,
+      segmentPage: {
+        segments: segments.reverse().map(mapSegment),
+        nextCursor:
+          snapshot.segments.length > 50 && oldest
+            ? { createdAt: oldest.cursor_created_at, id: oldest.id }
+            : null,
+      },
+    })
+  })
+})
+
 // ---- Characters ----------------------------------------------------------
 
 app.get('/api/characters', (c) =>
@@ -543,12 +605,12 @@ app.get('/api/threads', (c) => {
       ? await db.query<ThreadDbRow>(
           `select ${THREAD_COLUMNS} from threads
             where user_id = $1 and character_id = $2 and archived_at is null
-            order by updated_at desc`,
+            order by updated_at desc, id desc`,
           [userId, characterId],
         )
       : await db.query<ThreadDbRow>(
           `select ${THREAD_COLUMNS} from threads
-            where user_id = $1 and archived_at is null order by updated_at desc`,
+            where user_id = $1 and archived_at is null order by updated_at desc, id desc`,
           [userId],
         )
     return c.json(res.rows.map(mapThread))
@@ -957,6 +1019,33 @@ async function translateWithCredits(
   return { result, target, settle, refund }
 }
 
+app.get('/api/segments/page', zValidator('query', segmentPageSchema), (c) => {
+  const userId = c.get('userId')
+  const { threadId, beforeCreatedAt, beforeId } = c.req.valid('query')
+  return withDb(c.env, async (db) => {
+    await getOrCreateUser(db, userId, c.get('email'))
+    const res = await db.query<SegmentDbRow & { cursor_created_at: string }>(
+      `select ${SEGMENT_COLUMNS},
+         to_char(created_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as cursor_created_at
+       from segments where user_id = $1 and thread_id = $2
+       ${beforeId ? 'and (created_at, id) < ($3::timestamptz, $4::uuid)' : ''}
+       order by created_at desc, id desc limit 51`,
+      beforeId
+        ? [userId, threadId, beforeCreatedAt, beforeId]
+        : [userId, threadId],
+    )
+    const rows = res.rows.slice(0, 50)
+    const oldest = rows.at(-1)
+    return c.json({
+      segments: rows.reverse().map(mapSegment),
+      nextCursor:
+        res.rows.length > 50 && oldest
+          ? { createdAt: oldest.cursor_created_at, id: oldest.id }
+          : null,
+    })
+  })
+})
+
 app.get('/api/segments', (c) => {
   const userId = c.get('userId')
   const rawThreadId = c.req.query('threadId')
@@ -966,7 +1055,7 @@ app.get('/api/segments', (c) => {
     const res = threadId
       ? await db.query<SegmentDbRow>(
           `select ${SEGMENT_COLUMNS} from segments
-            where user_id = $1 and thread_id = $2 order by created_at asc`,
+            where user_id = $1 and thread_id = $2 order by created_at asc, id asc`,
           [userId, threadId],
         )
       : await db.query<SegmentDbRow>(

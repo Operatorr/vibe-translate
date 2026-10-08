@@ -235,3 +235,17 @@ export type CharacterDraft = z.infer<typeof characterDraftSchema>
 export type ThreadCreateInput = z.infer<typeof threadCreateSchema>
 export type SegmentCreateInput = z.infer<typeof segmentCreateSchema>
 export type SegmentToken = z.infer<typeof segmentTokenSchema>
+
+// Cursor pagination retains Postgres microseconds, with UUID as a deterministic
+// tie-breaker for rows inserted in the same transaction.
+export const segmentPageSchema = z
+  .object({
+    threadId: z.uuid(),
+    beforeCreatedAt: z.iso.datetime().optional(),
+    beforeId: z.uuid().optional(),
+  })
+  .refine((q) => !!q.beforeCreatedAt === !!q.beforeId, {
+    message: 'Both cursor fields are required',
+  })
+
+export const appBootstrapSchema = z.object({ characterId: z.uuid().optional() })

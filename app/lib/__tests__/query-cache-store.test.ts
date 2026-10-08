@@ -1,4 +1,4 @@
-import { QueryClient } from '@tanstack/react-query'
+import { QueryClient, QueryObserver } from '@tanstack/react-query'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const storage = vi.hoisted(() => new Map<string, unknown>())
@@ -58,6 +58,7 @@ describe('account-scoped query persistence', () => {
   })
 
   it('sign-out waits for an in-flight write, blocks later writes, and clears the owner', async () => {
+    vi.useFakeTimers()
     const client = new QueryClient()
     const persistence = new QueryCachePersistence(client)
     await persistence.activate('a')
@@ -70,7 +71,10 @@ describe('account-scoped query persistence', () => {
       storage.set(String(key), value)
     })
     client.setQueryData(['threads'], ['private'])
-    await Promise.resolve() // start the storage write before clearing
+    // Flush the debounce without waiting for the deliberately blocked write.
+    vi.advanceTimersByTime(300)
+    await Promise.resolve()
+    expect(set).toHaveBeenLastCalledWith(`${prefix}:a`, expect.anything())
     const clear = persistence.clear()
     expect(client.getQueryData(['threads'])).toBeUndefined()
     client.setQueryData(['threads'], ['late old request'])
@@ -83,6 +87,31 @@ describe('account-scoped query persistence', () => {
     await next.activate(undefined)
     expect(reload.getQueryData(['threads'])).toBeUndefined()
     next.stop()
+    vi.useRealTimers()
+  })
+
+  it('migrates account-owned pre-pagination history for offline access', async () => {
+    storage.set(`${prefix}:a`, {
+      userId: 'a',
+      entries: [
+        {
+          queryKey: ['segments', 't'],
+          data: [{ id: 'old' }],
+          dataUpdatedAt: 123,
+        },
+      ],
+    })
+    const client = new QueryClient()
+    const persistence = new QueryCachePersistence(client)
+    await persistence.activate('a')
+    expect(client.getQueryData(['segment-pages', 't'])).toEqual({
+      pages: [{ segments: [{ id: 'old' }], nextCursor: null }],
+      pageParams: [null],
+    })
+    expect(client.getQueryState(['segment-pages', 't'])?.dataUpdatedAt).toBe(
+      123,
+    )
+    persistence.stop()
   })
 
   it('discards legacy and mismatched caches', async () => {
@@ -115,5 +144,62 @@ describe('account-scoped query persistence', () => {
     expect(client.getQueryData(['threads'])).toBeUndefined()
     expect(storage.get(`${prefix}:owner`)).toBe('b')
     persistence.stop()
+  })
+})
+
+describe('persistence work', () => {
+  it('session hydration does not cancel an active public share resolver', async () => {
+    const client = new QueryClient()
+    const persistence = new QueryCachePersistence(client)
+    let finish!: (value: string) => void
+    let signal!: AbortSignal
+    const observer = new QueryObserver(client, {
+      queryKey: ['share-public', 'capability'],
+      queryFn: (context) => {
+        signal = context.signal
+        return new Promise<string>((resolve) => {
+          finish = resolve
+        })
+      },
+    })
+    const unsubscribe = observer.subscribe(() => undefined)
+    await persistence.activate('a')
+    expect(signal.aborted).toBe(false)
+    finish('redacted public content')
+    await vi.waitFor(() =>
+      expect(observer.getCurrentResult().data).toBe('redacted public content'),
+    )
+    unsubscribe()
+    persistence.stop()
+    client.clear()
+  })
+
+  it('coalesces a burst of data updates and ignores observer/nonpersisted notifications', async () => {
+    vi.useFakeTimers()
+    const client = new QueryClient()
+    const persistence = new QueryCachePersistence(client)
+    try {
+      await persistence.activate('a')
+      vi.mocked(set).mockClear()
+      for (let i = 0; i < 100; i++)
+        client.setQueryData(['segment-pages', 't'], [i])
+      client.setQueryData(['me'], { balance: 5 })
+      await vi.advanceTimersByTimeAsync(300)
+      expect(set).toHaveBeenCalledTimes(1)
+      expect(storage.get(`${prefix}:a`)).toMatchObject({
+        entries: [{ data: [99] }],
+      })
+      vi.mocked(set).mockClear()
+      await client.fetchQuery({
+        queryKey: ['me'],
+        queryFn: async () => ({ balance: 6 }),
+      })
+      await vi.advanceTimersByTimeAsync(300)
+      expect(set).not.toHaveBeenCalled()
+    } finally {
+      persistence.stop()
+      client.clear()
+      vi.useRealTimers()
+    }
   })
 })

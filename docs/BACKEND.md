@@ -48,7 +48,7 @@
   - Frontend: `better-auth/react`'s `createAuthClient()` in `app/lib/auth-client.ts`. There is no provider component and no token plumbing.
 - The only accepted credential is the session cookie (httpOnly, same origin). `auth()` returns `401` when there's no valid session. Sessions slide over 30 days, and a 5-minute signed cookie cache skips the DB read on most requests.
 - **Per request.** `withAuth` builds a Better Auth instance with its own `pg.Pool` (Workers can't reuse sockets across requests, and bindings exist only per request) and closes the pool via `waitUntil` once deferred work settles. Auth emails are deferred the same way, so response latency can't reveal whether an account exists.
-- App-data handlers and billing checkout **upsert** the user into the app-side `users` table via `users.ts → getOrCreateUser`, keyed by `auth_user_id` = the Better Auth user id. `auth()` only sets context vars; cancel, switch-plan, and export do not provision profiles. The first insert grants the free-tier signup credits, and later calls refresh `email` from the session. The row carries `tier`, `subscription_id`, `onboarding_complete`, `locale`, credits and BYOK. Identity (email, password hash, Google link, sessions) stays in the `auth_*` tables.
+- App-data handlers and billing checkout **read or provision** the user into the app-side `users` table via `users.ts → getOrCreateUser`, keyed by `auth_user_id` = the Better Auth user id. `auth()` only sets context vars; cancel, switch-plan, and export do not provision profiles. The first insert atomically grants the free-tier signup balance and ledger entry; existing-user requests update `email` only when the session value differs. The row carries `tier`, `subscription_id`, `onboarding_complete`, `locale`, credits and BYOK. Identity (email, password hash, Google link, sessions) stays in the `auth_*` tables.
 
 ## Authorization
 
@@ -151,3 +151,7 @@ client GET /api/segments/:segmentId/explain
 
 - ~~Do we keep prompts inline in `ai.ts`, or factor them out?~~ **Resolved:** prompt construction lives in a single pure `prompts.ts` (`buildTranslateMessages` / `buildExplainMessages` / `buildDictationMessages`), unit-tested without network; `ai.ts`/`explain.ts` own the OpenRouter call via `openrouter.ts → chatJson`.
 - ~~Should `payments.ts` validate Dodo webhook signatures before the body parser runs?~~ **Resolved:** yes — verify on the raw body _before_ `JSON.parse`, fail `400` with no state mutation, then dedupe via `webhook_events` inside the same transaction as the tier/credit grant. See [adr/0005](./adr/0005-commerce-checkout-and-webhook-idempotency.md) and [SECURITY.md](./SECURITY.md#webhook-signatures).
+
+## Performance reads
+
+`getOrCreateUser` reads existing accounts without changing `updated_at`; only a changed authenticated email is synchronized. First-use provisioning inserts the user balance and signup ledger in one atomic SQL statement, with conflict handling for concurrent first requests. There is no module-level current-user cache. `/api/app/bootstrap` performs one account lookup and one scoped CTE snapshot. `/api/segments/page` bounds history reads to 51 rows with a timestamp/UUID cursor. See [PERFORMANCE.md](./PERFORMANCE.md) and migration `0008_segment_pagination.sql`.

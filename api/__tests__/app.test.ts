@@ -425,13 +425,12 @@ describe('checkout-first profile provisioning', () => {
     )
     let profile: Row | null = null
     answer = (sql, params) => {
-      if (sql.startsWith('insert into users (auth_user_id, email)')) {
+      if (sql.startsWith('with inserted as')) {
         profile = {
           auth_user_id: params[0],
           email: params[1],
           tier: 'free',
-          credits_balance: 0,
-          was_inserted: true,
+          credits_balance: params[2],
         }
         return { rows: [profile] }
       }
@@ -454,7 +453,7 @@ describe('checkout-first profile provisioning', () => {
             email: 'a@example.com',
           })
           expect(
-            queries.some((sql) => sql.startsWith('insert into credit_ledger')),
+            queries.some((sql) => sql.includes('insert into credit_ledger')),
           ).toBe(true)
           return Response.json({
             checkout_url: 'https://checkout.test/session',
@@ -522,5 +521,99 @@ describe('checkout-first profile provisioning', () => {
     expect(await webhook.json()).toEqual({ ok: true, status: 'processed' })
     expect(fetch).toHaveBeenCalledTimes(2)
     fetch.mockRestore()
+  })
+})
+
+describe('bounded segment history', () => {
+  it('loads 50 rows plus one lookahead and preserves timestamp precision', async () => {
+    answer = (sql) =>
+      sql.includes('from segments where user_id')
+        ? {
+            rows: Array.from({ length: 51 }, (_, i) => ({
+              ...segmentRow(),
+              id: `row-${i}`,
+              cursor_created_at: '2026-09-14T10:00:00.123456Z',
+            })),
+          }
+        : { rows: [] }
+    const res = await call(`/api/segments/page?threadId=${THREAD}`)
+    expect(res.status).toBe(200)
+    const page = (await res.json()) as {
+      segments: { id: string }[]
+      nextCursor: unknown
+    }
+    expect(page.segments).toHaveLength(50)
+    expect(page.segments[0].id).toBe('row-49')
+    expect(page.nextCursor).toEqual({
+      createdAt: '2026-09-14T10:00:00.123456Z',
+      id: 'row-49',
+    })
+    expect(queries[0]).toContain('where user_id = $1 and thread_id = $2')
+    expect(queries[0]).toContain('order by created_at desc, id desc limit 51')
+  })
+  it('validates both cursor fields before database access', async () => {
+    const res = await call(
+      `/api/segments/page?threadId=${THREAD}&beforeId=${SEGMENT}`,
+    )
+    expect(res.status).toBe(400)
+    expect(queries).toEqual([])
+  })
+  it('uses a strict compound cursor and returns an exhausted empty page', async () => {
+    const res = await call(
+      `/api/segments/page?threadId=${THREAD}&beforeId=${SEGMENT}&beforeCreatedAt=2026-09-14T10:00:00.123456Z`,
+    )
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({ segments: [], nextCursor: null })
+    expect(queries[0]).toContain(
+      '(created_at, id) < ($3::timestamptz, $4::uuid)',
+    )
+    expect(fakeDb.query).toHaveBeenLastCalledWith(expect.any(String), [
+      'user_1',
+      THREAD,
+      '2026-09-14T10:00:00.123456Z',
+      SEGMENT,
+    ])
+  })
+})
+
+describe('workspace bootstrap', () => {
+  it('bounds and scopes the initial workspace in one database snapshot', async () => {
+    answer = () => ({
+      rows: [
+        {
+          characters: [],
+          threads: [],
+          character_id: null,
+          thread_id: THREAD,
+          segments: Array.from({ length: 51 }, (_, i) => ({
+            ...segmentRow(),
+            id: `head-${i}`,
+            cursor_created_at: '2026-09-14T10:00:00.123456Z',
+          })),
+        },
+      ],
+    })
+    const res = await call(`/api/app/bootstrap?characterId=${THREAD}`)
+    expect(res.status).toBe(200)
+    const data = (await res.json()) as {
+      segmentPage: { segments: { id: string }[]; nextCursor: unknown }
+    }
+    expect(data.segmentPage.segments).toHaveLength(50)
+    expect(data.segmentPage.nextCursor).toEqual({
+      id: 'head-49',
+      createdAt: '2026-09-14T10:00:00.123456Z',
+    })
+    expect(fakeDb.query).toHaveBeenCalledTimes(1)
+    expect(fakeDb.query).toHaveBeenCalledWith(
+      expect.stringContaining('where user_id = $1'),
+      ['user_1', THREAD],
+    )
+    expect(queries[0]).toContain('order by created_at desc, id desc limit 51')
+  })
+
+  it('rejects an invalid preferred Character before database access', async () => {
+    const res = await call('/api/app/bootstrap?characterId=invalid')
+    expect(res.status).toBe(400)
+    expect(fakeDb.query).not.toHaveBeenCalled()
   })
 })

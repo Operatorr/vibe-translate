@@ -257,3 +257,7 @@ Derived/operational data — not user-scoped, no cascade.
 
 - Should `segments.token_usage` be a separate `segment_usage` table for billing-grade accuracy, or is the jsonb good enough?
 - Should we add a `custom_vibe_stops` table for Team tier custom registers, or extend `vibe_stop` per-team? (Probably a separate table — enum changes are heavy.)
+
+## Cursor history index
+
+Migration `0008_segment_pagination.sql` adds `(user_id, thread_id, created_at desc, id desc)` for owner-scoped backward Segment pages. The existing user/time and thread/time indexes continue to support other reads and are retained. Apply the concurrent migration outside a transaction to each environment separately. The bootstrap schema includes the same index with a normal `CREATE INDEX`. Local fixture plans and deployment instructions are in [PERFORMANCE.md](./PERFORMANCE.md).
