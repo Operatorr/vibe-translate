@@ -38,9 +38,11 @@ function SharePage() {
     queryKey: ['share-public', token],
     // Validate the untrusted payload so a malformed row degrades instead of
     // crashing the page.
-    queryFn: async () =>
+    queryFn: async ({ signal }) =>
       sharedThreadSchema.parse(
-        await apiFetch<unknown>(`/api/share/${encodeURIComponent(token)}`),
+        await apiFetch<unknown>(`/api/share/${encodeURIComponent(token)}`, {
+          signal,
+        }),
       ),
     enabled: validToken,
     retry: false,

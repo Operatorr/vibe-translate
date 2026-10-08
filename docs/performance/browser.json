@@ -1,0 +1,1420 @@
+[
+  {
+    "build": "before",
+    "round": 0,
+    "cold": {
+      "ready": 10606.20000000298,
+      "longTasks": [
+        {
+          "start": 10362.59999999404,
+          "ms": 243
+        },
+        {
+          "start": 10605.89999999106,
+          "ms": 677
+        }
+      ],
+      "lcp": 11296,
+      "cls": 0.02455275163650513,
+      "paints": [
+        {
+          "name": "first-paint",
+          "ms": 204
+        },
+        {
+          "name": "first-contentful-paint",
+          "ms": 260
+        }
+      ],
+      "cards": 2000,
+      "dom": 92272,
+      "count": 10,
+      "bytes": 308769,
+      "decoded": 2155104,
+      "api": [
+        {
+          "path": "/api/auth/get-session",
+          "ms": 7.5999999940395355,
+          "start": 237.5,
+          "end": 245.09999999403954,
+          "bytes": 711,
+          "decoded": 697
+        },
+        {
+          "path": "/api/users/me",
+          "ms": 1892.2000000029802,
+          "start": 277.8999999910593,
+          "end": 2170.0999999940395,
+          "bytes": 606,
+          "decoded": 499
+        },
+        {
+          "path": "/api/characters",
+          "ms": 3209.199999988079,
+          "start": 278.20000000298023,
+          "end": 3487.3999999910593,
+          "bytes": 591,
+          "decoded": 859
+        },
+        {
+          "path": "/api/threads",
+          "ms": 2738.3999999910593,
+          "start": 3496.2000000029802,
+          "end": 6234.5999999940395,
+          "bytes": 621,
+          "decoded": 1024
+        },
+        {
+          "path": "/api/segments",
+          "ms": 4113.79999999702,
+          "start": 6241.5,
+          "end": 10355.29999999702,
+          "bytes": 66693,
+          "decoded": 1307787
+        },
+        {
+          "path": "/api/threads/:fixtureId/share",
+          "ms": 2486.9000000059605,
+          "start": 6243.0999999940395,
+          "end": 8730,
+          "bytes": 355,
+          "decoded": 40
+        }
+      ],
+      "waterfall": [
+        {
+          "path": "/assets/index-DUx7BzEr.js",
+          "start": 20.599999994039536,
+          "end": 55.5,
+          "bytes": 219342,
+          "decoded": 722557
+        },
+        {
+          "path": "/assets/index-DOsjHwex.css",
+          "start": 20.799999997019768,
+          "end": 59.8999999910593,
+          "bytes": 17692,
+          "decoded": 90789
+        },
+        {
+          "path": "/css2",
+          "start": 60.599999994039536,
+          "end": 183.09999999403954,
+          "bytes": 1594,
+          "decoded": 30409
+        },
+        {
+          "path": "/api/auth/get-session",
+          "start": 237.5,
+          "end": 245.09999999403954,
+          "bytes": 711,
+          "decoded": 697
+        },
+        {
+          "path": "/icon.svg",
+          "start": 254.59999999403954,
+          "end": 304.20000000298023,
+          "bytes": 564,
+          "decoded": 443
+        },
+        {
+          "path": "/api/users/me",
+          "start": 277.8999999910593,
+          "end": 2170.0999999940395,
+          "bytes": 606,
+          "decoded": 499
+        },
+        {
+          "path": "/api/characters",
+          "start": 278.20000000298023,
+          "end": 3487.3999999910593,
+          "bytes": 591,
+          "decoded": 859
+        },
+        {
+          "path": "/api/threads",
+          "start": 3496.2000000029802,
+          "end": 6234.5999999940395,
+          "bytes": 621,
+          "decoded": 1024
+        },
+        {
+          "path": "/api/segments",
+          "start": 6241.5,
+          "end": 10355.29999999702,
+          "bytes": 66693,
+          "decoded": 1307787
+        },
+        {
+          "path": "/api/threads/:fixtureId/share",
+          "start": 6243.0999999940395,
+          "end": 8730,
+          "bytes": 355,
+          "decoded": 40
+        }
+      ]
+    },
+    "interactions": [
+      {
+        "name": "short thread",
+        "ms": 9362.70000000298,
+        "api": [
+          {
+            "path": "/api/segments",
+            "ms": 1036.5999999940395,
+            "start": 19941.70000000298,
+            "end": 20978.29999999702,
+            "bytes": 915,
+            "decoded": 6493
+          },
+          {
+            "path": "/api/threads/:fixtureId/share",
+            "ms": 1031.300000011921,
+            "start": 19941.89999999106,
+            "end": 20973.20000000298,
+            "bytes": 355,
+            "decoded": 40
+          }
+        ],
+        "cards": 10
+      },
+      {
+        "name": "return long thread",
+        "ms": 6892.9000000059605,
+        "api": [],
+        "cards": 2000
+      },
+      {
+        "name": "character 2",
+        "ms": 15504.79999999702,
+        "api": [
+          {
+            "path": "/api/threads",
+            "ms": 950.5,
+            "start": 36098.39999999106,
+            "end": 37048.89999999106,
+            "bytes": 616,
+            "decoded": 1024
+          },
+          {
+            "path": "/api/segments",
+            "ms": 1824.300000011921,
+            "start": 37063.39999999106,
+            "end": 38887.70000000298,
+            "bytes": 66707,
+            "decoded": 1307787
+          },
+          {
+            "path": "/api/threads/:fixtureId/share",
+            "ms": 978.5,
+            "start": 37063.70000000298,
+            "end": 38042.20000000298,
+            "bytes": 355,
+            "decoded": 40
+          }
+        ],
+        "cards": 2000
+      },
+      {
+        "name": "return character 1",
+        "ms": 12540.60000000894,
+        "api": [
+          {
+            "path": "/api/threads",
+            "ms": 1050.7999999970198,
+            "start": 51425.20000000298,
+            "end": 52476,
+            "bytes": 621,
+            "decoded": 1024
+          }
+        ],
+        "cards": 2000
+      },
+      {
+        "name": "pricing",
+        "ms": 220.1000000089407,
+        "api": [],
+        "cards": 0
+      },
+      {
+        "name": "billing tabs",
+        "ms": 70.79999999701977,
+        "api": [],
+        "cards": 0
+      },
+      {
+        "name": "return app",
+        "ms": 936.7999999970198,
+        "api": [],
+        "cards": 2000
+      }
+    ],
+    "errors": []
+  },
+  {
+    "build": "before",
+    "round": 1,
+    "cold": {
+      "ready": 4767.899999991059,
+      "longTasks": [
+        {
+          "start": 4541.5,
+          "ms": 226
+        },
+        {
+          "start": 4767.5999999940395,
+          "ms": 620
+        }
+      ],
+      "lcp": 5392,
+      "cls": 0.02455275163650513,
+      "paints": [
+        {
+          "name": "first-paint",
+          "ms": 200
+        },
+        {
+          "name": "first-contentful-paint",
+          "ms": 216
+        }
+      ],
+      "cards": 2000,
+      "dom": 92272,
+      "count": 10,
+      "bytes": 308772,
+      "decoded": 2155104,
+      "api": [
+        {
+          "path": "/api/auth/get-session",
+          "ms": 11.299999997019768,
+          "start": 195.59999999403954,
+          "end": 206.8999999910593,
+          "bytes": 714,
+          "decoded": 697
+        },
+        {
+          "path": "/api/users/me",
+          "ms": 844.5,
+          "start": 229.19999998807907,
+          "end": 1073.699999988079,
+          "bytes": 606,
+          "decoded": 499
+        },
+        {
+          "path": "/api/characters",
+          "ms": 971.2999999970198,
+          "start": 229.5,
+          "end": 1200.7999999970198,
+          "bytes": 591,
+          "decoded": 859
+        },
+        {
+          "path": "/api/threads",
+          "ms": 1124,
+          "start": 1211,
+          "end": 2335,
+          "bytes": 621,
+          "decoded": 1024
+        },
+        {
+          "path": "/api/segments",
+          "ms": 2196.2999999970198,
+          "start": 2339.3999999910593,
+          "end": 4535.699999988079,
+          "bytes": 66693,
+          "decoded": 1307787
+        },
+        {
+          "path": "/api/threads/:fixtureId/share",
+          "ms": 1294.7000000029802,
+          "start": 2339.699999988079,
+          "end": 3634.3999999910593,
+          "bytes": 355,
+          "decoded": 40
+        }
+      ],
+      "waterfall": [
+        {
+          "path": "/assets/index-DUx7BzEr.js",
+          "start": 11.899999991059303,
+          "end": 39.69999998807907,
+          "bytes": 219342,
+          "decoded": 722557
+        },
+        {
+          "path": "/assets/index-DOsjHwex.css",
+          "start": 12,
+          "end": 40.19999998807907,
+          "bytes": 17692,
+          "decoded": 90789
+        },
+        {
+          "path": "/css2",
+          "start": 40.5,
+          "end": 152,
+          "bytes": 1594,
+          "decoded": 30409
+        },
+        {
+          "path": "/api/auth/get-session",
+          "start": 195.59999999403954,
+          "end": 206.8999999910593,
+          "bytes": 714,
+          "decoded": 697
+        },
+        {
+          "path": "/icon.svg",
+          "start": 200.79999999701977,
+          "end": 203.5,
+          "bytes": 564,
+          "decoded": 443
+        },
+        {
+          "path": "/api/users/me",
+          "start": 229.19999998807907,
+          "end": 1073.699999988079,
+          "bytes": 606,
+          "decoded": 499
+        },
+        {
+          "path": "/api/characters",
+          "start": 229.5,
+          "end": 1200.7999999970198,
+          "bytes": 591,
+          "decoded": 859
+        },
+        {
+          "path": "/api/threads",
+          "start": 1211,
+          "end": 2335,
+          "bytes": 621,
+          "decoded": 1024
+        },
+        {
+          "path": "/api/segments",
+          "start": 2339.3999999910593,
+          "end": 4535.699999988079,
+          "bytes": 66693,
+          "decoded": 1307787
+        },
+        {
+          "path": "/api/threads/:fixtureId/share",
+          "start": 2339.699999988079,
+          "end": 3634.3999999910593,
+          "bytes": 355,
+          "decoded": 40
+        }
+      ]
+    },
+    "interactions": [
+      {
+        "name": "short thread",
+        "ms": 9463.5,
+        "api": [
+          {
+            "path": "/api/segments",
+            "ms": 1318.6000000089407,
+            "start": 13819.89999999106,
+            "end": 15138.5,
+            "bytes": 915,
+            "decoded": 6493
+          }
+        ],
+        "cards": 10
+      },
+      {
+        "name": "return long thread",
+        "ms": 5238.4000000059605,
+        "api": [
+          {
+            "path": "/api/threads/:fixtureId/share",
+            "ms": 1432.9000000059605,
+            "start": 13820.199999988079,
+            "end": 15253.09999999404,
+            "bytes": 355,
+            "decoded": 40
+          }
+        ],
+        "cards": 2000
+      },
+      {
+        "name": "character 2",
+        "ms": 16123.40000000596,
+        "api": [
+          {
+            "path": "/api/threads",
+            "ms": 1052.8999999910593,
+            "start": 28625,
+            "end": 29677.89999999106,
+            "bytes": 616,
+            "decoded": 1024
+          },
+          {
+            "path": "/api/segments",
+            "ms": 1925.3999999910593,
+            "start": 29698,
+            "end": 31623.39999999106,
+            "bytes": 66707,
+            "decoded": 1307787
+          },
+          {
+            "path": "/api/threads/:fixtureId/share",
+            "ms": 1135.1000000089407,
+            "start": 29698.39999999106,
+            "end": 30833.5,
+            "bytes": 355,
+            "decoded": 40
+          }
+        ],
+        "cards": 2000
+      },
+      {
+        "name": "return character 1",
+        "ms": 14481.5,
+        "api": [
+          {
+            "path": "/api/threads",
+            "ms": 860.0999999940395,
+            "start": 44899,
+            "end": 45759.09999999404,
+            "bytes": 621,
+            "decoded": 1024
+          }
+        ],
+        "cards": 2000
+      },
+      {
+        "name": "pricing",
+        "ms": 353.20000000298023,
+        "api": [],
+        "cards": 0
+      },
+      {
+        "name": "billing tabs",
+        "ms": 201.79999999701977,
+        "api": [],
+        "cards": 0
+      },
+      {
+        "name": "return app",
+        "ms": 1060.6000000089407,
+        "api": [],
+        "cards": 2000
+      }
+    ],
+    "errors": []
+  },
+  {
+    "build": "before",
+    "round": 2,
+    "cold": {
+      "ready": 5840.300000011921,
+      "longTasks": [
+        {
+          "start": 5578.9000000059605,
+          "ms": 260
+        },
+        {
+          "start": 5839.9000000059605,
+          "ms": 685
+        }
+      ],
+      "lcp": 6548,
+      "cls": 0.024607277917861943,
+      "paints": [
+        {
+          "name": "first-paint",
+          "ms": 516
+        },
+        {
+          "name": "first-contentful-paint",
+          "ms": 560
+        }
+      ],
+      "cards": 2000,
+      "dom": 92272,
+      "count": 10,
+      "bytes": 308772,
+      "decoded": 2155104,
+      "api": [
+        {
+          "path": "/api/auth/get-session",
+          "ms": 62.20000000298023,
+          "start": 539,
+          "end": 601.2000000029802,
+          "bytes": 714,
+          "decoded": 697
+        },
+        {
+          "path": "/api/users/me",
+          "ms": 982.1999999880791,
+          "start": 641.3000000119209,
+          "end": 1623.5,
+          "bytes": 606,
+          "decoded": 499
+        },
+        {
+          "path": "/api/characters",
+          "ms": 1079.5,
+          "start": 641.6000000089407,
+          "end": 1721.1000000089407,
+          "bytes": 591,
+          "decoded": 859
+        },
+        {
+          "path": "/api/threads",
+          "ms": 1098.800000011921,
+          "start": 1750,
+          "end": 2848.800000011921,
+          "bytes": 621,
+          "decoded": 1024
+        },
+        {
+          "path": "/api/segments",
+          "ms": 2717.0999999940395,
+          "start": 2853.800000011921,
+          "end": 5570.9000000059605,
+          "bytes": 66693,
+          "decoded": 1307787
+        },
+        {
+          "path": "/api/threads/:fixtureId/share",
+          "ms": 929.3000000119209,
+          "start": 2855,
+          "end": 3784.300000011921,
+          "bytes": 355,
+          "decoded": 40
+        }
+      ],
+      "waterfall": [
+        {
+          "path": "/assets/index-DUx7BzEr.js",
+          "start": 13.200000002980232,
+          "end": 75.40000000596046,
+          "bytes": 219342,
+          "decoded": 722557
+        },
+        {
+          "path": "/assets/index-DOsjHwex.css",
+          "start": 13.300000011920929,
+          "end": 81.70000000298023,
+          "bytes": 17692,
+          "decoded": 90789
+        },
+        {
+          "path": "/css2",
+          "start": 82,
+          "end": 481.90000000596046,
+          "bytes": 1594,
+          "decoded": 30409
+        },
+        {
+          "path": "/api/auth/get-session",
+          "start": 539,
+          "end": 601.2000000029802,
+          "bytes": 714,
+          "decoded": 697
+        },
+        {
+          "path": "/icon.svg",
+          "start": 552.4000000059605,
+          "end": 579.9000000059605,
+          "bytes": 564,
+          "decoded": 443
+        },
+        {
+          "path": "/api/users/me",
+          "start": 641.3000000119209,
+          "end": 1623.5,
+          "bytes": 606,
+          "decoded": 499
+        },
+        {
+          "path": "/api/characters",
+          "start": 641.6000000089407,
+          "end": 1721.1000000089407,
+          "bytes": 591,
+          "decoded": 859
+        },
+        {
+          "path": "/api/threads",
+          "start": 1750,
+          "end": 2848.800000011921,
+          "bytes": 621,
+          "decoded": 1024
+        },
+        {
+          "path": "/api/segments",
+          "start": 2853.800000011921,
+          "end": 5570.9000000059605,
+          "bytes": 66693,
+          "decoded": 1307787
+        },
+        {
+          "path": "/api/threads/:fixtureId/share",
+          "start": 2855,
+          "end": 3784.300000011921,
+          "bytes": 355,
+          "decoded": 40
+        }
+      ]
+    },
+    "interactions": [
+      {
+        "name": "short thread",
+        "ms": 9850.39999999106,
+        "api": [
+          {
+            "path": "/api/segments",
+            "ms": 1157,
+            "start": 15549.90000000596,
+            "end": 16706.90000000596,
+            "bytes": 915,
+            "decoded": 6493
+          }
+        ],
+        "cards": 10
+      },
+      {
+        "name": "return long thread",
+        "ms": 5679.79999999702,
+        "api": [
+          {
+            "path": "/api/threads/:fixtureId/share",
+            "ms": 1363.9000000059605,
+            "start": 15550.20000000298,
+            "end": 16914.10000000894,
+            "bytes": 355,
+            "decoded": 40
+          }
+        ],
+        "cards": 2000
+      },
+      {
+        "name": "character 2",
+        "ms": 15874,
+        "api": [
+          {
+            "path": "/api/threads",
+            "ms": 975.7999999970198,
+            "start": 30853.10000000894,
+            "end": 31828.90000000596,
+            "bytes": 616,
+            "decoded": 1024
+          },
+          {
+            "path": "/api/segments",
+            "ms": 1743.5999999940395,
+            "start": 31843.30000001192,
+            "end": 33586.90000000596,
+            "bytes": 66707,
+            "decoded": 1307787
+          },
+          {
+            "path": "/api/threads/:fixtureId/share",
+            "ms": 1180.7999999970198,
+            "start": 31843.60000000894,
+            "end": 33024.40000000596,
+            "bytes": 355,
+            "decoded": 40
+          }
+        ],
+        "cards": 2000
+      },
+      {
+        "name": "return character 1",
+        "ms": 13345.09999999404,
+        "api": [
+          {
+            "path": "/api/threads",
+            "ms": 1030.199999988079,
+            "start": 46452.30000001192,
+            "end": 47482.5,
+            "bytes": 621,
+            "decoded": 1024
+          }
+        ],
+        "cards": 2000
+      },
+      {
+        "name": "pricing",
+        "ms": 289.40000000596046,
+        "api": [],
+        "cards": 0
+      },
+      {
+        "name": "billing tabs",
+        "ms": 115.20000000298023,
+        "api": [],
+        "cards": 0
+      },
+      {
+        "name": "return app",
+        "ms": 1029.800000011921,
+        "api": [],
+        "cards": 2000
+      }
+    ],
+    "errors": []
+  },
+  {
+    "build": "after",
+    "round": 0,
+    "cold": {
+      "ready": 1469.7999999970198,
+      "longTasks": [],
+      "lcp": 1500,
+      "cls": 0.024610167562961582,
+      "paints": [
+        {
+          "name": "first-paint",
+          "ms": 160
+        },
+        {
+          "name": "first-contentful-paint",
+          "ms": 212
+        }
+      ],
+      "cards": 50,
+      "dom": 2583,
+      "count": 16,
+      "bytes": 234527,
+      "decoded": 815065,
+      "api": [
+        {
+          "path": "/api/auth/get-session",
+          "ms": 17.600000008940697,
+          "start": 178.59999999403954,
+          "end": 196.20000000298023,
+          "bytes": 714,
+          "decoded": 697
+        },
+        {
+          "path": "/api/app/bootstrap",
+          "ms": 1179.7000000029802,
+          "start": 217.5,
+          "end": 1397.2000000029802,
+          "bytes": 2997,
+          "decoded": 35179
+        }
+      ],
+      "waterfall": [
+        {
+          "path": "/assets/index-faI_GVZa.js",
+          "start": 5.0999999940395355,
+          "end": 17.5,
+          "bytes": 110177,
+          "decoded": 351566
+        },
+        {
+          "path": "/assets/jsx-runtime-ByY1xr43.js",
+          "start": 5.200000002980232,
+          "end": 19.399999991059303,
+          "bytes": 3506,
+          "decoded": 8408
+        },
+        {
+          "path": "/assets/preload-helper-rov5CBGT.js",
+          "start": 5.200000002980232,
+          "end": 20.099999994039536,
+          "bytes": 981,
+          "decoded": 1193
+        },
+        {
+          "path": "/assets/index-ugkkL2gn.css",
+          "start": 5.299999997019768,
+          "end": 19.099999994039536,
+          "bytes": 17704,
+          "decoded": 90809
+        },
+        {
+          "path": "/assets/api-ypB0kaxR.js",
+          "start": 5.299999997019768,
+          "end": 20.399999991059303,
+          "bytes": 5605,
+          "decoded": 15440
+        },
+        {
+          "path": "/css2",
+          "start": 19.399999991059303,
+          "end": 148.20000000298023,
+          "bytes": 1594,
+          "decoded": 30409
+        },
+        {
+          "path": "/assets/route-MfqESjpi.js",
+          "start": 174.79999999701977,
+          "end": 176.20000000298023,
+          "bytes": 622,
+          "decoded": 443
+        },
+        {
+          "path": "/assets/app-BahxXvOO.js",
+          "start": 175,
+          "end": 177.59999999403954,
+          "bytes": 25742,
+          "decoded": 84747
+        },
+        {
+          "path": "/assets/css-vars-B6AvaDoe.js",
+          "start": 175.09999999403954,
+          "end": 179.8999999910593,
+          "bytes": 2493,
+          "decoded": 6510
+        },
+        {
+          "path": "/assets/segment-card-DuBXqCWk.js",
+          "start": 175.09999999403954,
+          "end": 179.5,
+          "bytes": 22912,
+          "decoded": 79029
+        },
+        {
+          "path": "/assets/use-vibe-frame--Ak19_GA.js",
+          "start": 175.09999999403954,
+          "end": 182.8999999910593,
+          "bytes": 7022,
+          "decoded": 17999
+        },
+        {
+          "path": "/assets/dist--MAj10uX.js",
+          "start": 175.20000000298023,
+          "end": 182.09999999403954,
+          "bytes": 28380,
+          "decoded": 83374
+        },
+        {
+          "path": "/assets/useQuery-CwrU51W7.js",
+          "start": 175.29999999701977,
+          "end": 186.5,
+          "bytes": 3514,
+          "decoded": 8819
+        },
+        {
+          "path": "/api/auth/get-session",
+          "start": 178.59999999403954,
+          "end": 196.20000000298023,
+          "bytes": 714,
+          "decoded": 697
+        },
+        {
+          "path": "/icon.svg",
+          "start": 183.79999999701977,
+          "end": 187,
+          "bytes": 564,
+          "decoded": 443
+        },
+        {
+          "path": "/api/app/bootstrap",
+          "start": 217.5,
+          "end": 1397.2000000029802,
+          "bytes": 2997,
+          "decoded": 35179
+        }
+      ]
+    },
+    "interactions": [
+      {
+        "name": "short thread",
+        "ms": 1190.7000000029802,
+        "api": [
+          {
+            "path": "/api/segments/page",
+            "ms": 1102.0999999940395,
+            "start": 1936.2999999970198,
+            "end": 3038.3999999910593,
+            "bytes": 940,
+            "decoded": 6524
+          }
+        ],
+        "cards": 10
+      },
+      {
+        "name": "return long thread",
+        "ms": 63.29999999701977,
+        "api": [],
+        "cards": 50
+      },
+      {
+        "name": "character 2",
+        "ms": 1180.2000000029802,
+        "api": [
+          {
+            "path": "/api/app/bootstrap",
+            "ms": 1088,
+            "start": 3148.5999999940395,
+            "end": 4236.5999999940395,
+            "bytes": 2998,
+            "decoded": 35179
+          }
+        ],
+        "cards": 50
+      },
+      {
+        "name": "return character 1",
+        "ms": 76.79999999701977,
+        "api": [],
+        "cards": 50
+      },
+      {
+        "name": "pricing",
+        "ms": 79.29999999701977,
+        "api": [],
+        "cards": 0
+      },
+      {
+        "name": "billing tabs",
+        "ms": 73.09999999403954,
+        "api": [],
+        "cards": 0
+      },
+      {
+        "name": "return app",
+        "ms": 66.5,
+        "api": [],
+        "cards": 50
+      }
+    ],
+    "errors": []
+  },
+  {
+    "build": "after",
+    "round": 1,
+    "cold": {
+      "ready": 1443.9000000059605,
+      "longTasks": [],
+      "lcp": 1472,
+      "cls": 0.02460720436573029,
+      "paints": [
+        {
+          "name": "first-paint",
+          "ms": 200
+        },
+        {
+          "name": "first-contentful-paint",
+          "ms": 280
+        }
+      ],
+      "cards": 50,
+      "dom": 2583,
+      "count": 16,
+      "bytes": 234527,
+      "decoded": 815065,
+      "api": [
+        {
+          "path": "/api/auth/get-session",
+          "ms": 8,
+          "start": 220.29999999701977,
+          "end": 228.29999999701977,
+          "bytes": 714,
+          "decoded": 697
+        },
+        {
+          "path": "/api/app/bootstrap",
+          "ms": 1117.2000000029802,
+          "start": 249,
+          "end": 1366.2000000029802,
+          "bytes": 2997,
+          "decoded": 35179
+        }
+      ],
+      "waterfall": [
+        {
+          "path": "/assets/index-faI_GVZa.js",
+          "start": 3.7999999970197678,
+          "end": 14.799999997019768,
+          "bytes": 110177,
+          "decoded": 351566
+        },
+        {
+          "path": "/assets/jsx-runtime-ByY1xr43.js",
+          "start": 3.9000000059604645,
+          "end": 15,
+          "bytes": 3506,
+          "decoded": 8408
+        },
+        {
+          "path": "/assets/preload-helper-rov5CBGT.js",
+          "start": 3.9000000059604645,
+          "end": 16.599999994039536,
+          "bytes": 981,
+          "decoded": 1193
+        },
+        {
+          "path": "/assets/index-ugkkL2gn.css",
+          "start": 4,
+          "end": 16.5,
+          "bytes": 17704,
+          "decoded": 90809
+        },
+        {
+          "path": "/assets/api-ypB0kaxR.js",
+          "start": 4,
+          "end": 17.400000005960464,
+          "bytes": 5605,
+          "decoded": 15440
+        },
+        {
+          "path": "/css2",
+          "start": 16.700000002980232,
+          "end": 186.90000000596046,
+          "bytes": 1594,
+          "decoded": 30409
+        },
+        {
+          "path": "/assets/route-MfqESjpi.js",
+          "start": 216.40000000596046,
+          "end": 217.59999999403954,
+          "bytes": 622,
+          "decoded": 443
+        },
+        {
+          "path": "/assets/app-BahxXvOO.js",
+          "start": 216.59999999403954,
+          "end": 219.5,
+          "bytes": 25742,
+          "decoded": 84747
+        },
+        {
+          "path": "/assets/segment-card-DuBXqCWk.js",
+          "start": 216.59999999403954,
+          "end": 221.70000000298023,
+          "bytes": 22912,
+          "decoded": 79029
+        },
+        {
+          "path": "/assets/css-vars-B6AvaDoe.js",
+          "start": 216.70000000298023,
+          "end": 222.09999999403954,
+          "bytes": 2493,
+          "decoded": 6510
+        },
+        {
+          "path": "/assets/use-vibe-frame--Ak19_GA.js",
+          "start": 216.70000000298023,
+          "end": 222.59999999403954,
+          "bytes": 7022,
+          "decoded": 17999
+        },
+        {
+          "path": "/assets/dist--MAj10uX.js",
+          "start": 216.79999999701977,
+          "end": 227.09999999403954,
+          "bytes": 28380,
+          "decoded": 83374
+        },
+        {
+          "path": "/assets/useQuery-CwrU51W7.js",
+          "start": 216.90000000596046,
+          "end": 228.70000000298023,
+          "bytes": 3514,
+          "decoded": 8819
+        },
+        {
+          "path": "/api/auth/get-session",
+          "start": 220.29999999701977,
+          "end": 228.29999999701977,
+          "bytes": 714,
+          "decoded": 697
+        },
+        {
+          "path": "/icon.svg",
+          "start": 225.5,
+          "end": 229.70000000298023,
+          "bytes": 564,
+          "decoded": 443
+        },
+        {
+          "path": "/api/app/bootstrap",
+          "start": 249,
+          "end": 1366.2000000029802,
+          "bytes": 2997,
+          "decoded": 35179
+        }
+      ]
+    },
+    "interactions": [
+      {
+        "name": "short thread",
+        "ms": 1059.699999988079,
+        "api": [
+          {
+            "path": "/api/segments/page",
+            "ms": 988.6999999880791,
+            "start": 1883.9000000059605,
+            "end": 2872.5999999940395,
+            "bytes": 940,
+            "decoded": 6524
+          }
+        ],
+        "cards": 10
+      },
+      {
+        "name": "return long thread",
+        "ms": 76.5,
+        "api": [],
+        "cards": 50
+      },
+      {
+        "name": "character 2",
+        "ms": 1077.0999999940395,
+        "api": [
+          {
+            "path": "/api/app/bootstrap",
+            "ms": 997,
+            "start": 2999,
+            "end": 3996,
+            "bytes": 2998,
+            "decoded": 35179
+          }
+        ],
+        "cards": 50
+      },
+      {
+        "name": "return character 1",
+        "ms": 74.59999999403954,
+        "api": [],
+        "cards": 50
+      },
+      {
+        "name": "pricing",
+        "ms": 73.90000000596046,
+        "api": [],
+        "cards": 0
+      },
+      {
+        "name": "billing tabs",
+        "ms": 61.5,
+        "api": [],
+        "cards": 0
+      },
+      {
+        "name": "return app",
+        "ms": 64.3999999910593,
+        "api": [],
+        "cards": 50
+      }
+    ],
+    "errors": []
+  },
+  {
+    "build": "after",
+    "round": 2,
+    "cold": {
+      "ready": 1248.7000000029802,
+      "longTasks": [],
+      "lcp": 1256,
+      "cls": 0.02460720436573029,
+      "paints": [
+        {
+          "name": "first-paint",
+          "ms": 148
+        },
+        {
+          "name": "first-contentful-paint",
+          "ms": 196
+        }
+      ],
+      "cards": 50,
+      "dom": 2583,
+      "count": 16,
+      "bytes": 234528,
+      "decoded": 815065,
+      "api": [
+        {
+          "path": "/api/auth/get-session",
+          "ms": 8.200000002980232,
+          "start": 162.59999999403954,
+          "end": 170.79999999701977,
+          "bytes": 715,
+          "decoded": 697
+        },
+        {
+          "path": "/api/app/bootstrap",
+          "ms": 952.9000000059605,
+          "start": 201.29999999701977,
+          "end": 1154.2000000029802,
+          "bytes": 2997,
+          "decoded": 35179
+        }
+      ],
+      "waterfall": [
+        {
+          "path": "/assets/index-faI_GVZa.js",
+          "start": 4.0999999940395355,
+          "end": 15.299999997019768,
+          "bytes": 110177,
+          "decoded": 351566
+        },
+        {
+          "path": "/assets/jsx-runtime-ByY1xr43.js",
+          "start": 4.200000002980232,
+          "end": 16.599999994039536,
+          "bytes": 3506,
+          "decoded": 8408
+        },
+        {
+          "path": "/assets/index-ugkkL2gn.css",
+          "start": 4.299999997019768,
+          "end": 16.299999997019768,
+          "bytes": 17704,
+          "decoded": 90809
+        },
+        {
+          "path": "/assets/preload-helper-rov5CBGT.js",
+          "start": 4.299999997019768,
+          "end": 17.200000002980232,
+          "bytes": 981,
+          "decoded": 1193
+        },
+        {
+          "path": "/assets/api-ypB0kaxR.js",
+          "start": 4.299999997019768,
+          "end": 17.5,
+          "bytes": 5605,
+          "decoded": 15440
+        },
+        {
+          "path": "/css2",
+          "start": 16.599999994039536,
+          "end": 131.5,
+          "bytes": 1594,
+          "decoded": 30409
+        },
+        {
+          "path": "/assets/route-MfqESjpi.js",
+          "start": 158.8999999910593,
+          "end": 160,
+          "bytes": 622,
+          "decoded": 443
+        },
+        {
+          "path": "/assets/app-BahxXvOO.js",
+          "start": 159,
+          "end": 161.59999999403954,
+          "bytes": 25742,
+          "decoded": 84747
+        },
+        {
+          "path": "/assets/css-vars-B6AvaDoe.js",
+          "start": 159.09999999403954,
+          "end": 163.8999999910593,
+          "bytes": 2493,
+          "decoded": 6510
+        },
+        {
+          "path": "/assets/segment-card-DuBXqCWk.js",
+          "start": 159.09999999403954,
+          "end": 163.59999999403954,
+          "bytes": 22912,
+          "decoded": 79029
+        },
+        {
+          "path": "/assets/use-vibe-frame--Ak19_GA.js",
+          "start": 159.20000000298023,
+          "end": 164.70000000298023,
+          "bytes": 7022,
+          "decoded": 17999
+        },
+        {
+          "path": "/assets/dist--MAj10uX.js",
+          "start": 159.29999999701977,
+          "end": 166.70000000298023,
+          "bytes": 28380,
+          "decoded": 83374
+        },
+        {
+          "path": "/assets/useQuery-CwrU51W7.js",
+          "start": 159.3999999910593,
+          "end": 170.29999999701977,
+          "bytes": 3514,
+          "decoded": 8819
+        },
+        {
+          "path": "/api/auth/get-session",
+          "start": 162.59999999403954,
+          "end": 170.79999999701977,
+          "bytes": 715,
+          "decoded": 697
+        },
+        {
+          "path": "/icon.svg",
+          "start": 167.70000000298023,
+          "end": 170.59999999403954,
+          "bytes": 564,
+          "decoded": 443
+        },
+        {
+          "path": "/api/app/bootstrap",
+          "start": 201.29999999701977,
+          "end": 1154.2000000029802,
+          "bytes": 2997,
+          "decoded": 35179
+        }
+      ]
+    },
+    "interactions": [
+      {
+        "name": "short thread",
+        "ms": 1068.2000000029802,
+        "api": [
+          {
+            "path": "/api/segments/page",
+            "ms": 973,
+            "start": 1685.8999999910593,
+            "end": 2658.8999999910593,
+            "bytes": 940,
+            "decoded": 6524
+          }
+        ],
+        "cards": 10
+      },
+      {
+        "name": "return long thread",
+        "ms": 63.099999994039536,
+        "api": [],
+        "cards": 50
+      },
+      {
+        "name": "character 2",
+        "ms": 1161.4000000059605,
+        "api": [
+          {
+            "path": "/api/app/bootstrap",
+            "ms": 1103.9000000059605,
+            "start": 2783.0999999940395,
+            "end": 3887,
+            "bytes": 2998,
+            "decoded": 35179
+          }
+        ],
+        "cards": 50
+      },
+      {
+        "name": "return character 1",
+        "ms": 73.19999998807907,
+        "api": [],
+        "cards": 50
+      },
+      {
+        "name": "pricing",
+        "ms": 63,
+        "api": [],
+        "cards": 0
+      },
+      {
+        "name": "billing tabs",
+        "ms": 75.8999999910593,
+        "api": [],
+        "cards": 0
+      },
+      {
+        "name": "return app",
+        "ms": 73.59999999403954,
+        "api": [],
+        "cards": 50
+      }
+    ],
+    "errors": []
+  }
+]

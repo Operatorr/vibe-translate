@@ -9,7 +9,7 @@ export function useApiQuery<TData = unknown>(queryKey: QueryKey, path: string) {
 
   return useQuery({
     queryKey,
-    queryFn: async () => apiFetch<TData>(path),
+    queryFn: ({ signal }) => apiFetch<TData>(path, { signal }),
     enabled: path === '/api/diagnostics' || isSignedIn === true,
   })
 }

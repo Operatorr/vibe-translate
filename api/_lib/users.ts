@@ -1,11 +1,10 @@
 import type { Client } from 'pg'
 
-import { recordGrant } from './credits'
 import { tierLimits, type Tier } from './tier'
 
 // User provisioning. Better Auth owns identity (auth_users); the first
 // app-data or checkout request for a given auth_user_id creates this app-side
-// row and grants the free-tier signup credits. Routes call getOrCreateUser
+// row and grants the free-tier signup credits atomically. Routes call getOrCreateUser
 // after connecting. (The auth() middleware only resolves the session and sets
 // context vars — it never touches this table.) See docs/BACKEND.md.
 
@@ -64,31 +63,57 @@ function mapUser(row: UserDbRow): UserRow {
   }
 }
 
-// Idempotent upsert. `(xmax = 0)` is true only for the freshly-inserted row, so
-// the signup grant runs exactly once and the balance == sum(ledger.delta)
-// invariant holds from creation.
+const selectUser = async (db: Client, userId: string) =>
+  (
+    await db.query<UserDbRow>(
+      `select ${USER_COLUMNS} from users where auth_user_id = $1`,
+      [userId],
+    )
+  ).rows[0]
+
+// A null session email never clears a stored one.
+async function syncEmail(
+  db: Client,
+  row: UserDbRow,
+  email: string | null,
+): Promise<UserRow> {
+  if (email === null || email === row.email) return mapUser(row)
+  const updated = await db.query<UserDbRow>(
+    `update users set email = $2, updated_at = now()
+     where auth_user_id = $1 returning ${USER_COLUMNS}`,
+    [row.auth_user_id, email],
+  )
+  return mapUser(updated.rows[0])
+}
+
+// Read-only for existing users whose authenticated email is unchanged.
+// Provision the balance and ledger in one SQL statement so concurrent first
+// requests cannot observe a half-granted account.
 export async function getOrCreateUser(
   db: Client,
   userId: string,
   email: string | null,
 ): Promise<UserRow> {
-  const result = await db.query<UserDbRow & { was_inserted: boolean }>(
-    `insert into users (auth_user_id, email)
-     values ($1, $2)
-     on conflict (auth_user_id) do update set
-       email = coalesce(excluded.email, users.email),
-       updated_at = now()
-     returning ${USER_COLUMNS}, (xmax = 0) as was_inserted`,
-    [userId, email],
+  const existing = await selectUser(db, userId)
+  if (existing) return syncEmail(db, existing, email)
+  const created = await db.query<UserDbRow>(
+    `with inserted as (
+       insert into users (auth_user_id, email, credits_balance)
+       values ($1, $2, $3)
+       on conflict (auth_user_id) do nothing
+       returning ${USER_COLUMNS}
+     ), granted as (
+       insert into credit_ledger (user_id, delta, reason)
+       select auth_user_id, $3, 'grant.signup' from inserted
+     ) select * from inserted`,
+    [userId, email, tierLimits.free.credits],
   )
-  const row = result.rows[0]
-
-  if (row.was_inserted) {
-    await recordGrant(db, userId, tierLimits.free.credits, 'grant.signup')
-    row.credits_balance = tierLimits.free.credits
-  }
-
-  return mapUser(row)
+  if (created.rows[0]) return mapUser(created.rows[0])
+  // A concurrent insert won. A fresh statement can see its committed row, which
+  // may carry another session's email.
+  const winner = await selectUser(db, userId)
+  if (!winner) throw new Error('User disappeared during provisioning')
+  return syncEmail(db, winner, email)
 }
 
 // Shape the public /api/users/me payload from a UserRow.

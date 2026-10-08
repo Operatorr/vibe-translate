@@ -7,6 +7,7 @@
 - **PostgreSQL** is the primary datastore. The **`pgvector`** extension is a hard runtime dependency — translation memory retrieval depends on it.
 - In Cloudflare Workers, the database is reached through a **Hyperdrive** binding (`HYPERDRIVE` in `wrangler.jsonc`), which pools Postgres connections at the edge. Query caching is **off**, so session and list reads are never stale (see [CLOUDFLARE.md](./CLOUDFLARE.md#hyperdrive)).
 - In local dev, Wrangler emulates the binding from `CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE` in a gitignored `.env` (the local Neon URL). `api/_lib/db.ts → databaseUrl(env)` resolves the connection string. Each request opens its own `pg.Client`, and a guarded request also gets a `pg.Pool` for Better Auth.
+- Migration execution and tracking: `pnpm db:migrate` (Local), `pnpm db:migrate --production` (Production). The runner owns `public.schema_migrations` with checksums, timestamps, durations, and baseline flags. See [DEPLOYMENT.md](./DEPLOYMENT.md#database-migrations).
 - The bootstrap schema lives in [`db/schema.sql`](../db/schema.sql). Incremental migrations live in [`db/migrations/`](../db/migrations) (sequential, e.g. `0001_initial.sql`).
 
 ## Domain model
@@ -56,7 +57,7 @@ The app-side profile. `api/_lib/users.ts → getOrCreateUser` creates it lazily 
 | --------------------------------- | --------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `id`                              | uuid pk                                             | local primary key                                                                                                                                                       |
 | `auth_user_id`                    | text unique, fk → `auth_users.id` on delete cascade | the FK target for everything user-scoped; deleting the auth user cascades through all app data                                                                          |
-| `email`, `display_name`, `locale` | text                                                | `email` refreshed from the auth session on each guarded call; `display_name`, `locale` app-owned                                                                        |
+| `email`, `display_name`, `locale` | text                                                | `email` synchronized from the auth session when a non-null session email differs; `display_name`, `locale` app-owned                                                    |
 | `tier`                            | text check (`free`/`pro`/`team`)                    | gates feature access in `api/_lib/tier.ts`                                                                                                                              |
 | `subscription_id`                 | text nullable                                       | Dodo Payments subscription id; partial-unique (`where subscription_id is not null`) so lifecycle webhooks can resolve the owning user. Set/cleared by the Dodo webhook. |
 | `onboarding_complete`             | boolean                                             | gates the `/app` shell                                                                                                                                                  |
@@ -257,3 +258,7 @@ Derived/operational data — not user-scoped, no cascade.
 
 - Should `segments.token_usage` be a separate `segment_usage` table for billing-grade accuracy, or is the jsonb good enough?
 - Should we add a `custom_vibe_stops` table for Team tier custom registers, or extend `vibe_stop` per-team? (Probably a separate table — enum changes are heavy.)
+
+## Cursor history index
+
+Migration `0008_segment_pagination.sql` adds `(user_id, thread_id, created_at desc, id desc)` for owner-scoped backward Segment pages. The existing user/time and thread/time indexes continue to support other reads and are retained. Apply the concurrent migration outside a transaction to each environment separately. The bootstrap schema includes the same index with a normal `CREATE INDEX`. Local fixture plans and deployment instructions are in [PERFORMANCE.md](./PERFORMANCE.md).

@@ -25,3 +25,17 @@ export async function copyText(text: string): Promise<void> {
     el.remove()
   }
 }
+
+// Copy text that is still being prepared. Clipboard writes need transient user
+// activation, and WebKit rejects writes started after an await in the click
+// handler, so the write starts synchronously (call this before any await) with
+// a promise-backed item that resolves once the text is ready. Rejects when the
+// browser can't defer the write, so callers can offer a second-click copy.
+export async function copyTextWhenReady(text: Promise<string>): Promise<void> {
+  if (typeof ClipboardItem === 'undefined' || !navigator.clipboard?.write)
+    throw new Error('Deferred clipboard writes are unsupported')
+  const blob = text.then((value) => new Blob([value], { type: 'text/plain' }))
+  // The caller reports a preparation failure; don't also surface it here.
+  blob.catch(() => {})
+  await navigator.clipboard.write([new ClipboardItem({ 'text/plain': blob })])
+}

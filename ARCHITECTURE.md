@@ -30,16 +30,17 @@ Postgres + pgvector  (via Hyperdrive)
 
 ## Domains
 
-| Domain                       | Lives in                         | Doc                                        |
-| ---------------------------- | -------------------------------- | ------------------------------------------ |
-| Frontend SPA                 | `app/`                           | [docs/FRONTEND.md](./docs/FRONTEND.md)     |
-| Design system & interactions | `app/styles/`, `app/components/` | [docs/DESIGN.md](./docs/DESIGN.md)         |
-| Worker / server logic        | `api/app.ts`, `api/_lib/`        | [docs/BACKEND.md](./docs/BACKEND.md)       |
-| HTTP API surface             | `api/app.ts`                     | [docs/API.md](./docs/API.md)               |
-| Data model                   | `db/`                            | [docs/DATABASE.md](./docs/DATABASE.md)     |
-| Platform / runtime           | `wrangler.jsonc`, `functions/`   | [docs/CLOUDFLARE.md](./docs/CLOUDFLARE.md) |
-| Deploy & environments        | —                                | [docs/DEPLOYMENT.md](./docs/DEPLOYMENT.md) |
-| Security & abuse             | cross-cutting                    | [docs/SECURITY.md](./docs/SECURITY.md)     |
+| Domain                             | Lives in                         | Doc                                          |
+| ---------------------------------- | -------------------------------- | -------------------------------------------- |
+| Frontend SPA                       | `app/`                           | [docs/FRONTEND.md](./docs/FRONTEND.md)       |
+| Design system & interactions       | `app/styles/`, `app/components/` | [docs/DESIGN.md](./docs/DESIGN.md)           |
+| Worker / server logic              | `api/app.ts`, `api/_lib/`        | [docs/BACKEND.md](./docs/BACKEND.md)         |
+| HTTP API surface                   | `api/app.ts`                     | [docs/API.md](./docs/API.md)                 |
+| Data model                         | `db/`                            | [docs/DATABASE.md](./docs/DATABASE.md)       |
+| Platform / runtime                 | `wrangler.jsonc`, `functions/`   | [docs/CLOUDFLARE.md](./docs/CLOUDFLARE.md)   |
+| Deploy & environments              | —                                | [docs/DEPLOYMENT.md](./docs/DEPLOYMENT.md)   |
+| Performance evidence & cache rules | cross-cutting                    | [docs/PERFORMANCE.md](./docs/PERFORMANCE.md) |
+| Security & abuse                   | cross-cutting                    | [docs/SECURITY.md](./docs/SECURITY.md)       |
 
 ## Core domain model
 

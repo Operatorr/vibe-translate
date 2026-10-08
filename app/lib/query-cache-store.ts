@@ -8,10 +8,12 @@ const OWNER_KEY = `${CACHE_KEY}:owner`
 const PERSISTED_KEYS = new Set([
   'characters',
   'threads',
-  'segments',
+  'segment-pages',
   'activity',
 ])
 const keyFor = (userId: string) => `${CACHE_KEY}:${userId}`
+// Coalesces a burst of cache updates into one IndexedDB write.
+export const PERSIST_DELAY_MS = 250
 
 type Entry = {
   queryKey: readonly unknown[]
@@ -26,6 +28,8 @@ export class QueryCachePersistence {
   private generation = 0
   private userId: string | null = null
   private unsubscribe?: () => void
+  private timer?: ReturnType<typeof setTimeout>
+  private detachLifecycle?: () => void
   private pending: Promise<unknown> = Promise.resolve()
 
   constructor(private client: QueryClient) {}
@@ -39,6 +43,10 @@ export class QueryCachePersistence {
   }
 
   stop() {
+    if (this.timer) clearTimeout(this.timer)
+    this.timer = undefined
+    this.detachLifecycle?.()
+    this.detachLifecycle = undefined
     this.generation++
     this.unsubscribe?.()
     this.unsubscribe = undefined
@@ -51,7 +59,13 @@ export class QueryCachePersistence {
     this.stop()
     const generation = this.generation
     this.userId = null
-    this.client.clear()
+    // Public capability/health reads can begin before session hydration.
+    // Removing their active queries would strand mounted observers after abort.
+    this.client.removeQueries({
+      predicate: (query) =>
+        !['share-public', 'diagnostics'].includes(String(query.queryKey[0])),
+    })
+    this.client.getMutationCache().clear()
     return this.enqueue(async () => {
       const lastOwner = await get<string>(OWNER_KEY)
       if (generation !== this.generation) return
@@ -69,7 +83,18 @@ export class QueryCachePersistence {
       if (generation !== this.generation) return
       if (stored?.userId === owner) {
         for (const entry of stored.entries) {
-          if (PERSISTED_KEYS.has(String(entry.queryKey[0]))) {
+          if (entry.queryKey[0] === 'segments' && Array.isArray(entry.data)) {
+            // Preserve pre-pagination offline history through the upgrade. The
+            // next online refetch replaces it with a bounded first page.
+            this.client.setQueryData(
+              ['segment-pages', entry.queryKey[1]],
+              {
+                pages: [{ segments: entry.data, nextCursor: null }],
+                pageParams: [null],
+              },
+              { updatedAt: entry.dataUpdatedAt },
+            )
+          } else if (PERSISTED_KEYS.has(String(entry.queryKey[0]))) {
             this.client.setQueryData(entry.queryKey, entry.data, {
               updatedAt: entry.dataUpdatedAt,
             })
@@ -79,34 +104,58 @@ export class QueryCachePersistence {
       await set(OWNER_KEY, owner)
       if (generation !== this.generation) return
       this.userId = owner
-      this.unsubscribe = this.client.getQueryCache().subscribe(() => {
-        const entries: Entry[] = this.client
-          .getQueryCache()
-          .getAll()
-          .filter(
-            (query) =>
-              PERSISTED_KEYS.has(String(query.queryKey[0])) &&
-              query.state.data !== undefined,
-          )
-          .map((query) => ({
-            queryKey: query.queryKey,
-            data: query.state.data,
-            dataUpdatedAt: query.state.dataUpdatedAt,
-          }))
+      const flush = () => {
+        if (!this.timer) return
+        clearTimeout(this.timer)
+        this.timer = undefined
         void this.enqueue(async () => {
-          if (generation === this.generation)
-            await set(keyFor(owner), {
-              userId: owner,
-              entries,
-            } satisfies StoredCache)
+          if (generation !== this.generation) return
+          const entries: Entry[] = this.client
+            .getQueryCache()
+            .getAll()
+            .filter(
+              (query) =>
+                PERSISTED_KEYS.has(String(query.queryKey[0])) &&
+                query.state.data !== undefined,
+            )
+            .map((query) => ({
+              queryKey: query.queryKey,
+              data: query.state.data,
+              dataUpdatedAt: query.state.dataUpdatedAt,
+            }))
+          await set(keyFor(owner), {
+            userId: owner,
+            entries,
+          } satisfies StoredCache)
         }).catch(() => undefined)
+      }
+      this.unsubscribe = this.client.getQueryCache().subscribe((event) => {
+        if (!PERSISTED_KEYS.has(String(event.query.queryKey[0]))) return
+        if (
+          event.type !== 'removed' &&
+          !(event.type === 'updated' && event.action.type === 'success')
+        )
+          return
+        // Observer, fetch and unrelated-query notifications do no storage work.
+        if (!this.timer) this.timer = setTimeout(flush, PERSIST_DELAY_MS)
       })
+      if (typeof window !== 'undefined') {
+        const hidden = () => {
+          if (document.visibilityState === 'hidden') flush()
+        }
+        window.addEventListener('pagehide', flush)
+        document.addEventListener('visibilitychange', hidden)
+        this.detachLifecycle = () => {
+          window.removeEventListener('pagehide', flush)
+          document.removeEventListener('visibilitychange', hidden)
+        }
+      }
     })
   }
 
   clear(): Promise<void> {
     // Stop persistence synchronously, before sign-out or cancellation can emit
-    // cache notifications. clear() cancels active queries and removes all data.
+    // cache notifications. activate() removes all personalized queries.
     return this.activate(null)
   }
 }

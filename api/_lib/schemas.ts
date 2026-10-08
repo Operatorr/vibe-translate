@@ -235,3 +235,24 @@ export type CharacterDraft = z.infer<typeof characterDraftSchema>
 export type ThreadCreateInput = z.infer<typeof threadCreateSchema>
 export type SegmentCreateInput = z.infer<typeof segmentCreateSchema>
 export type SegmentToken = z.infer<typeof segmentTokenSchema>
+
+// Cursor pagination retains Postgres microseconds, with UUID as a deterministic
+// tie-breaker for rows inserted in the same transaction.
+export const segmentPageSchema = z
+  .object({
+    threadId: z.uuid(),
+    // ISO 8601 allows year 0000, but PostgreSQL rejects it (SQLSTATE 22008),
+    // which would surface as a 500 instead of a 400.
+    beforeCreatedAt: z.iso
+      .datetime()
+      .refine((value) => !value.startsWith('0000-'), 'Year 0000 is invalid')
+      .optional(),
+    beforeId: z.uuid().optional(),
+  })
+  .refine((q) => !!q.beforeCreatedAt === !!q.beforeId, {
+    message: 'Both cursor fields are required',
+  })
+
+export const appBootstrapSchema = z.object({ characterId: z.uuid().optional() })
+
+export const appWorkspaceSchema = z.object({ characterId: z.uuid() })

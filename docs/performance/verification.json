@@ -1,0 +1,37 @@
+{
+  "coldApi": [
+    {
+      "url": "/api/auth/get-session",
+      "method": "GET"
+    },
+    {
+      "url": "/api/app/bootstrap",
+      "method": "GET"
+    }
+  ],
+  "loadedSegments": 100,
+  "exportSegments": 2000,
+  "sharedSegments": 500,
+  "revokedStatus": 404,
+  "cursorRows": 120,
+  "cursorTimes": ["2026-01-01T00:00:00.123457Z", "2026-01-01T00:00:00.123456Z"],
+  "smoke": [
+    "/",
+    "/pricing",
+    "/legal",
+    "/changelog",
+    "/invite",
+    "/dev/diagnostics",
+    "/share/invalid",
+    "/auth"
+  ],
+  "mobileBack": true,
+  "mobileOverflow": false,
+  "errors": [],
+  "offlineRows": 50,
+  "offlineShell": true,
+  "authModes": ["sign-in", "sign-up", "forgot", "reset", "expired-link"],
+  "commandSearch": true,
+  "vibeKeyboard": true,
+  "unnecessaryApi": 0
+}

@@ -249,6 +249,47 @@ describe('translate credit ordering', () => {
     return { rows: [] }
   }
 
+  it('returns an in-thread duplicate as 200 reused without charging', async () => {
+    answer = (sql) =>
+      sql.includes('vibe is not distinct from')
+        ? { rows: [segmentRow()] }
+        : createAnswers(sql)
+    const res = await postJson('/api/segments', {
+      threadId: THREAD,
+      sourceText: 'hi',
+      vibe: 'casual',
+    })
+    expect(res.status).toBe(200)
+    expect(await res.json()).toMatchObject({ id: SEGMENT, reused: true })
+    expect(queries.some((q) => q.startsWith('insert into segments'))).toBe(
+      false,
+    )
+    expect(credits.reserveCredits).not.toHaveBeenCalled()
+  })
+
+  it.each([false, true])(
+    'marks an inserted Segment as 201 not reused (cache hit: %s)',
+    async (cached) => {
+      if (cached)
+        vi.mocked(cache.lookupCache).mockResolvedValueOnce({
+          targetText: 'やあ',
+          tokenAlignment: [],
+          sourceEmbedding: null,
+        })
+      answer = (sql) => createAnswers(sql)
+      const res = await postJson('/api/segments', {
+        threadId: THREAD,
+        sourceText: 'hi',
+        vibe: 'casual',
+      })
+      expect(res.status).toBe(201)
+      expect(await res.json()).toMatchObject({ id: SEGMENT, reused: false })
+      expect(
+        queries.filter((q) => q.startsWith('insert into segments')),
+      ).toHaveLength(1)
+    },
+  )
+
   it('charges and keeps the Segment when a post-insert step fails', async () => {
     vi.mocked(cache.upsertCache).mockRejectedValueOnce(new Error('cache down'))
     const errors = vi
@@ -425,13 +466,12 @@ describe('checkout-first profile provisioning', () => {
     )
     let profile: Row | null = null
     answer = (sql, params) => {
-      if (sql.startsWith('insert into users (auth_user_id, email)')) {
+      if (sql.startsWith('with inserted as')) {
         profile = {
           auth_user_id: params[0],
           email: params[1],
           tier: 'free',
-          credits_balance: 0,
-          was_inserted: true,
+          credits_balance: params[2],
         }
         return { rows: [profile] }
       }
@@ -454,7 +494,7 @@ describe('checkout-first profile provisioning', () => {
             email: 'a@example.com',
           })
           expect(
-            queries.some((sql) => sql.startsWith('insert into credit_ledger')),
+            queries.some((sql) => sql.includes('insert into credit_ledger')),
           ).toBe(true)
           return Response.json({
             checkout_url: 'https://checkout.test/session',
@@ -523,4 +563,298 @@ describe('checkout-first profile provisioning', () => {
     expect(fetch).toHaveBeenCalledTimes(2)
     fetch.mockRestore()
   })
+})
+
+// Deterministic UUIDs that sort in creation order, so the fake page query can
+// order them as PostgreSQL would.
+const uuidFor = (n: number) =>
+  `00000000-0000-4000-8000-${n.toString(16).padStart(12, '0')}`
+const CHARACTER = uuidFor(0xc0ffee)
+
+// `total` Segments in creation order. Pairs share a microsecond so the UUID
+// tie-breaker matters, and the cursor text keeps all six fractional digits.
+const history = (total: number) =>
+  Array.from({ length: total }, (_, i) => {
+    const micros = String(Math.floor((i + 1) / 2)).padStart(6, '0')
+    const createdAt = `2026-09-14T10:00:00.${micros}Z`
+    return {
+      ...segmentRow(),
+      id: uuidFor(i + 1),
+      created_at: createdAt,
+      cursor_created_at: createdAt,
+    }
+  })
+type HistoryRow = ReturnType<typeof history>[number]
+
+// Answers like PostgreSQL: strict `(created_at, id)` cursor, newest first,
+// with the LIMIT taken from the route's own SQL.
+const newestFirst = (rows: HistoryRow[], sql: string, params: unknown[]) => {
+  const limit = Number(/created_at desc, id desc limit (\d+)/.exec(sql)?.[1])
+  const [, , beforeCreatedAt, beforeId] = params as string[]
+  return rows
+    .filter(
+      (r) =>
+        beforeId === undefined ||
+        r.cursor_created_at < beforeCreatedAt ||
+        (r.cursor_created_at === beforeCreatedAt && r.id < beforeId),
+    )
+    .reverse()
+    .slice(0, limit)
+}
+const pageAnswer =
+  (rows: HistoryRow[]) =>
+  (sql: string, params: unknown[]): Answer =>
+    sql.includes('from segments where user_id = $1 and thread_id = $2')
+      ? { rows: newestFirst(rows, sql, params) }
+      : { rows: [] }
+
+type Page = {
+  segments: { id: string }[]
+  nextCursor: { createdAt: string; id: string } | null
+}
+const pagePath = (cursor?: Page['nextCursor']) =>
+  `/api/segments/page?threadId=${THREAD}` +
+  (cursor
+    ? `&beforeCreatedAt=${encodeURIComponent(cursor.createdAt)}&beforeId=${cursor.id}`
+    : '')
+
+// Follows nextCursor from `first` until exhausted; returns pages oldest first.
+async function drain(first: Page) {
+  const pages = [first]
+  for (let page = first; page.nextCursor; ) {
+    const cursor = page.nextCursor
+    const res = await call(pagePath(cursor))
+    expect(res.status).toBe(200)
+    // The cursor goes back to the database exactly as the server emitted it.
+    expect(fakeDb.query).toHaveBeenLastCalledWith(
+      expect.stringContaining('(created_at, id) < ($3::timestamptz, $4::uuid)'),
+      ['user_1', THREAD, cursor.createdAt, cursor.id],
+    )
+    page = (await res.json()) as Page
+    pages.unshift(page)
+  }
+  return pages
+}
+
+// Every page but the oldest is full; a full final page has no cursor.
+const pageSizes = (total: number) =>
+  Array.from({ length: Math.max(1, Math.ceil(total / 50)) }, (_, i) =>
+    i === 0 ? total - 50 * (Math.ceil(total / 50) - 1) : 50,
+  )
+
+describe('bounded segment history', () => {
+  it.each([1, 49, 50, 51, 101])(
+    'pages %i Segments chronologically until the cursor is exhausted',
+    async (total) => {
+      const rows = history(total)
+      answer = pageAnswer(rows)
+      const res = await call(pagePath())
+      expect(res.status).toBe(200)
+      expect(queries[0]).toContain('where user_id = $1 and thread_id = $2')
+      expect(queries[0]).toContain('order by created_at desc, id desc limit 51')
+      expect(fakeDb.query).toHaveBeenLastCalledWith(expect.any(String), [
+        'user_1',
+        THREAD,
+      ])
+      const pages = await drain((await res.json()) as Page)
+      expect(pages.map((p) => p.segments.length)).toEqual(pageSizes(total))
+      expect(pages.flatMap((p) => p.segments.map((s) => s.id))).toEqual(
+        rows.map((r) => r.id),
+      )
+      expect(fakeDb.query).toHaveBeenCalledTimes(pages.length)
+    },
+  )
+
+  it('emits the oldest kept row as a microsecond cursor', async () => {
+    answer = pageAnswer(history(51))
+    const page = (await (await call(pagePath())).json()) as Page
+    // Rows 2 and 3 share .000001; row 2 is the older by UUID.
+    expect(page.nextCursor).toEqual({
+      createdAt: '2026-09-14T10:00:00.000001Z',
+      id: uuidFor(2),
+    })
+    expect(page.segments[0].id).toBe(uuidFor(2))
+    expect(page.segments.at(-1)?.id).toBe(uuidFor(51))
+  })
+
+  it.each([
+    ['timestamp only', 'beforeCreatedAt=2026-09-14T10:00:00.123456Z'],
+    ['id only', `beforeId=${SEGMENT}`],
+    ['malformed time', `beforeCreatedAt=yesterday&beforeId=${SEGMENT}`],
+    [
+      'malformed id',
+      'beforeCreatedAt=2026-09-14T10:00:00.123456Z&beforeId=row-49',
+    ],
+    ['year 0000', `beforeCreatedAt=0000-01-01T00:00:00Z&beforeId=${SEGMENT}`],
+  ])('rejects a cursor with %s before database access', async (_, cursor) => {
+    const res = await call(`/api/segments/page?threadId=${THREAD}&${cursor}`)
+    expect(res.status).toBe(400)
+    expect(fakeDb.query).not.toHaveBeenCalled()
+  })
+
+  it.each(['', 'threadId=not-a-uuid'])(
+    'rejects a missing or malformed thread (%j) before database access',
+    async (query) => {
+      const res = await call(`/api/segments/page?${query}`)
+      expect(res.status).toBe(400)
+      expect(fakeDb.query).not.toHaveBeenCalled()
+    },
+  )
+})
+
+// Scripts the bootstrap/workspace snapshot row; later cursor pages fall
+// through to the same fake history.
+const snapshotAnswer =
+  (rows: HistoryRow[], snapshot: Row = {}) =>
+  (sql: string, params: unknown[]): Answer =>
+    sql.startsWith('with ')
+      ? {
+          rows: [
+            {
+              characters: [],
+              threads: [],
+              character_id: CHARACTER,
+              thread_id: THREAD,
+              segments: newestFirst(rows, sql, []),
+              ...snapshot,
+            },
+          ],
+        }
+      : pageAnswer(rows)(sql, params)
+
+describe.each([
+  ['bootstrap', '/api/app/bootstrap'],
+  ['workspace', '/api/app/workspace'],
+])('%s head page', (_, route) => {
+  it.each([1, 49, 50, 51])(
+    'returns the newest of %i Segments and a cursor only when more exist',
+    async (total) => {
+      const rows = history(total)
+      answer = snapshotAnswer(rows)
+      const res = await call(`${route}?characterId=${CHARACTER}`)
+      expect(res.status).toBe(200)
+      expect(queries[0]).toContain('order by created_at desc, id desc limit 51')
+      const { segmentPage } = (await res.json()) as { segmentPage: Page }
+      expect(segmentPage.segments.map((s) => s.id)).toEqual(
+        rows.slice(-50).map((r) => r.id),
+      )
+      // With 51 rows the 50th-newest is row 2, which shares .000001 with row 3.
+      expect(segmentPage.nextCursor).toEqual(
+        total > 50
+          ? { createdAt: '2026-09-14T10:00:00.000001Z', id: uuidFor(2) }
+          : null,
+      )
+      const pages = await drain(segmentPage)
+      expect(pages.map((p) => p.segments.length)).toEqual(pageSizes(total))
+      expect(pages.flatMap((p) => p.segments.map((s) => s.id))).toEqual(
+        rows.map((r) => r.id),
+      )
+    },
+  )
+})
+
+describe('workspace bootstrap', () => {
+  it('scopes the roster and selected workspace in one statement', async () => {
+    const users = await import('../_lib/users')
+    vi.mocked(users.toMeResponse).mockReturnValueOnce({
+      id: 'user_1',
+    } as ReturnType<typeof users.toMeResponse>)
+    answer = snapshotAnswer(history(2))
+    const res = await call(`/api/app/bootstrap?characterId=${CHARACTER}`)
+    expect(res.status).toBe(200)
+    expect(Object.keys(await res.json()).sort()).toEqual([
+      'characterId',
+      'characters',
+      'me',
+      'segmentPage',
+      'threadId',
+      'threads',
+    ])
+    expect(fakeDb.query).toHaveBeenCalledTimes(1)
+    expect(fakeDb.query).toHaveBeenCalledWith(
+      expect.stringContaining('where user_id = $1'),
+      ['user_1', CHARACTER],
+    )
+    expect(queries[0]).toContain('(id = $2::uuid) desc nulls last')
+  })
+
+  it('passes no preference when characterId is omitted', async () => {
+    answer = snapshotAnswer([])
+    const res = await call('/api/app/bootstrap')
+    expect(res.status).toBe(200)
+    expect(fakeDb.query).toHaveBeenCalledWith(expect.any(String), [
+      'user_1',
+      null,
+    ])
+  })
+
+  it('rejects an invalid preferred Character before database access', async () => {
+    const res = await call('/api/app/bootstrap?characterId=invalid')
+    expect(res.status).toBe(400)
+    expect(fakeDb.query).not.toHaveBeenCalled()
+  })
+})
+
+describe('character workspace', () => {
+  it('reads only the requested owned Character without roster or account', async () => {
+    answer = snapshotAnswer(history(2), {
+      threads: [
+        {
+          id: THREAD,
+          character_id: CHARACTER,
+          user_id: 'user_1',
+          title: 'Head',
+          starred: false,
+          archived_at: null,
+          created_at: '2026-09-14T10:00:00Z',
+          updated_at: '2026-09-14T10:00:00Z',
+          segment_count: 2,
+        },
+      ],
+    })
+    const res = await call(`/api/app/workspace?characterId=${CHARACTER}`)
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({
+      characterId: CHARACTER,
+      threads: [expect.objectContaining({ id: THREAD, segmentCount: 2 })],
+      threadId: THREAD,
+      segmentPage: {
+        segments: [
+          expect.objectContaining({ id: uuidFor(1) }),
+          expect.objectContaining({ id: uuidFor(2) }),
+        ],
+        nextCursor: null,
+      },
+    })
+    expect(fakeDb.query).toHaveBeenCalledTimes(1)
+    expect(fakeDb.query).toHaveBeenCalledWith(expect.any(String), [
+      'user_1',
+      CHARACTER,
+    ])
+    expect(queries[0]).toContain(
+      'where id = $2::uuid and user_id = $1 and archived_at is null',
+    )
+    expect(queries[0]).not.toContain('character_list')
+  })
+
+  it('returns an empty workspace for an unavailable Character', async () => {
+    answer = snapshotAnswer([], { character_id: null, thread_id: null })
+    const res = await call(`/api/app/workspace?characterId=${CHARACTER}`)
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({
+      characterId: null,
+      threads: [],
+      threadId: null,
+      segmentPage: { segments: [], nextCursor: null },
+    })
+  })
+
+  it.each(['', '?characterId=', '?characterId=invalid'])(
+    'requires a valid characterId (%j) before database access',
+    async (query) => {
+      const res = await call(`/api/app/workspace${query}`)
+      expect(res.status).toBe(400)
+      expect(fakeDb.query).not.toHaveBeenCalled()
+    },
+  )
 })

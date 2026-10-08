@@ -13,12 +13,12 @@
 ## Auth
 
 - The credential is the **Better Auth session cookie**: httpOnly, same origin, sent automatically (`credentials: 'include'`). There is no bearer token. `api/_lib/auth.ts → auth()` resolves the session (signed cookie cache, else DB), sets `userId` and `email` on Hono context (`c.get('userId')`, etc.), and returns `401` without one. Refreshed session cookies ride back on the handler's response. See [SECURITY.md](./SECURITY.md#authentication).
-- `auth()` doesn't touch the DB's `users` table. App-data handlers and billing checkout call `getOrCreateUser`, which upserts the app-side row and refreshes its email. Cancel, switch-plan, and export do not provision profiles.
+- `auth()` doesn't touch the DB's `users` table. App-data handlers and billing checkout call `getOrCreateUser`, which reads existing app-side rows without writes, synchronizes changed emails, and atomically provisions the row and signup grant on first use. Cancel, switch-plan, and export do not provision profiles.
 - The CORS layer allows the `APP_URL` origin only, with credentials and the `content-type` header.
 
 | Guarded prefix                                                             | Notes    |
 | -------------------------------------------------------------------------- | -------- |
-| `/api/users/*`                                                             | `auth()` |
+| `/api/app/*`, `/api/users/*`                                               | `auth()` |
 | `/api/characters/*`                                                        | `auth()` |
 | `/api/threads/*`                                                           | `auth()` |
 | `/api/segments/*`                                                          | `auth()` |
@@ -32,7 +32,7 @@
 
 Unguarded (intentionally public): **`/api/auth/*`** (Better Auth's own endpoints, which enforce their own origin and rate-limit checks — see [Auth endpoints](#auth-endpoints-better-auth)), `/api/health`, `/api/diagnostics`, `/api/waitlist`, **`POST /api/billing/webhooks/dodo`** (signature-verified), **`/api/share/:token`** (read-only share links; the unguessable token is the capability — see [SECURITY.md](./SECURITY.md#the-unauthenticated-surface)). **`/api/ai/text-to-speech` is authenticated** — it proxies to metered ElevenLabs, so the landing demo uses pre-rendered clips instead (see [SECURITY.md](./SECURITY.md#the-unauthenticated-surface)).
 
-Resource ids in paths (`:characterId`, `:threadId`, `:segmentId`) and the `characterId`/`threadId` query filters are UUIDs; a malformed id returns `404`, never a database `500`.
+Resource ids in paths (`:characterId`, `:threadId`, `:segmentId`) and the `characterId`/`threadId` query filters are UUIDs. Legacy resource routes reject malformed ids with `404`; the Zod-validated bootstrap, workspace, and cursor-page query endpoints return `400`. Invalid ids never reach Postgres.
 
 ## Surface
 
@@ -68,6 +68,11 @@ Failed links and OAuth errors redirect to `/auth?error=<code>` (`onAPIError.erro
 - `DELETE /api/users/me/byok` → clears stored ciphertext + model overrides.
 - `PATCH /api/users/me/byok/models` → `byokModelsSchema` (`translateModelId?`, `explainModelId?`, may be `null` to clear). Validates `provider/model` shape only; OpenRouter is the authority on whether the model is real.
 
+### App bootstrap & workspace
+
+- `GET /api/app/bootstrap?characterId=<uuid>` → authenticated `{ me, characters, characterId, threads, threadId, segmentPage }`. `characterId` is optional and names the preferred Character; a missing, archived, or foreign one falls back to the user's first active Character (`sort_order`, `created_at`, `id`). Only the selected Character's active Threads (`updated_at desc, id desc`) are included. `threadId` is the first of them (or `null`), and `segmentPage` is what `GET /api/segments/page` returns for it without a cursor. For an existing user with an unchanged email this is two SQL statements: a read-only account lookup, then one scoped snapshot query. No shared personalized cache.
+- `GET /api/app/workspace?characterId=<uuid>` → authenticated `{ characterId, threads, threadId, segmentPage }`, for a first visit to a Character whose account and roster are already cached. `characterId` is required; a missing or malformed id is `400`. The id is echoed only for the caller's own active Character. Otherwise there is no fallback: the response is `{ characterId: null, threads: [], threadId: null, segmentPage: { segments: [], nextCursor: null } }`. `threads`, `threadId`, and `segmentPage` follow the bootstrap rules. Same statement count as bootstrap, without `me` or the roster.
+
 ### Characters
 
 A **Character** is the primary navigation surface.
@@ -81,7 +86,7 @@ A **Character** is the primary navigation surface.
 
 ### Threads
 
-- `GET /api/threads?characterId=...` → threads under a character (sorted by `updated_at desc`).
+- `GET /api/threads?characterId=...` → threads under a character (sorted by `updated_at desc, id desc`).
 - `GET /api/threads/:threadId` → single thread.
 - `POST /api/threads` → `threadCreateSchema` (`characterId`, `title`).
 - `PATCH /api/threads/:threadId` → `threadUpdateSchema` (`title?`, `archived?`, `starred?`). Starring alone does not bump `updated_at`.
@@ -99,8 +104,10 @@ One read-only public link per Thread.
 
 ### Segments
 
-- `GET /api/segments?threadId=...` → segments inside a thread.
+- `GET /api/segments/page?threadId=<uuid>&beforeCreatedAt=<ISO timestamp>&beforeId=<uuid>` → `{ segments, nextCursor }`. Up to 50 rows, newest first in the database and returned chronologically. Without a cursor this is the Thread's newest page; with one, the 50 rows before it. A 51st lookahead row decides `nextCursor`: the oldest returned row as `{ createdAt, id }`, or `null` once no older row exists (an exactly full final page also returns `null`). The cursor fields are optional but must be sent together, as the `nextCursor` values unchanged. `beforeCreatedAt` is an ISO 8601 UTC (`Z`) timestamp. Year 0000 is rejected because Postgres cannot store it. Malformed or half cursors return `400` before any database access. The strict `(created_at, id)` cursor preserves Postgres microseconds. All reads are user-scoped. The product uses this endpoint.
+- `GET /api/segments?threadId=...` → complete thread history, retained for explicit Markdown export; the unfiltered endpoint remains capped at 200 rows.
 - `POST /api/segments` → `segmentCreateSchema` (`threadId`, `sourceText`, `vibe?`). **Sync translate-and-return** — the worker resolves the Character (default_vibe, temperature, persona, source/target language), calls the translation provider, and returns a Segment with **server-produced** `targetText` and `tokenAlignment`. Omit `vibe` to select `characters.default_vibe` for this translation. The resolved stop is stored on the Segment; legacy null stops are returned as null ("Vibe not recorded"), including on public shares. Client does **not** supply target text.
+  - **Response:** the Segment plus `reused: boolean`. `201` with `reused: false` when a row was inserted (model call or shared-cache hit). `200` with `reused: true` when the in-thread pre-check returned an existing Segment. No row was added, so clients must not append it again.
   - **Free, instant pre-checks before any model call:** (1) an existing in-thread Segment for the same `(thread, sourceText, vibe)`, and (2) for _canonical_ requests (no persona fields — tone and verbosity included — no instructions, default temperature), a shared `translation_cache` hit. Either path costs **0 credits**.
   - **Charge ordering:** the credit hold is refunded only when the model call or the Segment insert fails. Once the Segment is stored it is charged, and the post-commit steps (cache seeding, thread recency, activity log) are best-effort and never refund. A Segment served from the shared cache carries `tokenUsage: { cached: true }`.
   - Latency budget: ~1–4s depending on model and target length. Clients render a spinner; no streaming today (see [adr/0002](./adr/) if/when streaming lands).
@@ -116,7 +123,7 @@ One read-only public link per Thread.
 
 ### Memory (Translation memory)
 
-- `GET /api/memory?q=<text>&characterId?=<uuid>&targetLanguage?=<bcp47>&limit?=10` → embeds `q`, runs cosine similarity against the user's `segments.source_embedding`, returns top-K matches as `{ segmentId, similarity }[]`. Optional filters scope the search to one Character or one target language. Pro+ only.
+- `GET /api/memory?q=<text>&characterId=<uuid>&targetLanguage=<bcp47>&limit=<1..50>` → embeds `q`, runs cosine similarity against the user's `segments.source_embedding`, returns top-K matches as `{ segmentId, similarity }[]`. Only `q` is required. The optional `characterId` and `targetLanguage` filters scope the search to one Character or one target language; `limit` defaults to 10. Pro+ only.
 
 ### Activity
 
@@ -146,12 +153,12 @@ One read-only public link per Thread.
 
 ## Conventions
 
-- **Pagination** is not implemented yet. When it lands, use `?cursor=` opaque cursors, not offsets.
+- **Pagination** uses keyset cursors, never offsets. `/api/segments/page` takes back the `nextCursor` fields it returned. Other lists are unpaginated today.
 - **Bulk endpoints** are dedicated (e.g. `/characters/reorder`) rather than overloading PATCH.
 - **Vibe** is always one of the six universal stop IDs in request bodies. Display labels are a client-side concern and never round-trip through the API.
 - **Locales** are BCP-47 (`en-US`, `ja-JP`). The TTS endpoint accepts the same and normalizes to the ElevenLabs two-letter code internally.
 
 ## Open questions
 
-- ~~Webhook surface: do we need identity-provider webhooks (user-deleted, email-changed) wired to the DB?~~ **Resolved:** no. Identity lives in our own DB ([adr/0008](./adr/0008-better-auth-replaces-clerk.md)). Deleting an `auth_users` row cascades through all app data, and `users.email` is refreshed whenever an app-data handler or billing checkout calls `getOrCreateUser`.
+- ~~Webhook surface: do we need identity-provider webhooks (user-deleted, email-changed) wired to the DB?~~ **Resolved:** no. Identity lives in our own DB ([adr/0008](./adr/0008-better-auth-replaces-clerk.md)). Deleting an `auth_users` row cascades through all app data, and `users.email` is synchronized whenever an app-data handler or billing checkout calls `getOrCreateUser` with a different session email.
 - Should `/api/memory` also return embedding-similarity scores normalized 0..1, or expose raw cosine distance? (Today: similarity 0..1.)

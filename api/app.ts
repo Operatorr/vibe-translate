@@ -28,6 +28,8 @@ import {
 import type { AppEnv } from './_lib/env'
 import { formatError } from './_lib/errors'
 import {
+  appBootstrapSchema,
+  appWorkspaceSchema,
   byokModelsSchema,
   byokSetSchema,
   characterCreateSchema,
@@ -37,6 +39,7 @@ import {
   memorySearchSchema,
   onboardingDictateSchema,
   segmentCreateSchema,
+  segmentPageSchema,
   segmentUpdateSchema,
   textToSpeechSchema,
   threadCreateSchema,
@@ -56,6 +59,20 @@ import {
   upsertCache,
 } from './_lib/translation-cache'
 import { getOrCreateUser, toMeResponse } from './_lib/users'
+import {
+  CHARACTER_COLUMNS,
+  SEGMENT_COLUMNS,
+  THREAD_COLUMNS,
+  loadBootstrap,
+  loadSegmentPage,
+  loadWorkspace,
+  mapCharacter,
+  mapSegment,
+  mapThread,
+  type CharacterDbRow,
+  type SegmentDbRow,
+  type ThreadDbRow,
+} from './_lib/workspace'
 import {
   cancelSubscription,
   createCheckoutSession,
@@ -126,6 +143,7 @@ app.post('/api/waitlist', zValidator('json', waitlistSchema), async (c) => {
 // own origin (trustedOrigins) and rate-limit checks. See api/_lib/auth.ts.
 app.on(['GET', 'POST'], '/api/auth/*', authHandler)
 
+app.use('/api/app/*', auth())
 app.use('/api/users/*', auth())
 app.use('/api/characters/*', auth())
 app.use('/api/threads/*', auth())
@@ -274,107 +292,32 @@ app.patch(
   },
 )
 
-// ---- DB row mappers (snake_case → API camelCase) -------------------------
+// ---- App bootstrap & workspace -------------------------------------------
+//
+// Authenticated snapshots remove browser waterfalls without a shared
+// personalized server cache. Each is one SQL statement after the account
+// lookup, so its CTEs share one database snapshot. See api/_lib/workspace.ts.
 
-const CHARACTER_COLUMNS = `id, user_id, name, initials, color, source_language, target_language,
-  default_vibe, temperature, persona, instructions, sort_order, archived_at, created_at, updated_at`
+app.get('/api/app/bootstrap', zValidator('query', appBootstrapSchema), (c) => {
+  const { characterId } = c.req.valid('query')
+  const userId = c.get('userId')
+  return withDb(c.env, async (db) => {
+    const user = await getOrCreateUser(db, userId, c.get('email'))
+    const snapshot = await loadBootstrap(db, userId, characterId ?? null)
+    return c.json({ me: toMeResponse(user), ...snapshot })
+  })
+})
 
-type CharacterDbRow = {
-  id: string
-  user_id: string
-  name: string
-  initials: string | null
-  color: string | null
-  source_language: string
-  target_language: string
-  default_vibe: VibeStop
-  temperature: string | number
-  persona: Persona
-  instructions: string | null
-  sort_order: number
-  archived_at: string | Date | null
-  created_at: string | Date
-  updated_at: string | Date
-}
-
-function mapCharacter(r: CharacterDbRow) {
-  return {
-    id: r.id,
-    name: r.name,
-    initials: r.initials ?? undefined,
-    color: r.color ?? undefined,
-    sourceLanguage: r.source_language,
-    targetLanguage: r.target_language,
-    defaultVibe: r.default_vibe,
-    temperature: Number(r.temperature),
-    persona: r.persona,
-    instructions: r.instructions ?? undefined,
-    sortOrder: r.sort_order,
-    archivedAt: r.archived_at ? new Date(r.archived_at).toISOString() : null,
-    createdAt: new Date(r.created_at).toISOString(),
-    updatedAt: new Date(r.updated_at).toISOString(),
-  }
-}
-
-// `segment_count` is a correlated subquery so the sidebar can show
-// "N translations" without a second round-trip. Every query using this list
-// selects `from threads` unaliased, so the bare `threads.id` reference holds.
-const THREAD_COLUMNS = `id, character_id, user_id, title, starred, archived_at, created_at, updated_at,
-  (select count(*)::int from segments s where s.thread_id = threads.id) as segment_count`
-
-type ThreadDbRow = {
-  id: string
-  character_id: string
-  user_id: string
-  title: string
-  starred: boolean
-  archived_at: string | Date | null
-  created_at: string | Date
-  updated_at: string | Date
-  segment_count: number
-}
-
-function mapThread(r: ThreadDbRow) {
-  return {
-    id: r.id,
-    characterId: r.character_id,
-    title: r.title,
-    starred: r.starred,
-    segmentCount: Number(r.segment_count ?? 0),
-    archivedAt: r.archived_at ? new Date(r.archived_at).toISOString() : null,
-    createdAt: new Date(r.created_at).toISOString(),
-    updatedAt: new Date(r.updated_at).toISOString(),
-  }
-}
-
-const SEGMENT_COLUMNS = `id, thread_id, source_text, target_text, vibe, token_alignment,
-  token_usage, created_at, updated_at`
-
-type SegmentDbRow = {
-  id: string
-  thread_id: string
-  source_text: string
-  target_text: string
-  vibe: VibeStop | null
-  token_alignment: SegmentToken[]
-  token_usage: Record<string, unknown>
-  created_at: string | Date
-  updated_at: string | Date
-}
-
-function mapSegment(r: SegmentDbRow) {
-  return {
-    id: r.id,
-    threadId: r.thread_id,
-    sourceText: r.source_text,
-    targetText: r.target_text,
-    vibe: r.vibe,
-    tokenAlignment: r.token_alignment,
-    tokenUsage: r.token_usage,
-    createdAt: new Date(r.created_at).toISOString(),
-    updatedAt: new Date(r.updated_at).toISOString(),
-  }
-}
+// First visit to a Character whose roster entry and account are already
+// cached: only its Threads and head Segment page.
+app.get('/api/app/workspace', zValidator('query', appWorkspaceSchema), (c) => {
+  const { characterId } = c.req.valid('query')
+  const userId = c.get('userId')
+  return withDb(c.env, async (db) => {
+    await getOrCreateUser(db, userId, c.get('email'))
+    return c.json(await loadWorkspace(db, userId, characterId))
+  })
+})
 
 // ---- Characters ----------------------------------------------------------
 
@@ -543,12 +486,12 @@ app.get('/api/threads', (c) => {
       ? await db.query<ThreadDbRow>(
           `select ${THREAD_COLUMNS} from threads
             where user_id = $1 and character_id = $2 and archived_at is null
-            order by updated_at desc`,
+            order by updated_at desc, id desc`,
           [userId, characterId],
         )
       : await db.query<ThreadDbRow>(
           `select ${THREAD_COLUMNS} from threads
-            where user_id = $1 and archived_at is null order by updated_at desc`,
+            where user_id = $1 and archived_at is null order by updated_at desc, id desc`,
           [userId],
         )
     return c.json(res.rows.map(mapThread))
@@ -957,6 +900,19 @@ async function translateWithCredits(
   return { result, target, settle, refund }
 }
 
+app.get('/api/segments/page', zValidator('query', segmentPageSchema), (c) => {
+  const userId = c.get('userId')
+  const { threadId, beforeCreatedAt, beforeId } = c.req.valid('query')
+  return withDb(c.env, async (db) => {
+    await getOrCreateUser(db, userId, c.get('email'))
+    const before =
+      beforeCreatedAt && beforeId
+        ? { createdAt: beforeCreatedAt, id: beforeId }
+        : undefined
+    return c.json(await loadSegmentPage(db, userId, threadId, before))
+  })
+})
+
 app.get('/api/segments', (c) => {
   const userId = c.get('userId')
   const rawThreadId = c.req.query('threadId')
@@ -966,7 +922,7 @@ app.get('/api/segments', (c) => {
     const res = threadId
       ? await db.query<SegmentDbRow>(
           `select ${SEGMENT_COLUMNS} from segments
-            where user_id = $1 and thread_id = $2 order by created_at asc`,
+            where user_id = $1 and thread_id = $2 order by created_at asc, id asc`,
           [userId, threadId],
         )
       : await db.query<SegmentDbRow>(
@@ -983,6 +939,8 @@ app.get('/api/segments', (c) => {
 // source/target language), de-dupes / checks the shared canonical cache, calls
 // the translation provider, embeds the source, writes the Segment, and (on the
 // platform key path) records the credit spend. See docs/BACKEND.md, adr/0004.
+// `reused` tells the client whether a row was inserted (201) or an existing
+// in-thread Segment was returned (200), so it never appends a duplicate.
 app.post('/api/segments', zValidator('json', segmentCreateSchema), (c) => {
   const payload = c.req.valid('json')
   const userId = c.get('userId')
@@ -1044,7 +1002,8 @@ app.post('/api/segments', zValidator('json', segmentCreateSchema), (c) => {
         order by created_at desc limit 1`,
       [payload.threadId, payload.sourceText, resolvedVibe],
     )
-    if (dedup.rows[0]) return c.json(mapSegment(dedup.rows[0]), 201)
+    if (dedup.rows[0])
+      return c.json({ ...mapSegment(dedup.rows[0]), reused: true }, 200)
 
     // Miss path → resolve the call target up front so the canonical fingerprint
     // is keyed by the model that will ACTUALLY run (BYOK model → env `*_MODEL`
@@ -1079,7 +1038,7 @@ app.post('/api/segments', zValidator('json', segmentCreateSchema), (c) => {
             hit.sourceEmbedding as unknown as string | number[] | null,
           ),
         )
-        return c.json(mapSegment(row), 201)
+        return c.json({ ...mapSegment(row), reused: false }, 201)
       }
     }
 
@@ -1168,7 +1127,7 @@ app.post('/api/segments', zValidator('json', segmentCreateSchema), (c) => {
         byok: target.isByok,
       }),
     )
-    return c.json(mapSegment(row), 201)
+    return c.json({ ...mapSegment(row), reused: false }, 201)
   })
 })
 

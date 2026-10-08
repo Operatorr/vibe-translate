@@ -288,3 +288,7 @@ create index if not exists activity_log_user_id_created_at_idx on activity_log (
 -- resolve the owning user by their stored Dodo subscription id. See adr/0005.
 create unique index if not exists users_subscription_id_uniq
   on users (subscription_id) where subscription_id is not null;
+
+-- Stable backward cursor pagination within a Thread.
+create index if not exists segments_user_thread_created_id_idx
+  on segments (user_id, thread_id, created_at desc, id desc);

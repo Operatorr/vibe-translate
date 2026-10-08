@@ -12,6 +12,16 @@ and [`docs/`](./docs).
 3. Run `pnpm dev` for Wrangler or `pnpm dev:full` for Wrangler plus Vite.
 4. Build with `pnpm build`.
 
+## Database Migrations
+
+```sh
+pnpm db:migrate                      # Local
+pnpm db:migrate --production         # Production
+pnpm db:migrate --production --status
+```
+
+The runner needs Node 22.18.0 or later. Credential setup and migration tracking: [docs/DEPLOYMENT.md](./docs/DEPLOYMENT.md#database-migrations).
+
 ## Project Layout
 
 - `app/` contains the React 19, Vite, TanStack Router, TanStack Query frontend.
