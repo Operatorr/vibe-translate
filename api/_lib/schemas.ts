@@ -241,7 +241,12 @@ export type SegmentToken = z.infer<typeof segmentTokenSchema>
 export const segmentPageSchema = z
   .object({
     threadId: z.uuid(),
-    beforeCreatedAt: z.iso.datetime().optional(),
+    // ISO 8601 allows year 0000, but PostgreSQL rejects it (SQLSTATE 22008),
+    // which would surface as a 500 instead of a 400.
+    beforeCreatedAt: z.iso
+      .datetime()
+      .refine((value) => !value.startsWith('0000-'), 'Year 0000 is invalid')
+      .optional(),
     beforeId: z.uuid().optional(),
   })
   .refine((q) => !!q.beforeCreatedAt === !!q.beforeId, {
@@ -249,3 +254,5 @@ export const segmentPageSchema = z
   })
 
 export const appBootstrapSchema = z.object({ characterId: z.uuid().optional() })
+
+export const appWorkspaceSchema = z.object({ characterId: z.uuid() })

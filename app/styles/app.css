@@ -3832,6 +3832,13 @@ body,
   background: var(--bg-elev-2);
   outline: none;
 }
+.vt-menu__item[data-disabled] {
+  opacity: 0.5;
+  cursor: default;
+}
+.vt-menu__item[data-disabled]:hover {
+  background: transparent;
+}
 .vt-menu__item i {
   width: 14px;
   height: 14px;

@@ -20,7 +20,7 @@ pnpm db:migrate --production         # Production
 pnpm db:migrate --production --status
 ```
 
-Credential setup and migration tracking: [docs/DEPLOYMENT.md](./docs/DEPLOYMENT.md#database-migrations).
+The runner needs Node 22.18.0 or later. Credential setup and migration tracking: [docs/DEPLOYMENT.md](./docs/DEPLOYMENT.md#database-migrations).
 
 ## Project Layout
 

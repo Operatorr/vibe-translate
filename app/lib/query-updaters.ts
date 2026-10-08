@@ -1,4 +1,4 @@
-import type { Segment, Thread } from '@/lib/types'
+import type { Character, Segment, Thread } from '@/lib/types'
 
 // Pure cache updaters for the TanStack Query lists in app/hooks/use-app-data.ts.
 // Kept free of React so they can be unit-tested directly.
@@ -56,4 +56,15 @@ export function applyServerThread(
   if (updated.archivedAt != null)
     return (list ?? []).filter((t) => t.id !== updated.id)
   return (list ?? []).map((t) => (t.id === updated.id ? updated : t))
+}
+
+// Merge a created Character into a loaded roster. A refresh may already hold
+// the committed row, so replace a matching id instead of appending it twice.
+export function upsertCharacter(
+  list: Character[],
+  created: Character,
+): Character[] {
+  return list.some((c) => c.id === created.id)
+    ? list.map((c) => (c.id === created.id ? created : c))
+    : [...list, created]
 }

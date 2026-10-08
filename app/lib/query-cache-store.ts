@@ -12,6 +12,8 @@ const PERSISTED_KEYS = new Set([
   'activity',
 ])
 const keyFor = (userId: string) => `${CACHE_KEY}:${userId}`
+// Coalesces a burst of cache updates into one IndexedDB write.
+export const PERSIST_DELAY_MS = 250
 
 type Entry = {
   queryKey: readonly unknown[]
@@ -135,7 +137,7 @@ export class QueryCachePersistence {
         )
           return
         // Observer, fetch and unrelated-query notifications do no storage work.
-        if (!this.timer) this.timer = setTimeout(flush, 250)
+        if (!this.timer) this.timer = setTimeout(flush, PERSIST_DELAY_MS)
       })
       if (typeof window !== 'undefined') {
         const hidden = () => {

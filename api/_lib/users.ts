@@ -63,29 +63,39 @@ function mapUser(row: UserDbRow): UserRow {
   }
 }
 
-// Read-only for existing users. Provision the balance and ledger in one SQL
-// statement so concurrent first requests cannot observe a half-granted account.
+const selectUser = async (db: Client, userId: string) =>
+  (
+    await db.query<UserDbRow>(
+      `select ${USER_COLUMNS} from users where auth_user_id = $1`,
+      [userId],
+    )
+  ).rows[0]
+
+// A null session email never clears a stored one.
+async function syncEmail(
+  db: Client,
+  row: UserDbRow,
+  email: string | null,
+): Promise<UserRow> {
+  if (email === null || email === row.email) return mapUser(row)
+  const updated = await db.query<UserDbRow>(
+    `update users set email = $2, updated_at = now()
+     where auth_user_id = $1 returning ${USER_COLUMNS}`,
+    [row.auth_user_id, email],
+  )
+  return mapUser(updated.rows[0])
+}
+
+// Read-only for existing users whose authenticated email is unchanged.
+// Provision the balance and ledger in one SQL statement so concurrent first
+// requests cannot observe a half-granted account.
 export async function getOrCreateUser(
   db: Client,
   userId: string,
   email: string | null,
 ): Promise<UserRow> {
-  const existing = await db.query<UserDbRow>(
-    `select ${USER_COLUMNS} from users where auth_user_id = $1`,
-    [userId],
-  )
-  const row = existing.rows[0]
-  if (row) {
-    if (email !== null && email !== row.email) {
-      const updated = await db.query<UserDbRow>(
-        `update users set email = $2, updated_at = now()
-         where auth_user_id = $1 returning ${USER_COLUMNS}`,
-        [userId, email],
-      )
-      return mapUser(updated.rows[0])
-    }
-    return mapUser(row)
-  }
+  const existing = await selectUser(db, userId)
+  if (existing) return syncEmail(db, existing, email)
   const created = await db.query<UserDbRow>(
     `with inserted as (
        insert into users (auth_user_id, email, credits_balance)
@@ -99,13 +109,11 @@ export async function getOrCreateUser(
     [userId, email, tierLimits.free.credits],
   )
   if (created.rows[0]) return mapUser(created.rows[0])
-  // A concurrent insert won. A fresh statement can see its committed row.
-  const winner = await db.query<UserDbRow>(
-    `select ${USER_COLUMNS} from users where auth_user_id = $1`,
-    [userId],
-  )
-  if (!winner.rows[0]) throw new Error('User disappeared during provisioning')
-  return mapUser(winner.rows[0])
+  // A concurrent insert won. A fresh statement can see its committed row, which
+  // may carry another session's email.
+  const winner = await selectUser(db, userId)
+  if (!winner) throw new Error('User disappeared during provisioning')
+  return syncEmail(db, winner, email)
 }
 
 // Shape the public /api/users/me payload from a UserRow.

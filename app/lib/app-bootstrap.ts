@@ -4,13 +4,29 @@ import { keys } from './query-keys'
 import type { SegmentPage, SegmentHistory } from './segment-history'
 import type { Character, Me, Thread } from './types'
 
-export type AppBootstrap = {
-  me: Me
-  characters: Character[]
-  threads: Thread[]
+// GET /api/app/workspace: one Character's Threads plus the newest Thread's
+// first Segment page. `characterId` is null when the Character isn't usable.
+export type AppWorkspace = {
   characterId: string | null
+  threads: Thread[]
   threadId: string | null
   segmentPage: SegmentPage
+}
+
+// GET /api/app/bootstrap: the workspace plus the account-wide reads.
+export type AppBootstrap = AppWorkspace & {
+  me: Me
+  characters: Character[]
+}
+
+// Seed the selected Thread's first page only when its history is missing; a
+// loaded history may hold newer rows or older pages the snapshot lacks.
+export function seedFirstPage(client: QueryClient, data: AppWorkspace) {
+  if (data.threadId && !client.getQueryData(keys.segments(data.threadId)))
+    client.setQueryData<SegmentHistory>(keys.segments(data.threadId), {
+      pages: [data.segmentPage],
+      pageParams: [null],
+    })
 }
 
 // This query is only a transport boundary. Query owns each domain's freshness
@@ -41,11 +57,7 @@ export function bootstrapOptions(
         !client.getQueryData(keys.threads(data.characterId))
       )
         client.setQueryData(keys.threads(data.characterId), data.threads)
-      if (data.threadId && !client.getQueryData(keys.segments(data.threadId)))
-        client.setQueryData<SegmentHistory>(keys.segments(data.threadId), {
-          pages: [data.segmentPage],
-          pageParams: [null],
-        })
+      seedFirstPage(client, data)
       return data
     },
   }

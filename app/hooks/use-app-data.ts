@@ -1,31 +1,39 @@
 import {
+  queryOptions,
   useInfiniteQuery,
   useMutation,
   useQuery,
   useQueryClient,
+  type QueryClient,
+  type QueryKey,
+  type UseMutationOptions,
 } from '@tanstack/react-query'
 
+import { apiFetch } from '@/lib/api'
+import {
+  bootstrapOptions,
+  seedFirstPage,
+  type AppWorkspace,
+} from '@/lib/app-bootstrap'
+import { authClient, useSignedIn } from '@/lib/auth-client'
+import { keys } from '@/lib/query-keys'
+import {
+  applyServerThread,
+  patchThread,
+  upsertCharacter,
+} from '@/lib/query-updaters'
+import { scopedMutation } from '@/lib/scoped-mutation'
 import {
   historySegments,
   replaceHistory,
-  type SegmentPage,
   type SegmentCursor,
   type SegmentHistory,
+  type SegmentPage,
 } from '@/lib/segment-history'
-import { bootstrapOptions, type AppBootstrap } from '@/lib/app-bootstrap'
-import { scopedMutation } from '@/lib/scoped-mutation'
-import type {
-  QueryClient,
-  QueryKey,
-  UseMutationOptions,
-} from '@tanstack/react-query'
-import { apiFetch } from '@/lib/api'
-import { authClient, useSignedIn } from '@/lib/auth-client'
-import { applyServerThread, patchThread } from '@/lib/query-updaters'
-import { keys } from '@/lib/query-keys'
 import { createSegmentOptions } from '@/lib/segment-mutations'
 import type {
   Character,
+  CreatedSegment,
   ExplainPayload,
   Me,
   Persona,
@@ -88,13 +96,14 @@ export function useMe(ready = true) {
   })
 }
 
+const charactersQuery = queryOptions({
+  queryKey: keys.characters,
+  queryFn: ({ signal }) => apiFetch<Character[]>('/api/characters', { signal }),
+})
+
 export function useCharacters(ready = true) {
-  const { call, enabled } = useApi()
-  return useQuery({
-    queryKey: keys.characters,
-    queryFn: ({ signal }) => call<Character[]>('/api/characters', { signal }),
-    enabled: enabled && ready,
-  })
+  const { enabled } = useApi()
+  return useQuery({ ...charactersQuery, enabled: enabled && ready })
 }
 
 export function useThreads(characterId: string | null) {
@@ -104,23 +113,27 @@ export function useThreads(characterId: string | null) {
     queryKey: keys.threads(characterId),
     queryFn: async ({ signal }) => {
       const id = encodeURIComponent(characterId ?? '')
+      const roster = () =>
+        call<Thread[]>(`/api/threads?characterId=${id}`, { signal })
+      // Refreshes read only the roster.
+      if (qc.getQueryData(keys.threads(characterId))) return roster()
       // First visit: include the newest thread's first page so selecting it
-      // never starts a second HTTP round trip. Refreshes read only the roster.
-      if (!qc.getQueryData(keys.threads(characterId))) {
-        const data = await call<AppBootstrap>(
-          `/api/app/bootstrap?characterId=${id}`,
+      // never starts a second HTTP round trip.
+      try {
+        const data = await call<AppWorkspace>(
+          `/api/app/workspace?characterId=${id}`,
           { signal },
         )
         signal.throwIfAborted()
         if (data.characterId !== characterId) return []
-        if (data.threadId && !qc.getQueryData(keys.segments(data.threadId)))
-          qc.setQueryData<SegmentHistory>(keys.segments(data.threadId), {
-            pages: [data.segmentPage],
-            pageParams: [null],
-          })
+        seedFirstPage(qc, data)
         return data.threads
+      } catch (error) {
+        // The snapshot is an optimization: fall back to the plain roster and
+        // let the selected Thread's useSegments load its own first page.
+        if (signal.aborted) throw error
+        return roster()
       }
-      return call<Thread[]>(`/api/threads?characterId=${id}`, { signal })
     },
     enabled: enabled && !!characterId,
   })
@@ -164,10 +177,15 @@ export function useCreateCharacter() {
       json<Character>('/api/characters', 'POST', input),
     onSuccess: async (created) => {
       if (!(await cancelOwnedQueries(qc, keys.characters))) return
-      qc.setQueryData<Character[]>(keys.characters, (prev) => [
-        ...(prev ?? []),
-        created,
-      ])
+      const prev = qc.getQueryData<Character[]>(keys.characters)
+      if (prev) {
+        qc.setQueryData(keys.characters, upsertCharacter(prev, created))
+        return
+      }
+      // Unloaded roster (bootstrap pending or the list failed): a one-row list
+      // would be persisted and stop bootstrap seeding, hiding the rest. Fetch
+      // the committed roster directly; a disabled observer won't refetch.
+      void qc.prefetchQuery(charactersQuery)
     },
   })
 }
@@ -184,7 +202,8 @@ export function useUpdateCharacter() {
       if (!(await cancelOwnedQueries(qc, keys.characters))) return
       const prev = qc.getQueryData<Character[]>(keys.characters)
       qc.setQueryData<Character[]>(keys.characters, (list) =>
-        (list ?? []).map((c) => (c.id === id ? { ...c, ...patch } : c)),
+        // Unloaded roster: never persist an empty list in its place.
+        list?.map((c) => (c.id === id ? { ...c, ...patch } : c)),
       )
       return { prev }
     },
@@ -194,7 +213,7 @@ export function useUpdateCharacter() {
     onSuccess: async (updated) => {
       if (!(await cancelOwnedQueries(qc, keys.characters))) return
       qc.setQueryData<Character[]>(keys.characters, (list) =>
-        (list ?? []).map((c) => (c.id === updated.id ? updated : c)),
+        list?.map((c) => (c.id === updated.id ? updated : c)),
       )
     },
   })
@@ -302,7 +321,7 @@ export function useCreateSegment() {
   return useScopedMutation(
     createSegmentOptions(
       qc,
-      (input) => json<Segment>('/api/segments', 'POST', input),
+      (input) => json<CreatedSegment>('/api/segments', 'POST', input),
       mutationOwner,
     ),
   )
@@ -356,14 +375,20 @@ export function useExplain(segmentId: string | null, enabled: boolean) {
   })
 }
 
-export function useThreadShare(threadId: string | null, open = true) {
-  const { call, enabled } = useApi()
-  return useQuery({
-    queryKey: keys.share(threadId ?? ''),
+// Shared by the Share popover and Markdown export, so both read one entry.
+export const shareQuery = (threadId: string) =>
+  queryOptions({
+    queryKey: keys.share(threadId),
     queryFn: ({ signal }) =>
-      call<ThreadShare>(`/api/threads/${threadId}/share`, { signal }),
-    enabled: enabled && !!threadId && open,
+      apiFetch<ThreadShare>(`/api/threads/${threadId}/share`, { signal }),
     staleTime: 5 * 60_000,
+  })
+
+export function useThreadShare(threadId: string | null, open = true) {
+  const { enabled } = useApi()
+  return useQuery({
+    ...shareQuery(threadId ?? ''),
+    enabled: enabled && !!threadId && open,
   })
 }
 

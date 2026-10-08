@@ -16,12 +16,15 @@ export function ThreadOptionsMenu({
   onArchive,
   onDelete,
   onCopyMarkdown,
+  copyPending = false,
   onClearExplain,
 }: {
   onRename: () => void
   onArchive: () => void
   onDelete: () => void
   onCopyMarkdown: () => void
+  // A download/copy is already preparing this Thread's Markdown.
+  copyPending?: boolean
   onClearExplain?: () => void
 }) {
   const [open, setOpen] = React.useState(false)
@@ -32,12 +35,13 @@ export function ThreadOptionsMenu({
     icon: string,
     label: string,
     fn: () => void,
-    opts: { danger?: boolean; ownsFocus?: boolean } = {},
+    opts: { danger?: boolean; ownsFocus?: boolean; disabled?: boolean } = {},
   ) => (
     <DropdownMenu.Item
       className={
         'vt-menu__item ' + (opts.danger ? 'vt-menu__item--danger' : '')
       }
+      disabled={opts.disabled}
       onSelect={() => {
         keepFocus.current = opts.ownsFocus === true
         fn()
@@ -70,7 +74,12 @@ export function ThreadOptionsMenu({
           }}
         >
           {item('pencil', 'Rename thread', onRename, { ownsFocus: true })}
-          {item('copy', 'Copy as Markdown', onCopyMarkdown)}
+          {item(
+            'copy',
+            copyPending ? 'Preparing Markdown…' : 'Copy as Markdown',
+            onCopyMarkdown,
+            { disabled: copyPending },
+          )}
           {onClearExplain &&
             item('book-open', 'Close explain panels', onClearExplain)}
           <DropdownMenu.Separator className="vt-menu__sep" />
@@ -82,7 +91,10 @@ export function ThreadOptionsMenu({
   )
 }
 
+// Controlled: the shell owns `open` (see use-share-open.ts) because share
+// status loads only while the popover is open.
 export function SharePopover({
+  open,
   onOpenChange,
   error,
   onRetry,
@@ -90,14 +102,14 @@ export function SharePopover({
   loading,
   onToggle,
 }: {
-  onOpenChange?: (open: boolean) => void
+  open: boolean
+  onOpenChange: (open: boolean) => void
   error?: boolean
   onRetry?: () => void
   share: ThreadShare | undefined
   loading: boolean
   onToggle: (shared: boolean) => void
 }) {
-  const [open, setOpen] = React.useState(false)
   const shared = share?.shared === true
   // Status not known yet: render the switch in a neutral state rather than
   // "off", which would snap on when the query returns.
@@ -114,10 +126,7 @@ export function SharePopover({
   return (
     <Popover
       open={open}
-      onOpenChange={(next) => {
-        setOpen(next)
-        onOpenChange?.(next)
-      }}
+      onOpenChange={onOpenChange}
       label="Share thread"
       trigger={
         <button

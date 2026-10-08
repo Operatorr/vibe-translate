@@ -29,6 +29,7 @@ import type { AppEnv } from './_lib/env'
 import { formatError } from './_lib/errors'
 import {
   appBootstrapSchema,
+  appWorkspaceSchema,
   byokModelsSchema,
   byokSetSchema,
   characterCreateSchema,
@@ -58,6 +59,20 @@ import {
   upsertCache,
 } from './_lib/translation-cache'
 import { getOrCreateUser, toMeResponse } from './_lib/users'
+import {
+  CHARACTER_COLUMNS,
+  SEGMENT_COLUMNS,
+  THREAD_COLUMNS,
+  loadBootstrap,
+  loadSegmentPage,
+  loadWorkspace,
+  mapCharacter,
+  mapSegment,
+  mapThread,
+  type CharacterDbRow,
+  type SegmentDbRow,
+  type ThreadDbRow,
+} from './_lib/workspace'
 import {
   cancelSubscription,
   createCheckoutSession,
@@ -277,164 +292,30 @@ app.patch(
   },
 )
 
-// ---- DB row mappers (snake_case → API camelCase) -------------------------
+// ---- App bootstrap & workspace -------------------------------------------
+//
+// Authenticated snapshots remove browser waterfalls without a shared
+// personalized server cache. Each is one SQL statement after the account
+// lookup, so its CTEs share one database snapshot. See api/_lib/workspace.ts.
 
-const CHARACTER_COLUMNS = `id, user_id, name, initials, color, source_language, target_language,
-  default_vibe, temperature, persona, instructions, sort_order, archived_at, created_at, updated_at`
-
-type CharacterDbRow = {
-  id: string
-  user_id: string
-  name: string
-  initials: string | null
-  color: string | null
-  source_language: string
-  target_language: string
-  default_vibe: VibeStop
-  temperature: string | number
-  persona: Persona
-  instructions: string | null
-  sort_order: number
-  archived_at: string | Date | null
-  created_at: string | Date
-  updated_at: string | Date
-}
-
-function mapCharacter(r: CharacterDbRow) {
-  return {
-    id: r.id,
-    name: r.name,
-    initials: r.initials ?? undefined,
-    color: r.color ?? undefined,
-    sourceLanguage: r.source_language,
-    targetLanguage: r.target_language,
-    defaultVibe: r.default_vibe,
-    temperature: Number(r.temperature),
-    persona: r.persona,
-    instructions: r.instructions ?? undefined,
-    sortOrder: r.sort_order,
-    archivedAt: r.archived_at ? new Date(r.archived_at).toISOString() : null,
-    createdAt: new Date(r.created_at).toISOString(),
-    updatedAt: new Date(r.updated_at).toISOString(),
-  }
-}
-
-// `segment_count` is a correlated subquery so the sidebar can show
-// "N translations" without a second round-trip. Every query using this list
-// selects `from threads` unaliased, so the bare `threads.id` reference holds.
-const THREAD_COLUMNS = `id, character_id, user_id, title, starred, archived_at, created_at, updated_at,
-  (select count(*)::int from segments s where s.thread_id = threads.id) as segment_count`
-
-type ThreadDbRow = {
-  id: string
-  character_id: string
-  user_id: string
-  title: string
-  starred: boolean
-  archived_at: string | Date | null
-  created_at: string | Date
-  updated_at: string | Date
-  segment_count: number
-}
-
-function mapThread(r: ThreadDbRow) {
-  return {
-    id: r.id,
-    characterId: r.character_id,
-    title: r.title,
-    starred: r.starred,
-    segmentCount: Number(r.segment_count ?? 0),
-    archivedAt: r.archived_at ? new Date(r.archived_at).toISOString() : null,
-    createdAt: new Date(r.created_at).toISOString(),
-    updatedAt: new Date(r.updated_at).toISOString(),
-  }
-}
-
-const SEGMENT_COLUMNS = `id, thread_id, source_text, target_text, vibe, token_alignment,
-  token_usage, created_at, updated_at`
-
-type SegmentDbRow = {
-  id: string
-  thread_id: string
-  source_text: string
-  target_text: string
-  vibe: VibeStop | null
-  token_alignment: SegmentToken[]
-  token_usage: Record<string, unknown>
-  created_at: string | Date
-  updated_at: string | Date
-}
-
-function mapSegment(r: SegmentDbRow) {
-  return {
-    id: r.id,
-    threadId: r.thread_id,
-    sourceText: r.source_text,
-    targetText: r.target_text,
-    vibe: r.vibe,
-    tokenAlignment: r.token_alignment,
-    tokenUsage: r.token_usage,
-    createdAt: new Date(r.created_at).toISOString(),
-    updatedAt: new Date(r.updated_at).toISOString(),
-  }
-}
-
-// One authenticated snapshot removes browser waterfalls without a shared
-// personalized server cache. The CTEs all share one database snapshot.
 app.get('/api/app/bootstrap', zValidator('query', appBootstrapSchema), (c) => {
   const { characterId } = c.req.valid('query')
   const userId = c.get('userId')
   return withDb(c.env, async (db) => {
     const user = await getOrCreateUser(db, userId, c.get('email'))
-    const result = await db.query<{
-      characters: CharacterDbRow[]
-      threads: ThreadDbRow[]
-      segments: (SegmentDbRow & { cursor_created_at: string })[]
-      character_id: string | null
-      thread_id: string | null
-    }>(
-      `with character_list as (
-         select ${CHARACTER_COLUMNS} from characters
-         where user_id = $1 and archived_at is null
-       ), chosen_character as (
-         select id from character_list
-         order by (id = $2::uuid) desc nulls last, sort_order, created_at, id limit 1
-       ), thread_list as (
-         select ${THREAD_COLUMNS} from threads
-         where user_id = $1 and archived_at is null
-           and character_id = (select id from chosen_character)
-       ), chosen_thread as (
-         select id from thread_list order by updated_at desc, id desc limit 1
-       ), segment_page as (
-         select ${SEGMENT_COLUMNS},
-           to_char(created_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as cursor_created_at
-         from segments where user_id = $1 and thread_id = (select id from chosen_thread)
-         order by created_at desc, id desc limit 51
-       ) select
-         coalesce((select json_agg(c order by sort_order, created_at, id) from character_list c), '[]') as characters,
-         coalesce((select json_agg(t order by updated_at desc, id desc) from thread_list t), '[]') as threads,
-         coalesce((select json_agg(s order by created_at desc, id desc) from segment_page s), '[]') as segments,
-         (select id from chosen_character) as character_id,
-         (select id from chosen_thread) as thread_id`,
-      [userId, characterId ?? null],
-    )
-    const snapshot = result.rows[0]
-    const segments = snapshot.segments.slice(0, 50)
-    const oldest = segments.at(-1)
-    return c.json({
-      me: toMeResponse(user),
-      characters: snapshot.characters.map(mapCharacter),
-      threads: snapshot.threads.map(mapThread),
-      characterId: snapshot.character_id,
-      threadId: snapshot.thread_id,
-      segmentPage: {
-        segments: segments.reverse().map(mapSegment),
-        nextCursor:
-          snapshot.segments.length > 50 && oldest
-            ? { createdAt: oldest.cursor_created_at, id: oldest.id }
-            : null,
-      },
-    })
+    const snapshot = await loadBootstrap(db, userId, characterId ?? null)
+    return c.json({ me: toMeResponse(user), ...snapshot })
+  })
+})
+
+// First visit to a Character whose roster entry and account are already
+// cached: only its Threads and head Segment page.
+app.get('/api/app/workspace', zValidator('query', appWorkspaceSchema), (c) => {
+  const { characterId } = c.req.valid('query')
+  const userId = c.get('userId')
+  return withDb(c.env, async (db) => {
+    await getOrCreateUser(db, userId, c.get('email'))
+    return c.json(await loadWorkspace(db, userId, characterId))
   })
 })
 
@@ -1024,25 +905,11 @@ app.get('/api/segments/page', zValidator('query', segmentPageSchema), (c) => {
   const { threadId, beforeCreatedAt, beforeId } = c.req.valid('query')
   return withDb(c.env, async (db) => {
     await getOrCreateUser(db, userId, c.get('email'))
-    const res = await db.query<SegmentDbRow & { cursor_created_at: string }>(
-      `select ${SEGMENT_COLUMNS},
-         to_char(created_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as cursor_created_at
-       from segments where user_id = $1 and thread_id = $2
-       ${beforeId ? 'and (created_at, id) < ($3::timestamptz, $4::uuid)' : ''}
-       order by created_at desc, id desc limit 51`,
-      beforeId
-        ? [userId, threadId, beforeCreatedAt, beforeId]
-        : [userId, threadId],
-    )
-    const rows = res.rows.slice(0, 50)
-    const oldest = rows.at(-1)
-    return c.json({
-      segments: rows.reverse().map(mapSegment),
-      nextCursor:
-        res.rows.length > 50 && oldest
-          ? { createdAt: oldest.cursor_created_at, id: oldest.id }
-          : null,
-    })
+    const before =
+      beforeCreatedAt && beforeId
+        ? { createdAt: beforeCreatedAt, id: beforeId }
+        : undefined
+    return c.json(await loadSegmentPage(db, userId, threadId, before))
   })
 })
 
@@ -1072,6 +939,8 @@ app.get('/api/segments', (c) => {
 // source/target language), de-dupes / checks the shared canonical cache, calls
 // the translation provider, embeds the source, writes the Segment, and (on the
 // platform key path) records the credit spend. See docs/BACKEND.md, adr/0004.
+// `reused` tells the client whether a row was inserted (201) or an existing
+// in-thread Segment was returned (200), so it never appends a duplicate.
 app.post('/api/segments', zValidator('json', segmentCreateSchema), (c) => {
   const payload = c.req.valid('json')
   const userId = c.get('userId')
@@ -1133,7 +1002,8 @@ app.post('/api/segments', zValidator('json', segmentCreateSchema), (c) => {
         order by created_at desc limit 1`,
       [payload.threadId, payload.sourceText, resolvedVibe],
     )
-    if (dedup.rows[0]) return c.json(mapSegment(dedup.rows[0]), 201)
+    if (dedup.rows[0])
+      return c.json({ ...mapSegment(dedup.rows[0]), reused: true }, 200)
 
     // Miss path → resolve the call target up front so the canonical fingerprint
     // is keyed by the model that will ACTUALLY run (BYOK model → env `*_MODEL`
@@ -1168,7 +1038,7 @@ app.post('/api/segments', zValidator('json', segmentCreateSchema), (c) => {
             hit.sourceEmbedding as unknown as string | number[] | null,
           ),
         )
-        return c.json(mapSegment(row), 201)
+        return c.json({ ...mapSegment(row), reused: false }, 201)
       }
     }
 
@@ -1257,7 +1127,7 @@ app.post('/api/segments', zValidator('json', segmentCreateSchema), (c) => {
         byok: target.isByok,
       }),
     )
-    return c.json(mapSegment(row), 201)
+    return c.json({ ...mapSegment(row), reused: false }, 201)
   })
 })
 

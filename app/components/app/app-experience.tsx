@@ -1,3 +1,4 @@
+import { useQueryClient } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
 import * as React from 'react'
 import { toast } from 'sonner'
@@ -35,18 +36,14 @@ import {
   useUpdateThread,
   type CharacterInput,
 } from '@/hooks/use-app-data'
-import { ApiError, apiFetch } from '@/lib/api'
+import { ApiError } from '@/lib/api'
 import { authClient, signOut } from '@/lib/auth-client'
 import { toCharacterPatch } from '@/lib/character-draft'
 import { cssVars } from '@/lib/css-vars'
-import {
-  downloadTextFile,
-  slugify,
-  threadToMarkdown,
-} from '@/lib/markdown-export'
+import { keys } from '@/lib/query-keys'
 import { timeAgo } from '@/lib/time'
 import { speak, stopSpeaking } from '@/lib/tts'
-import type { Character, Segment, Thread, VibeStop } from '@/lib/types'
+import type { Character, Thread, VibeStop } from '@/lib/types'
 import { copyText } from '@/lib/clipboard'
 import { initialsFor } from '@/lib/initials'
 
@@ -58,9 +55,11 @@ import {
   SegmentCard,
   type SegmentView,
 } from './segment-card'
-import { historySegments } from '@/lib/segment-history'
+import { historySegments, type SegmentHistory } from '@/lib/segment-history'
 
 import { SharePopover, ThreadOptionsMenu } from './thread-menus'
+import { useShareOpen } from './use-share-open'
+import { useThreadExport } from './use-thread-export'
 
 const FLAGS = LANG_FLAG as Record<string, string>
 const LANGUAGE_NAMES = LANG_NAME as Record<string, string>
@@ -131,6 +130,7 @@ function ThreadRow({
 export function AppExperience() {
   const frame = useVibeFrame('/app')
   const userId = authClient.useSession().data?.user.id
+  const queryClient = useQueryClient()
 
   // ---- data ---------------------------------------------------------------
   const [storedCharId] = React.useState(() => readStoredCharacter(userId))
@@ -200,7 +200,7 @@ export function AppExperience() {
   const createSegment = useCreateSegment()
   const retrySegment = useRetrySegment()
   const updateMe = useUpdateMe()
-  const [shareOpen, setShareOpen] = React.useState(false)
+  const [shareOpen, setShareOpen] = useShareOpen(thread?.id ?? null)
   const share = useThreadShare(thread?.id ?? null, shareOpen)
   const setShare = useSetThreadShare()
   const fetchTts = useTtsFetch()
@@ -421,9 +421,22 @@ export function AppExperience() {
         }
         return false
       }
-      // A background completion must not collapse or scroll the thread the
-      // user has switched to in the meantime.
-      if (activeThreadRef.current === target.id) {
+      if (created.reused) {
+        // An in-thread duplicate returned the existing Segment (no credits).
+        // It may sit in an older, unloaded page, so it isn't a new card.
+        const loaded = historySegments(
+          queryClient.getQueryData<SegmentHistory>(keys.segments(target.id)),
+        ).some((s) => s.id === created.id)
+        if (loaded && activeThreadRef.current === target.id)
+          setExpanded((prev) => new Set(prev).add(created.id))
+        toast.message(
+          loaded
+            ? 'Already translated earlier in this thread.'
+            : 'Already translated earlier in this thread — load older translations to see it.',
+        )
+      } else if (activeThreadRef.current === target.id) {
+        // A background completion must not collapse or scroll the thread the
+        // user has switched to in the meantime.
         setExpanded(new Set())
         setExplainOpenId(null)
         scrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' })
@@ -434,7 +447,7 @@ export function AppExperience() {
           text.replace(/\s+/g, ' ').slice(0, 60).trim() || NEW_THREAD_TITLE
         updateThread.mutate({ id: target.id, characterId: char.id, title })
       }
-      if (!created.tokenAlignment.length)
+      if (!created.reused && !created.tokenAlignment.length)
         toast.message('Translated (alignment unavailable).')
       return true
     } finally {
@@ -521,41 +534,16 @@ export function AppExperience() {
     }
   }
 
-  const markdownFor = async () =>
+  const exporter = useThreadExport(
     thread && char
-      ? threadToMarkdown({
-          title: thread.title,
+      ? {
+          thread,
           character: char,
-          // Export is deliberately complete, even when only one UI page loaded.
-          segments: await apiFetch<Segment[]>(
-            `/api/segments?threadId=${thread.id}`,
-          ),
-          shareUrl: share.data?.url ?? null,
-        })
-      : null
-
-  const download = async () => {
-    if (!thread) return
-    try {
-      const md = await markdownFor()
-      if (!md) return
-      downloadTextFile(`${slugify(thread.title)}.md`, md)
-      toast.success('Markdown download started.')
-    } catch {
-      toast.error('Download failed — try “Copy as Markdown” instead.')
-    }
-  }
-
-  const copyMarkdown = async () => {
-    try {
-      const md = await markdownFor()
-      if (!md) return
-      await copyText(md)
-      toast.success('Thread copied as Markdown.')
-    } catch {
-      toast.error('Copy failed.')
-    }
-  }
+          segments: segList,
+          complete: !!segments.data && !segments.hasNextPage,
+        }
+      : null,
+  )
 
   const toggleStar = () => {
     if (!thread || !char || starBusy.current) return
@@ -771,7 +759,9 @@ export function AppExperience() {
   const retryingId = retrySegment.isPending ? retrySegment.variables?.id : null
   const credits = me.data?.credits.balance
   const tier = me.data?.tier ?? 'free'
-  const loadingChars = characters.isLoading && !characters.data
+  // Character reads wait for bootstrap, and a disabled query isn't isLoading.
+  const loadingChars =
+    !characters.data && (characters.isLoading || bootstrap.isFetching)
 
   const threadRow = (t: Thread) => (
     <ThreadRow
@@ -1053,6 +1043,7 @@ export function AppExperience() {
                   <Icon name="star" fill={thread.starred} />
                 </button>
                 <SharePopover
+                  open={shareOpen}
                   onOpenChange={setShareOpen}
                   error={share.isError}
                   onRetry={() => void share.refetch()}
@@ -1063,18 +1054,27 @@ export function AppExperience() {
                 <button
                   type="button"
                   className="workspace__icon-btn"
-                  title="Download as Markdown"
+                  title={
+                    exporter.preparing
+                      ? 'Preparing Markdown…'
+                      : 'Download as Markdown'
+                  }
                   aria-label="Download as Markdown"
-                  onClick={() => void download()}
-                  disabled={segList.length === 0}
+                  aria-busy={exporter.preparing}
+                  onClick={exporter.download}
+                  disabled={segList.length === 0 || exporter.preparing}
                 >
-                  <Icon name="download" />
+                  <Icon
+                    name={exporter.preparing ? 'loader' : 'download'}
+                    className={exporter.preparing ? 'vt-spin' : undefined}
+                  />
                 </button>
                 <ThreadOptionsMenu
                   onRename={startRename}
                   onArchive={archiveThread}
                   onDelete={removeThread}
-                  onCopyMarkdown={() => void copyMarkdown()}
+                  onCopyMarkdown={exporter.copy}
+                  copyPending={exporter.preparing}
                   onClearExplain={
                     explainOpenId ? () => setExplainOpenId(null) : undefined
                   }
@@ -1103,6 +1103,15 @@ export function AppExperience() {
                 >
                   Try again
                 </button>
+              </div>
+            ) : loadingChars || (!char && charList.length > 0) ? (
+              // Still loading, or the selection effect hasn't picked one yet:
+              // don't flash the creation prompt at an existing account.
+              <div className="welcome">
+                <Icon
+                  name="loader"
+                  className="welcome__icon welcome__icon--sm vt-spin"
+                />
               </div>
             ) : !char ? (
               <div className="welcome">
@@ -1160,7 +1169,7 @@ export function AppExperience() {
               <>
                 {pendingSend && (
                   <PendingSegmentCard
-                    idx={segList.length + 1}
+                    idx={(thread?.segmentCount ?? segList.length) + 1}
                     sourceText={pendingSend.sourceText}
                     sourceLanguage={char.sourceLanguage}
                     targetLanguage={char.targetLanguage}

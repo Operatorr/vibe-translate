@@ -101,6 +101,10 @@ export type Segment = {
   updatedAt: string
 }
 
+// POST /api/segments response. `reused` marks an in-thread dedupe hit: an
+// existing (possibly old) Segment returned instead of a new row.
+export type CreatedSegment = Segment & { reused: boolean }
+
 export type ActivityLogItem = {
   id: string
   action: string

@@ -3,6 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "engines": {
+    "node": ">=22.18.0"
+  },
   "scripts": {
     "dev": "wrangler dev",
     "dev:vite": "vite",
@@ -66,6 +69,7 @@
     "eslint-plugin-react-refresh": "^0.4.26",
     "globals": "^15.15.0",
     "jsdom": "^30.1.2",
+    "playwright-core": "^1.64.0",
     "prettier": "^3.8.3",
     "smol-toml": "^1.6.1",
     "typescript": "^5.9.3",

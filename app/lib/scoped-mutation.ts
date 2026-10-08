@@ -1,42 +1,46 @@
-import type { UseMutationOptions } from '@tanstack/react-query'
+import type {
+  MutationFunctionContext,
+  UseMutationOptions,
+} from '@tanstack/react-query'
 
 // QueryClient.clear cancels queries, but cannot cancel a server mutation.
 // Capture ownership at mutation start, not in a render closure that an observer
-// can replace while the request is in flight.
+// can replace while the request is in flight. TanStack passes one context
+// object to every callback of an execution, including replaced options, so it
+// keys the owner even when onMutate rejects and leaves no result.
+const owners = new WeakMap<MutationFunctionContext, string | undefined>()
+
 export function scopedMutation<TData, TVariables, TContext>(
   options: UseMutationOptions<TData, Error, TVariables, TContext>,
   getOwner: () => string | undefined,
-) {
-  type Scope = { owner: string | undefined; value: TContext | undefined }
+): UseMutationOptions<TData, Error, TVariables, TContext> {
+  const owns = (context: MutationFunctionContext) =>
+    owners.has(context) && owners.get(context) === getOwner()
   return {
     ...options,
-    onMutate: async (variables, context) => {
-      const owner = getOwner()
-      const value = await options.onMutate?.(variables, context)
-      return { owner, value }
+    onMutate: (variables, context) => {
+      owners.set(context, getOwner())
+      return options.onMutate?.(variables, context) as
+        | TContext
+        | Promise<TContext>
     },
-    onSuccess: (data, variables, scope, context) => {
-      if (scope?.owner === getOwner())
-        return options.onSuccess?.(
-          data,
-          variables,
-          scope?.value as TContext,
-          context,
-        )
+    onSuccess: (data, variables, onMutateResult, context) => {
+      if (owns(context))
+        return options.onSuccess?.(data, variables, onMutateResult, context)
     },
-    onError: (error, variables, scope, context) => {
-      if (scope?.owner === getOwner())
-        return options.onError?.(error, variables, scope?.value, context)
+    onError: (error, variables, onMutateResult, context) => {
+      if (owns(context))
+        return options.onError?.(error, variables, onMutateResult, context)
     },
-    onSettled: (data, error, variables, scope, context) => {
-      if (scope?.owner === getOwner())
+    onSettled: (data, error, variables, onMutateResult, context) => {
+      if (owns(context))
         return options.onSettled?.(
           data,
           error,
           variables,
-          scope?.value,
+          onMutateResult,
           context,
         )
     },
-  } satisfies UseMutationOptions<TData, Error, TVariables, Scope>
+  }
 }

@@ -83,7 +83,7 @@ The Google OAuth client's authorized redirect URIs are `https://translate.marrow
 
 ## Database migrations
 
-Use **`pnpm db:migrate`**. The runner uses the existing `pg` dependency; Node 22+ is required. SQL files live in [`db/migrations/`](../db/migrations), operational options in [`db/migrations.json`](../db/migrations.json), and execution logic in [`scripts/db-migration-runner.ts`](../scripts/db-migration-runner.ts).
+Use **`pnpm db:migrate`**. The runner uses the existing `pg` dependency and Node runs its TypeScript entrypoint directly, so it needs **Node 22.18.0 or later** (the first 22.x release that strips types by default; `engines` in `package.json` records this). SQL files live in [`db/migrations/`](../db/migrations), operational options in [`db/migrations.json`](../db/migrations.json), and execution logic in [`scripts/db-migration-runner.ts`](../scripts/db-migration-runner.ts).
 
 ```sh
 pnpm db:migrate                      # apply pending Local migrations
@@ -92,16 +92,17 @@ pnpm db:migrate --production         # apply pending Production migrations
 pnpm db:migrate --production --status
 ```
 
-- **Local is the default.** The runner reads the local Hyperdrive connection string from `.env`, or `DATABASE_URL` from `.dev.vars`. `MIGRATION_DATABASE_URL` in the shell or `.env.local` overrides that choice. Ambient `DATABASE_URL` is deliberately not used as an implicit Production target.
+- **Local is the default.** The runner reads the local Hyperdrive connection string from `.env`, or `DATABASE_URL` from `.dev.vars`. `MIGRATION_DATABASE_URL` in the shell or `.env.local` overrides that choice. Ambient `DATABASE_URL` is deliberately not used as an implicit Production target. The opt-in database tests resolve Local the same way.
 - **Production is explicit.** Set `PRODUCTION_DATABASE_URL` in the gitignored `.env.production.local`, or provide that variable through CI's secret environment. It never falls back to Local. The host **and database** must match [`db/targets.json`](../db/targets.json), whose nonsecret target mirrors the verified production Hyperdrive origin. Update that file if the origin is intentionally moved. Do not put a URL/password in command arguments or commit credentials.
 - **Direct connections.** Use Neon's non-pooled connection string. For existing Local/Production Neon pooled URLs, the runner removes the `-pooler` hostname suffix and uses the same endpoint/database/credentials directly. It enforces certificate verification and enables channel binding. Session advisory locks require a direct connection; the app's pooled runtime configuration is unchanged. See [Neon's connection guidance](https://neon.com/docs/connect/connection-pooling).
+- **Connection guard.** The checks apply to the target `pg` actually connects to. `pg` lets query parameters such as `host`, `port`, `user` or `options` (Neon endpoint routing) override the URL, so only `sslmode`, `channel_binding` and `application_name` are accepted. The URL must name a DNS host and a database; a missing port becomes `5432` instead of ambient `PGPORT`. Hosts are compared case-insensitively without a trailing dot, and Local also refuses any Neon host carrying the Production endpoint ID.
 - **Tracked history.** `public.schema_migrations` records filename, SHA-256 checksum, application timestamp, duration, and whether an entry was baselined. The checksum includes SQL plus effective transaction/verification options. Successful files are skipped; changed/missing applied files and gaps in history fail before migration execution. Never edit an applied SQL file or its effective metadata; add a new forward migration. The tracker is managed by the runner, not by the domain bootstrap SQL.
-- **Transactions and locking.** Each ordinary file and its tracking row commit together. Failure rolls that file back; earlier successful files remain applied. A session advisory lock excludes another runner targeting the same database. DDL lock acquisition times out after five seconds; statement execution after thirty minutes. A connection failure exits nonzero, and closing the session releases its lock.
-- **Concurrent indexes.** Set `transaction: false` in `db/migrations.json` for files that need to run outside transactions. Statements are sent separately (including PostgreSQL quote/dollar-block handling), avoiding implicit multi-statement transactions. Such SQL must be safe to retry after a partial failure. `0008` also verifies the exact index definition and `indisvalid`/`indisready` before recording success. `IF NOT EXISTS` cannot repair an invalid index; inspect and rebuild it through the normal operational procedure, then rerun. The runner never silently drops an existing index.
+- **Transactions and locking.** Each ordinary file and its tracking row commit together. Failure rolls that file back; earlier successful files remain applied. A session advisory lock (`MIGRATION_LOCK` in the runner; never change its key) excludes another runner targeting the same database. DDL lock acquisition times out after five seconds; statement execution after thirty minutes. A connection failure exits nonzero, and closing the session releases its lock. If rollback, unlock or disconnect also fails, the output lists that failure after the original error.
+- **Concurrent indexes.** Set `transaction: false` in `db/migrations.json` for files that need to run outside transactions; the loader rejects concurrent index DDL (and `DETACH PARTITION … CONCURRENTLY`) in a transactional file, ignoring mentions in comments and literals. Statements are split where psql would split them (quotes, dollar bodies with any tag, nested comments, parentheses and `BEGIN ATOMIC` routine bodies) and sent separately, avoiding implicit multi-statement transactions. Such SQL must be safe to retry after a partial failure. `0008` also verifies the exact index definition and `indisvalid`/`indisready` before recording success. `IF NOT EXISTS` cannot repair an invalid index; [recover it](#recovering-an-invalid-concurrent-index), then rerun. The runner never drops an existing index itself.
 
 ### Existing databases and fresh setup
 
-Local and Production were adopted on **2026-10-08** after schema inspection. `0001`–`0004` were recorded as the audited baseline, then `0005`–`0008` executed normally. This repaired missing share/user and auth-account indexes; Production's live links and duplicate account groups were both zero before execution. `0008` ran concurrently and its exact definition/validity passed verification. A second Production run executed no migration SQL.
+Local and Production were adopted on **2026-10-08** after schema inspection. `0001`–`0004` were recorded as the audited baseline, then `0005`–`0008` executed normally. This repaired missing share/user and auth-account indexes; Production's live links and duplicate account groups were both zero before execution. `0008` ran separately, outside a transaction, and its exact definition/validity passed verification. A second Production run executed no migration SQL.
 
 For a **fresh empty database**, run the command normally; all numbered files execute in order, including the `pgvector` extension. Keep [`db/schema.sql`](../db/schema.sql) in sync as the canonical domain schema, but use migrations to provision databases so history is recorded.
 
@@ -117,15 +118,44 @@ pnpm db:migrate --production --baseline 0004
 
 ### Authoring and verification
 
-Name new files `000N_<slug>.sql` (unique four-digit numbers), maintain the schema snapshot, and do not include your own transaction control in ordinary files. Declare nontransactional options explicitly, and add `verifySql` returning `{ ok: true }` where a postcondition is needed. Test on Local before applying Production. Application deployment does not run migrations automatically.
+Name new files `000N_<slug>.sql` (unique four-digit numbers), maintain the schema snapshot, and do not include your own transaction control in ordinary files. Declare nontransactional options explicitly, and add `verifySql` where a postcondition is needed. It must return a boolean `ok` column whose first row is exactly `true`; `false`, `NULL`, text such as `'true'`, a missing column or no row all fail without recording the file. Metadata keys other than `transaction` and `verifySql` are rejected. Test on Local before applying Production. Application deployment does not run migrations automatically.
 
 Runner unit tests are included in `pnpm test`. The optional real database test creates and deletes one separate disposable **Local database**, so its role needs `CREATEDB`:
 
 ```sh
-RUN_LOCAL_DB_MIGRATIONS=1 node --env-file=.env --env-file=.dev.vars node_modules/vitest/vitest.mjs run scripts/db-migration-integration.test.ts
+RUN_LOCAL_DB_MIGRATIONS=1 pnpm exec vitest run scripts/db-migration-integration.test.ts
 ```
 
-It verifies fresh provisioning, unchanged reruns, concurrent-run exclusion, transactional rollback, and the invalid-concurrent-index retry case. It refuses the configured Production host and never uses Production credentials.
+It verifies fresh provisioning, unchanged reruns, concurrent-run exclusion, transactional rollback, and the invalid-concurrent-index retry case. It reads `.dev.vars`, `.env` and `.env.local` itself, exactly like `pnpm db:migrate`, so no `--env-file` flags are needed. It refuses the configured Production host and never uses Production credentials.
+
+### Recovering an invalid concurrent index
+
+A failed `CREATE INDEX CONCURRENTLY` can leave an invalid index behind. The file stays pending, and on retry `IF NOT EXISTS` skips the broken index, so verification keeps failing. On the target that failed:
+
+1. Confirm no build is still running. An index under construction is also invalid, so this query must return no row for its table or index:
+
+   ```sql
+   select pid, phase, relid::regclass, index_relid::regclass from pg_stat_progress_create_index;
+   ```
+
+2. Inspect the index the file creates (`0008`'s shown):
+
+   ```sql
+   select c.oid::regclass as index, i.indisvalid, i.indisready, pg_get_indexdef(i.indexrelid)
+   from pg_index i
+   join pg_class c on c.oid = i.indexrelid
+   join pg_namespace n on n.oid = c.relnamespace
+   where n.nspname = 'public' and c.relname = 'segments_user_thread_created_id_idx';
+   ```
+
+3. Continue only if this is the file's index and it is unusable: `indisvalid` or `indisready` is false, and the definition matches the file's `CREATE INDEX`. If it is valid, do not drop it: a matching definition means the verification query is wrong, and a different one means something else owns that name.
+4. Drop the confirmed index on its own, outside a transaction (psql autocommit; no `BEGIN`, no other statements):
+
+   ```sql
+   drop index concurrently public.segments_user_thread_created_id_idx;
+   ```
+
+5. Fix the cause from the runner's error (for example duplicate rows under a unique index, or a lock timeout), then rerun the same command: `pnpm db:migrate` for Local, `pnpm db:migrate --production` for Production.
 
 ## Deploy
 
