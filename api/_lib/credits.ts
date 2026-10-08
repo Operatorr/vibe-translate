@@ -80,7 +80,9 @@ export async function reserveCredits(
 
 // Settle a reservation to the real cost: adjust the balance by (reserved - cost)
 // and rewrite the pending ledger row to the actual debit. One UPDATE per side,
-// in one transaction, so the balance==ledger invariant is preserved.
+// in one transaction, so the balance==ledger invariant is preserved. The delta
+// is computed here, not in SQL: `$2 - $3` has two untyped parameters and
+// Postgres rejects it ("operator is not unique: unknown - unknown").
 export async function reconcileSpend(
   db: Client,
   userId: string,
@@ -92,10 +94,10 @@ export async function reconcileSpend(
   try {
     await db.query(
       `update users
-         set credits_balance = credits_balance + ($2 - $3),
+         set credits_balance = credits_balance + $2,
              updated_at = now()
        where auth_user_id = $1`,
-      [userId, reservation.reserved, cost.credits],
+      [userId, reservation.reserved - cost.credits],
     )
     await db.query(
       `update credit_ledger

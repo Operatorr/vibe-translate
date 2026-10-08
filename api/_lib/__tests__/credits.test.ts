@@ -71,6 +71,9 @@ describe('reconcileSpend', () => {
     const cost = computeCredits(10, 10, 'model-x', 1)
     const balance = await reconcileSpend(db, 'user-1', { ledgerId: 'ledger-1', reserved: 42 }, cost, 'seg-1')
     expect(balance).toBe(58)
+    // One precomputed delta param: `$2 - $3` with two untyped params fails in Postgres.
+    const balanceUpdate = calls.find((c) => c.sql.startsWith('update users'))
+    expect(balanceUpdate?.params).toEqual(['user-1', 42 - cost.credits])
     const ledgerUpdate = calls.find((c) => c.sql.startsWith('update credit_ledger'))
     expect(ledgerUpdate?.params).toContain(-cost.credits)
     expect(ledgerUpdate?.params).toContain('seg-1')
