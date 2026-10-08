@@ -1,0 +1,6 @@
+{
+  "0008_segment_pagination.sql": {
+    "transaction": false,
+    "verifySql": "select exists (select 1 from pg_index i join pg_class c on c.oid = i.indexrelid join pg_namespace n on n.oid = c.relnamespace where n.nspname = 'public' and c.relname = 'segments_user_thread_created_id_idx' and i.indisvalid and i.indisready and pg_get_indexdef(i.indexrelid) = 'CREATE INDEX segments_user_thread_created_id_idx ON public.segments USING btree (user_id, thread_id, created_at DESC, id DESC)') as ok"
+  }
+}

@@ -55,6 +55,7 @@ ELEVENLABS_MODEL_ID=eleven_multilingual_v2
 ```
 
 Blank model/reasoning overrides can be left unset. Models then use the database registry default, and reasoning uses the provider default. For existing overrides stored as Secrets, change their Type to Text and enter the desired value in the dashboard, then Deploy. `keep_vars` preserves Text values but does not convert existing Secrets.
+
 - **Locally**, everything goes in `.dev.vars` (gitignored). `.env.example` is the checked-in template.
 
 Production uses its **own** `BETTER_AUTH_SECRET` and `CREDENTIALS_ENCRYPTION_KEY`, never the local values. Rotating `BETTER_AUTH_SECRET` invalidates every session cookie and signs everyone out. Rotating `CREDENTIALS_ENCRYPTION_KEY` means re-encrypting every stored BYOK cipher. Auth email is load-bearing: production needs `RESEND_API_KEY` + `RESEND_FROM` on a Resend-verified domain, or no one can verify an email (and so no one can finish a password sign-up). Dodo is unset until live payments launch, and checkout returns 503 until then.
@@ -82,17 +83,53 @@ The Google OAuth client's authorized redirect URIs are `https://translate.marrow
 
 ## Database migrations
 
-**Manual, via the Neon SQL Editor.** There is no migration runner.
+Use **`pnpm db:migrate`**. The runner uses the existing `pg` dependency; Node 22+ is required. SQL files live in [`db/migrations/`](../db/migrations), operational options in [`db/migrations.json`](../db/migrations.json), and execution logic in [`scripts/db-migration-runner.ts`](../scripts/db-migration-runner.ts).
 
-1. For a fresh database: paste [`db/migrations/0001_initial.sql`](../db/migrations) into the Neon SQL Editor and run it (it bootstraps at the current 1536-dim embedding schema), then apply each later migration in order (`0002`…`0007`). All are idempotent (`create … if not exists`, `on conflict do nothing`, type-guarded `alter`s).
-2. For incremental changes: author `db/migrations/000N_<slug>.sql`, keep [`db/schema.sql`](../db/schema.sql) in sync as the canonical bootstrap, and paste the new migration into the Neon SQL Editor for each environment (local DB, then prod DB). **Never edit an already-applied migration in place** — `create … if not exists` means a re-run won't alter existing objects, so a forward migration is the only thing that reaches provisioned databases (e.g. `0004_embed_dims_1536.sql` migrates a pre-1536 DB's `vector(3072)` columns down to 1536).
-3. `pgvector` must be enabled (`create extension if not exists vector;` — included in the migration).
+```sh
+pnpm db:migrate                      # apply pending Local migrations
+pnpm db:migrate --status             # inspect Local history; read-only
+pnpm db:migrate --production         # apply pending Production migrations
+pnpm db:migrate --production --status
+```
 
-Apply to the **local** Neon DB and the **production** Neon DB separately, since they are distinct databases.
+- **Local is the default.** The runner reads the local Hyperdrive connection string from `.env`, or `DATABASE_URL` from `.dev.vars`. `MIGRATION_DATABASE_URL` in the shell or `.env.local` overrides that choice. Ambient `DATABASE_URL` is deliberately not used as an implicit Production target.
+- **Production is explicit.** Set `PRODUCTION_DATABASE_URL` in the gitignored `.env.production.local`, or provide that variable through CI's secret environment. It never falls back to Local. The host **and database** must match [`db/targets.json`](../db/targets.json), whose nonsecret target mirrors the verified production Hyperdrive origin. Update that file if the origin is intentionally moved. Do not put a URL/password in command arguments or commit credentials.
+- **Direct connections.** Use Neon's non-pooled connection string. For existing Local/Production Neon pooled URLs, the runner removes the `-pooler` hostname suffix and uses the same endpoint/database/credentials directly. It enforces certificate verification and enables channel binding. Session advisory locks require a direct connection; the app's pooled runtime configuration is unchanged. See [Neon's connection guidance](https://neon.com/docs/connect/connection-pooling).
+- **Tracked history.** `public.schema_migrations` records filename, SHA-256 checksum, application timestamp, duration, and whether an entry was baselined. The checksum includes SQL plus effective transaction/verification options. Successful files are skipped; changed/missing applied files and gaps in history fail before migration execution. Never edit an applied SQL file or its effective metadata; add a new forward migration. The tracker is managed by the runner, not by the domain bootstrap SQL.
+- **Transactions and locking.** Each ordinary file and its tracking row commit together. Failure rolls that file back; earlier successful files remain applied. A session advisory lock excludes another runner targeting the same database. DDL lock acquisition times out after five seconds; statement execution after thirty minutes. A connection failure exits nonzero, and closing the session releases its lock.
+- **Concurrent indexes.** Set `transaction: false` in `db/migrations.json` for files that need to run outside transactions. Statements are sent separately (including PostgreSQL quote/dollar-block handling), avoiding implicit multi-statement transactions. Such SQL must be safe to retry after a partial failure. `0008` also verifies the exact index definition and `indisvalid`/`indisready` before recording success. `IF NOT EXISTS` cannot repair an invalid index; inspect and rebuild it through the normal operational procedure, then rerun. The runner never silently drops an existing index.
+
+### Existing databases and fresh setup
+
+Local and Production were adopted on **2026-10-08** after schema inspection. `0001`–`0004` were recorded as the audited baseline, then `0005`–`0008` executed normally. This repaired missing share/user and auth-account indexes; Production's live links and duplicate account groups were both zero before execution. `0008` ran concurrently and its exact definition/validity passed verification. A second Production run executed no migration SQL.
+
+For a **fresh empty database**, run the command normally; all numbered files execute in order, including the `pgvector` extension. Keep [`db/schema.sql`](../db/schema.sql) in sync as the canonical domain schema, but use migrations to provision databases so history is recorded.
+
+For another **existing manually managed database**, the runner refuses to replay historical SQL automatically. Audit which prefix is already applied, then adopt that prefix once:
+
+```sh
+pnpm db:migrate --baseline 0004
+# Or, for the explicitly configured Production target:
+pnpm db:migrate --production --baseline 0004
+```
+
+`--baseline` is an **operator assertion**, not an automatic schema-equivalence check: it records that prefix without executing it, then executes the remaining files. Choose the last contiguous migration whose effects have actually been verified; do not copy `0004` blindly. Once any history exists, baseline is rejected. After a subsequent failure, resume with the ordinary command **without** `--baseline`.
+
+### Authoring and verification
+
+Name new files `000N_<slug>.sql` (unique four-digit numbers), maintain the schema snapshot, and do not include your own transaction control in ordinary files. Declare nontransactional options explicitly, and add `verifySql` returning `{ ok: true }` where a postcondition is needed. Test on Local before applying Production. Application deployment does not run migrations automatically.
+
+Runner unit tests are included in `pnpm test`. The optional real database test creates and deletes one separate disposable **Local database**, so its role needs `CREATEDB`:
+
+```sh
+RUN_LOCAL_DB_MIGRATIONS=1 node --env-file=.env --env-file=.dev.vars node_modules/vitest/vitest.mjs run scripts/db-migration-integration.test.ts
+```
+
+It verifies fresh provisioning, unchanged reruns, concurrent-run exclusion, transactional rollback, and the invalid-concurrent-index retry case. It refuses the configured Production host and never uses Production credentials.
 
 ## Deploy
 
-1. Apply any pending migration to the production Neon DB (above).
+1. `pnpm db:migrate --production` — apply pending migrations to the production Neon DB (above).
 2. `pnpm run deploy` — runs `pnpm build` then `wrangler deploy`. (Use `pnpm run deploy`: bare `pnpm deploy` is pnpm's own workspace command.)
 3. Smoke-test: `curl https://translate.marrowtech.app/api/health` → `{"ok":true,"env":"production"}`. Then sign up with email, open the verification link (this needs Resend configured), translate once, sign out, and sign back in (and once with Google). `wrangler tail` for live logs. API responses carry `cf-placement: remote-SIN`, which shows the worker ran next to the DB ([CLOUDFLARE.md](./CLOUDFLARE.md#worker)).
 
@@ -106,8 +143,8 @@ Use Cloudflare's version history: `wrangler rollback` (or pin a prior version vi
 
 ## Pre-launch checklist
 
-- [ ] Apply `0007_auth_account_uniqueness.sql` before deploying this review fix. It fails if duplicate provider/account pairs exist; resolve those rows before retrying.
-- [x] Production Neon DB created, `pgvector` enabled, all migrations (`0001`…`0006`) applied in order.
+- [x] `0007_auth_account_uniqueness.sql` and `0008_segment_pagination.sql` applied and tracked in Production (2026-10-08).
+- [x] Production Neon DB created, `pgvector` enabled, migration history adopted and all migrations through `0008` recorded.
 - [x] Hyperdrive `vibe-translate-prod` created against the prod Neon DB (query caching **disabled**) and bound in `wrangler.jsonc`.
 - [x] Deployed (`pnpm run deploy`) to `https://translate.marrowtech.app`; `APP_URL` matches.
 - [x] Secrets set: `BETTER_AUTH_SECRET`, `CREDENTIALS_ENCRYPTION_KEY`, `OPENROUTER_API_KEY`; model/reasoning overrides were initially provisioned as Secrets and should be converted to dashboard Text variables (see above).

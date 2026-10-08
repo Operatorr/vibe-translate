@@ -11,6 +11,7 @@
     "build": "tsc --noEmit && vite build",
     "test": "vitest run",
     "bench": "vitest run --config vitest.bench.config.ts",
+    "db:migrate": "node scripts/db-migrate.ts",
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",

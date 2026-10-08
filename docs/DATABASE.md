@@ -7,6 +7,7 @@
 - **PostgreSQL** is the primary datastore. The **`pgvector`** extension is a hard runtime dependency — translation memory retrieval depends on it.
 - In Cloudflare Workers, the database is reached through a **Hyperdrive** binding (`HYPERDRIVE` in `wrangler.jsonc`), which pools Postgres connections at the edge. Query caching is **off**, so session and list reads are never stale (see [CLOUDFLARE.md](./CLOUDFLARE.md#hyperdrive)).
 - In local dev, Wrangler emulates the binding from `CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE` in a gitignored `.env` (the local Neon URL). `api/_lib/db.ts → databaseUrl(env)` resolves the connection string. Each request opens its own `pg.Client`, and a guarded request also gets a `pg.Pool` for Better Auth.
+- Migration execution and tracking: `pnpm db:migrate` (Local), `pnpm db:migrate --production` (Production). The runner owns `public.schema_migrations` with checksums, timestamps, durations, and baseline flags. See [DEPLOYMENT.md](./DEPLOYMENT.md#database-migrations).
 - The bootstrap schema lives in [`db/schema.sql`](../db/schema.sql). Incremental migrations live in [`db/migrations/`](../db/migrations) (sequential, e.g. `0001_initial.sql`).
 
 ## Domain model
