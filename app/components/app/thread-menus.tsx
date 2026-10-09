@@ -8,11 +8,15 @@ import type { ThreadShare } from '@/lib/types'
 import { copyText } from '@/lib/clipboard'
 
 // "More" menu on the workspace header. Rename / archive / delete the thread,
-// plus a copy-as-Markdown shortcut that mirrors the download button. Radix
+// plus star and Markdown export actions. Radix
 // DropdownMenu supplies real `menu`/`menuitem` semantics, arrow-key roving
 // focus, typeahead, and focus return.
 export function ThreadOptionsMenu({
   onRename,
+  starred,
+  onToggleStar,
+  onDownload,
+  downloadDisabled,
   onArchive,
   onDelete,
   onCopyMarkdown,
@@ -20,6 +24,10 @@ export function ThreadOptionsMenu({
   onClearExplain,
 }: {
   onRename: () => void
+  starred: boolean
+  onToggleStar: () => void
+  onDownload: () => void
+  downloadDisabled: boolean
   onArchive: () => void
   onDelete: () => void
   onCopyMarkdown: () => void
@@ -73,6 +81,17 @@ export function ThreadOptionsMenu({
             keepFocus.current = false
           }}
         >
+          {item(
+            'star',
+            starred ? 'Unstar thread' : 'Star thread',
+            onToggleStar,
+          )}
+          {item(
+            'download',
+            copyPending ? 'Preparing Markdown…' : 'Download as Markdown',
+            onDownload,
+            { disabled: downloadDisabled || copyPending },
+          )}
           {item('pencil', 'Rename thread', onRename, { ownsFocus: true })}
           {item(
             'copy',

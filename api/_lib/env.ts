@@ -19,6 +19,11 @@ export type Bindings = {
   DODO_PRODUCT_PRO_ANNUAL?: string
   DODO_PRODUCT_TEAM?: string
   DODO_PRODUCT_TEAM_ANNUAL?: string
+  // One-time product; price/currency are managed in Dodo. The amount is
+  // snapshotted into each order, so later config changes cannot alter a purchase.
+  DODO_PRODUCT_CREDITS_SMALL?: string
+  DODO_PRODUCT_CREDITS_MEDIUM?: string
+  DODO_PRODUCT_CREDITS_LARGE?: string
   OPENROUTER_API_KEY?: string
   // Optional per-task model + reasoning overrides (see adr/0003). `*_MODEL`
   // pins an OpenRouter slug; `*_REASONING` sets reasoning effort

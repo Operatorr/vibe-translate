@@ -183,3 +183,31 @@ Use Cloudflare's version history: `wrangler rollback` (or pin a prior version vi
 - [ ] `ELEVENLABS_API_KEY` + the six `ELEVENLABS_VOICE_*` ids.
 - [x] Dodo webhook signature verification wired (see [SECURITY.md](./SECURITY.md#webhook-signatures)) — launch blocker. Set `DODO_WEBHOOK_SECRET` (and the `DODO_PRODUCT_*` ids) before go-live. Payments are intentionally off until then.
 - [ ] Six `public/demo/vibe-*.mp3` clips rendered (see [public/demo/README.md](../public/demo/README.md)).
+
+## Credit top-ups
+
+Apply migration `0009_credit_purchases.sql` in each environment before enabling purchases.
+Create three **one-time, fixed-price** products in Dodo (not recurring or pay-what-you-want):
+
+| Credits | Worker binding                | Dodo product       |
+| ------- | ----------------------------- | ------------------ |
+| 25,000  | `DODO_PRODUCT_CREDITS_SMALL`  | Small credit pack  |
+| 50,000  | `DODO_PRODUCT_CREDITS_MEDIUM` | Medium credit pack |
+| 100,000 | `DODO_PRODUCT_CREDITS_LARGE`  | Large credit pack  |
+
+Set each product's price/currency in Dodo. The credits page fetches current base prices
+and discounts from Dodo; final localized currency/taxes are shown at checkout. Each
+pack can be enabled separately. Missing or unavailable products disable its purchase
+button while balance and usage history remain available. Local uses Dodo test mode;
+production uses live mode and needs matching live product IDs.
+
+Set `DODO_API_KEY`, `DODO_WEBHOOK_SECRET`, and the product bindings. Add
+`payment.succeeded` to the events delivered to `/api/billing/webhooks/dodo`.
+`APP_URL` must be the public origin for checkout returns. Top-up orders snapshot
+credits and product before checkout. A signed payment must match the order's user,
+product and quantity; order locking and a unique payment ID ensure one grant even
+across different webhook delivery IDs. The redirect itself grants nothing.
+
+After payment the browser returns to `/app/credits?orderId=…`, polls for verified
+fulfillment for up to one minute, and offers a manual check if confirmation is delayed.
+Top-ups add to the existing balance without changing the subscription tier or refill date.

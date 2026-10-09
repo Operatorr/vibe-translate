@@ -1,5 +1,6 @@
 import { HTTPException } from 'hono/http-exception'
 import type { Client } from 'pg'
+import { z } from 'zod'
 
 import type { Bindings } from './env'
 import { logActivity } from './activity'
@@ -16,6 +17,118 @@ const SIGNATURE_TOLERANCE_SECONDS = 5 * 60
 export type PaidPlan = 'pro' | 'team'
 export type BillingPeriod = 'monthly' | 'annual'
 
+const CREDIT_PACKS = [
+  { id: 'small', credits: 25000, envKey: 'DODO_PRODUCT_CREDITS_SMALL' },
+  { id: 'medium', credits: 50000, envKey: 'DODO_PRODUCT_CREDITS_MEDIUM' },
+  { id: 'large', credits: 100000, envKey: 'DODO_PRODUCT_CREDITS_LARGE' },
+] as const
+type CreditPackId = (typeof CREDIT_PACKS)[number]['id']
+const productPriceSchema = z.object({
+  price: z.object({
+    type: z.literal('one_time_price'),
+    price: z.number().int().nonnegative(),
+    currency: z.string().length(3),
+    discount: z.number().min(0).max(100).optional(),
+    discount_bps: z.number().min(0).max(10000).nullish(),
+    pay_what_you_want: z.boolean().optional(),
+  }),
+})
+
+async function loadCreditPack(
+  env: Bindings,
+  pack: (typeof CREDIT_PACKS)[number],
+) {
+  const productId = env[pack.envKey]?.trim()
+  const result = {
+    id: pack.id,
+    credits: pack.credits,
+    available: false,
+    price: null as { amount: number; currency: string } | null,
+  }
+  if (!env.DODO_API_KEY?.trim() || !productId) return result
+  const res = await dodoFetch(
+    env,
+    `/products/${encodeURIComponent(productId)}`,
+    { method: 'GET' },
+  )
+  if (!res.ok) return result
+  const product = productPriceSchema.safeParse(await res.json())
+  if (!product.success || product.data.price.pay_what_you_want) return result
+  const price = product.data.price
+  const discount = price.discount_bps ?? (price.discount ?? 0) * 100
+  return {
+    ...result,
+    available: true,
+    price: {
+      amount: Math.round((price.price * (10000 - discount)) / 10000),
+      currency: price.currency,
+    },
+  }
+}
+
+export async function creditPacks(env: Bindings) {
+  // Catalog failures must not hide the user's balance and history.
+  return Promise.all(
+    CREDIT_PACKS.map(async (pack) => {
+      try {
+        return await loadCreditPack(env, pack)
+      } catch {
+        return {
+          id: pack.id,
+          credits: pack.credits,
+          available: false,
+          price: null,
+        }
+      }
+    }),
+  )
+}
+
+export async function createCreditCheckout(params: {
+  db: Client
+  env: Bindings
+  userId: string
+  email: string | null
+  pack: CreditPackId
+}): Promise<{ checkoutUrl: string }> {
+  const { db, env, userId, email } = params
+  const definition = CREDIT_PACKS.find((pack) => pack.id === params.pack)!
+  const pack = await loadCreditPack(env, definition)
+  const productId = env[definition.envKey]?.trim()
+  if (!pack.available || !productId) {
+    throw new HTTPException(503, {
+      message: 'Credit top-ups are not available yet',
+    })
+  }
+  if (!email)
+    throw new HTTPException(400, { message: 'A billing email is required' })
+  const order = await db.query<{ id: string }>(
+    `insert into credit_purchases (user_id, product_id, quantity, credits)
+     values ($1, $2, $3, $4) returning id`,
+    [userId, productId, 1, pack.credits],
+  )
+  const orderId = order.rows[0].id
+  const res = await dodoFetch(env, '/checkouts', {
+    method: 'POST',
+    body: JSON.stringify({
+      product_cart: [{ product_id: productId, quantity: 1 }],
+      customer: { email },
+      return_url: `${env.APP_URL ?? ''}/app/credits?orderId=${orderId}`,
+      metadata: { user_id: userId, kind: 'credit_topup', order_id: orderId },
+    }),
+  })
+  if (!res.ok) await dodoErrorMessage(res, 'credit checkout')
+  const body = (await res.json().catch(() => ({}))) as {
+    checkout_url?: string | null
+  }
+  if (!body.checkout_url) {
+    throw new HTTPException(502, {
+      message: 'Dodo did not return a checkout URL',
+    })
+  }
+  return { checkoutUrl: body.checkout_url }
+}
+
 // ---------------------------------------------------------------------------
 // Dodo REST helpers (raw fetch — no SDK, mirroring the ElevenLabs pattern)
 // ---------------------------------------------------------------------------
@@ -26,18 +139,32 @@ function dodoBaseUrl(env: Bindings): string {
     : 'https://test.dodopayments.com'
 }
 
-function dodoProductId(env: Bindings, plan: PaidPlan, period: BillingPeriod): string | undefined {
-  if (plan === 'pro') return period === 'annual' ? env.DODO_PRODUCT_PRO_ANNUAL : env.DODO_PRODUCT_PRO
-  return period === 'annual' ? env.DODO_PRODUCT_TEAM_ANNUAL : env.DODO_PRODUCT_TEAM
+function dodoProductId(
+  env: Bindings,
+  plan: PaidPlan,
+  period: BillingPeriod,
+): string | undefined {
+  if (plan === 'pro')
+    return period === 'annual'
+      ? env.DODO_PRODUCT_PRO_ANNUAL
+      : env.DODO_PRODUCT_PRO
+  return period === 'annual'
+    ? env.DODO_PRODUCT_TEAM_ANNUAL
+    : env.DODO_PRODUCT_TEAM
 }
 
-async function dodoFetch(env: Bindings, path: string, init: RequestInit): Promise<Response> {
+async function dodoFetch(
+  env: Bindings,
+  path: string,
+  init: RequestInit,
+): Promise<Response> {
   const apiKey = env.DODO_API_KEY?.trim()
   if (!apiKey) {
     throw new HTTPException(503, { message: 'Dodo Payments is not configured' })
   }
   return fetch(`${dodoBaseUrl(env)}${path}`, {
     ...init,
+    signal: init.signal ?? AbortSignal.timeout(10_000),
     headers: {
       authorization: `Bearer ${apiKey}`,
       'content-type': 'application/json',
@@ -50,8 +177,14 @@ async function dodoErrorMessage(res: Response, action: string): Promise<never> {
   // Log the upstream detail server-side; return only a generic message + status
   // to the client so provider internals aren't surfaced in API responses.
   const detail = await res.text().catch(() => '')
-  if (detail) console.error(`dodo ${action} failed`, { status: res.status, detail: detail.slice(0, 500) })
-  throw new HTTPException(502, { message: `Dodo ${action} failed (${res.status})` })
+  if (detail)
+    console.error(`dodo ${action} failed`, {
+      status: res.status,
+      detail: detail.slice(0, 500),
+    })
+  throw new HTTPException(502, {
+    message: `Dodo ${action} failed (${res.status})`,
+  })
 }
 
 // ---------------------------------------------------------------------------
@@ -77,7 +210,9 @@ export async function createCheckoutSession(params: {
     })
   }
   if (!email) {
-    throw new HTTPException(400, { message: 'A billing email is required to start checkout' })
+    throw new HTTPException(400, {
+      message: 'A billing email is required to start checkout',
+    })
   }
 
   const res = await dodoFetch(env, '/checkouts', {
@@ -91,9 +226,13 @@ export async function createCheckoutSession(params: {
   })
   if (!res.ok) await dodoErrorMessage(res, 'checkout')
 
-  const body = (await res.json().catch(() => ({}))) as { checkout_url?: string | null }
+  const body = (await res.json().catch(() => ({}))) as {
+    checkout_url?: string | null
+  }
   if (!body.checkout_url) {
-    throw new HTTPException(502, { message: 'Dodo did not return a checkout URL' })
+    throw new HTTPException(502, {
+      message: 'Dodo did not return a checkout URL',
+    })
   }
   return { checkoutUrl: body.checkout_url }
 }
@@ -101,11 +240,18 @@ export async function createCheckoutSession(params: {
 // Cancels at the end of the current billing period (keeps access until then).
 // The tier downgrade is applied later by the `subscription.cancelled` webhook,
 // not here — webhooks are the single source of truth for entitlement state.
-export async function cancelSubscription(env: Bindings, subscriptionId: string): Promise<void> {
-  const res = await dodoFetch(env, `/subscriptions/${encodeURIComponent(subscriptionId)}`, {
-    method: 'PATCH',
-    body: JSON.stringify({ cancel_at_next_billing_date: true }),
-  })
+export async function cancelSubscription(
+  env: Bindings,
+  subscriptionId: string,
+): Promise<void> {
+  const res = await dodoFetch(
+    env,
+    `/subscriptions/${encodeURIComponent(subscriptionId)}`,
+    {
+      method: 'PATCH',
+      body: JSON.stringify({ cancel_at_next_billing_date: true }),
+    },
+  )
   if (!res.ok) await dodoErrorMessage(res, 'cancel')
 }
 
@@ -126,14 +272,18 @@ export async function switchPlan(params: {
     })
   }
 
-  const res = await dodoFetch(env, `/subscriptions/${encodeURIComponent(subscriptionId)}/change-plan`, {
-    method: 'POST',
-    body: JSON.stringify({
-      product_id: productId,
-      quantity: 1,
-      proration_billing_mode: 'prorated_immediately',
-    }),
-  })
+  const res = await dodoFetch(
+    env,
+    `/subscriptions/${encodeURIComponent(subscriptionId)}/change-plan`,
+    {
+      method: 'POST',
+      body: JSON.stringify({
+        product_id: productId,
+        quantity: 1,
+        proration_billing_mode: 'prorated_immediately',
+      }),
+    },
+  )
   if (!res.ok) await dodoErrorMessage(res, 'change-plan')
 }
 
@@ -151,7 +301,8 @@ function base64ToBytes(b64: string): Uint8Array<ArrayBuffer> {
 function bytesToBase64(buffer: ArrayBuffer): string {
   const bytes = new Uint8Array(buffer)
   let binary = ''
-  for (let i = 0; i < bytes.length; i += 1) binary += String.fromCharCode(bytes[i])
+  for (let i = 0; i < bytes.length; i += 1)
+    binary += String.fromCharCode(bytes[i])
   return btoa(binary)
 }
 
@@ -159,7 +310,8 @@ function bytesToBase64(buffer: ArrayBuffer): string {
 function timingSafeEqual(a: string, b: string): boolean {
   if (a.length !== b.length) return false
   let mismatch = 0
-  for (let i = 0; i < a.length; i += 1) mismatch |= a.charCodeAt(i) ^ b.charCodeAt(i)
+  for (let i = 0; i < a.length; i += 1)
+    mismatch |= a.charCodeAt(i) ^ b.charCodeAt(i)
   return mismatch === 0
 }
 
@@ -183,7 +335,9 @@ export async function verifyDodoSignature(
   if (Math.abs(now - ts) > SIGNATURE_TOLERANCE_SECONDS) return false
 
   // Standard Webhooks secrets are base64, optionally prefixed `whsec_`.
-  const rawSecret = secret.startsWith('whsec_') ? secret.slice('whsec_'.length) : secret
+  const rawSecret = secret.startsWith('whsec_')
+    ? secret.slice('whsec_'.length)
+    : secret
 
   let key: CryptoKey
   try {
@@ -207,7 +361,8 @@ export async function verifyDodoSignature(
     if (comma === -1) continue
     const version = entry.slice(0, comma)
     const value = entry.slice(comma + 1)
-    if (version === 'v1' && value && timingSafeEqual(value, expected)) return true
+    if (version === 'v1' && value && timingSafeEqual(value, expected))
+      return true
   }
   return false
 }
@@ -217,14 +372,28 @@ export async function verifyDodoSignature(
 // ---------------------------------------------------------------------------
 
 // Permissive shape — we read only the fields we need and ignore the rest.
-export type DodoEvent = {
-  type?: string
-  data?: {
-    subscription_id?: string
-    product_id?: string
-    metadata?: Record<string, string> | null
-  } | null
-}
+export const dodoEventSchema = z.object({
+  type: z.string(),
+  data: z
+    .object({
+      subscription_id: z.string().nullish(),
+      subscription_ids: z.array(z.string()).optional(),
+      product_id: z.string().optional(),
+      payment_id: z.string().optional(),
+      status: z.string().nullish(),
+      product_cart: z
+        .array(
+          z.object({
+            product_id: z.string(),
+            quantity: z.number().int().positive(),
+          }),
+        )
+        .nullish(),
+      metadata: z.record(z.string(), z.unknown()).nullish(),
+    })
+    .nullish(),
+})
+export type DodoEvent = z.infer<typeof dodoEventSchema>
 
 export type WebhookResult = {
   status: 'processed' | 'deduped' | 'ignored'
@@ -234,14 +403,25 @@ export type WebhookResult = {
 }
 
 // Plan from checkout metadata (primary), falling back to the product id map.
-function resolvePlan(env: Bindings, data: NonNullable<DodoEvent['data']>): Tier | undefined {
+function resolvePlan(
+  env: Bindings,
+  data: NonNullable<DodoEvent['data']>,
+): Tier | undefined {
   const fromMeta = data.metadata?.plan
   if (fromMeta === 'pro' || fromMeta === 'team') return fromMeta
 
   const productId = data.product_id
   if (productId) {
-    if (productId === env.DODO_PRODUCT_PRO || productId === env.DODO_PRODUCT_PRO_ANNUAL) return 'pro'
-    if (productId === env.DODO_PRODUCT_TEAM || productId === env.DODO_PRODUCT_TEAM_ANNUAL) return 'team'
+    if (
+      productId === env.DODO_PRODUCT_PRO ||
+      productId === env.DODO_PRODUCT_PRO_ANNUAL
+    )
+      return 'pro'
+    if (
+      productId === env.DODO_PRODUCT_TEAM ||
+      productId === env.DODO_PRODUCT_TEAM_ANNUAL
+    )
+      return 'team'
   }
   return undefined
 }
@@ -322,9 +502,80 @@ async function handleDodoEvent(
   event: DodoEvent,
 ): Promise<WebhookResult> {
   const data = event.data ?? {}
-  const subscriptionId = typeof data.subscription_id === 'string' ? data.subscription_id : undefined
+  const subscriptionId =
+    typeof data.subscription_id === 'string' ? data.subscription_id : undefined
 
   switch (event.type) {
+    case 'payment.succeeded': {
+      // Subscription payments have their own allowance path. Never grant from
+      // redirect parameters, client-supplied credit amounts, or metadata alone.
+      if (data.metadata?.kind !== 'credit_topup') return { status: 'ignored' }
+      const orderId = z.uuid().safeParse(data.metadata.order_id)
+      if (
+        !orderId.success ||
+        !data.payment_id ||
+        data.status !== 'succeeded' ||
+        subscriptionId ||
+        data.subscription_ids?.length
+      ) {
+        throw new HTTPException(400, { message: 'Invalid credit payment' })
+      }
+      const orders = await db.query<{
+        user_id: string
+        product_id: string
+        quantity: number
+        credits: number
+        payment_id: string | null
+        fulfilled_at: Date | null
+      }>(
+        `select user_id, product_id, quantity, credits, payment_id, fulfilled_at
+            from credit_purchases where id = $1 for update`,
+        [orderId.data],
+      )
+      const order = orders.rows[0]
+      if (!order)
+        throw new HTTPException(400, { message: 'Unknown credit order' })
+      const cart = data.product_cart
+      if (
+        data.metadata.user_id !== order.user_id ||
+        !cart ||
+        cart.length !== 1 ||
+        cart[0].product_id !== order.product_id ||
+        cart[0].quantity !== order.quantity
+      ) {
+        throw new HTTPException(400, {
+          message: 'Credit payment does not match its order',
+        })
+      }
+      if (order.fulfilled_at) {
+        if (order.payment_id !== data.payment_id) {
+          throw new HTTPException(400, { message: 'Credit order already paid' })
+        }
+        return { status: 'deduped' }
+      }
+      // Unique payment_id also prevents using one payment for two orders.
+      await db.query(
+        `update credit_purchases set payment_id = $2, fulfilled_at = now()
+                       where id = $1`,
+        [orderId.data, data.payment_id],
+      )
+      await db.query(
+        `update users set credits_balance = credits_balance + $2,
+                       updated_at = now() where auth_user_id = $1`,
+        [order.user_id, order.credits],
+      )
+      await db.query(
+        `insert into credit_ledger (user_id, delta, reason, reference_id, metadata)
+                       values ($1, $2, 'grant.purchase', $3, $4)`,
+        [
+          order.user_id,
+          order.credits,
+          orderId.data,
+          JSON.stringify({ paymentId: data.payment_id }),
+        ],
+      )
+      return { status: 'processed', userId: order.user_id }
+    }
     case 'subscription.active':
     case 'subscription.plan_changed':
     case 'subscription.renewed': {
@@ -340,14 +591,24 @@ async function handleDodoEvent(
       }
       const isRenewal = event.type === 'subscription.renewed'
       await applySubscriptionGrant(db, userId, plan, subscriptionId, isRenewal)
-      await logActivity(db, userId, isRenewal ? 'tier.renewed' : 'tier.upgraded', {
-        plan,
-        subscriptionId,
-      })
+      await logActivity(
+        db,
+        userId,
+        isRenewal ? 'tier.renewed' : 'tier.upgraded',
+        {
+          plan,
+          subscriptionId,
+        },
+      )
       // `activated` drives the one-time confirmation email: only first
       // activation, not renewals or plan changes (which would re-send an
       // "activated" email on every upgrade/downgrade).
-      return { status: 'processed', userId, plan, activated: event.type === 'subscription.active' }
+      return {
+        status: 'processed',
+        userId,
+        plan,
+        activated: event.type === 'subscription.active',
+      }
     }
 
     case 'subscription.failed': {
@@ -357,17 +618,23 @@ async function handleDodoEvent(
       // terminal teardown (cancelled/expired) clears subscription_id. See adr/0005.
       const userId = await resolveUserId(db, data, subscriptionId)
       if (!userId) {
-        console.warn('dodo webhook: could not resolve user for payment failure', {
-          type: event.type,
-          subscriptionId,
-        })
+        console.warn(
+          'dodo webhook: could not resolve user for payment failure',
+          {
+            type: event.type,
+            subscriptionId,
+          },
+        )
         return { status: 'ignored' }
       }
       await db.query(
         `update users set tier = 'free', updated_at = now() where auth_user_id = $1`,
         [userId],
       )
-      await logActivity(db, userId, 'tier.downgraded', { reason: event.type, subscriptionId })
+      await logActivity(db, userId, 'tier.downgraded', {
+        reason: event.type,
+        subscriptionId,
+      })
       return { status: 'processed', userId, plan: 'free', activated: false }
     }
 
@@ -387,7 +654,10 @@ async function handleDodoEvent(
           where auth_user_id = $1`,
         [userId],
       )
-      await logActivity(db, userId, 'tier.downgraded', { reason: event.type, subscriptionId })
+      await logActivity(db, userId, 'tier.downgraded', {
+        reason: event.type,
+        subscriptionId,
+      })
       return { status: 'processed', userId, plan: 'free', activated: false }
     }
 

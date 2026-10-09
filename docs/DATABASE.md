@@ -262,3 +262,12 @@ Derived/operational data — not user-scoped, no cascade.
 ## Cursor history index
 
 Migration `0008_segment_pagination.sql` adds `(user_id, thread_id, created_at desc, id desc)` for owner-scoped backward Segment pages. The existing user/time and thread/time indexes continue to support other reads and are retained. Apply the concurrent migration outside a transaction to each environment separately. The bootstrap schema includes the same index with a normal `CREATE INDEX`. Local fixture plans and deployment instructions are in [PERFORMANCE.md](./PERFORMANCE.md).
+
+### Credit purchases
+
+`credit_purchases` (migration `0009_credit_purchases.sql`) stores owner-scoped
+one-time top-up orders: product ID, quantity, snapshotted credits, unique payment
+ID, creation and fulfillment timestamps. Fulfillment locks the order and writes
+`grant.purchase` to `credit_ledger` with the order UUID as `reference_id`. No
+subscription or credit refill timestamp is changed. The unique payment ID and
+fulfilled timestamp protect against repeat grants across distinct webhook IDs.

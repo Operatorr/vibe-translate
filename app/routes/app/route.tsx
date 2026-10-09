@@ -2,6 +2,7 @@ import { Navigate, Outlet, createFileRoute } from '@tanstack/react-router'
 
 import { authClient } from '@/lib/auth-client'
 import { useCacheReady } from '@/lib/query-cache-context'
+import { CreditRequiredModal } from '@/components/app/credit-required-modal'
 
 export const Route = createFileRoute('/app')({
   component: AppLayout,
@@ -23,5 +24,10 @@ function AppLayout() {
     )
   }
   if (!data && !error) return <Navigate to="/auth" replace />
-  return <Outlet />
+  return (
+    <>
+      <Outlet />
+      <CreditRequiredModal />
+    </>
+  )
 }

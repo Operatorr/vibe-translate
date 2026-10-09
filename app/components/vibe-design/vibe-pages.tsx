@@ -963,13 +963,6 @@ const LandingContent = ({ onNavigate }: { onNavigate: NavigateFn }) => {
               >
                 API
               </a>
-              <a
-                className="footer__link"
-                href="#"
-                onClick={(e) => e.preventDefault()}
-              >
-                Changelog
-              </a>
             </div>
             <div>
               <h4 className="footer__col-h">Resources</h4>

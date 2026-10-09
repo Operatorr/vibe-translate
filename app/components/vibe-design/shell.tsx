@@ -1,4 +1,3 @@
-import { Link } from '@tanstack/react-router'
 import * as React from 'react'
 
 import { Icon } from './icon'
@@ -176,9 +175,6 @@ export const SiteNav = ({
           {navLink('/', 'Product')}
           {navLink('/pricing', 'Pricing')}
           {navLink('/app', 'App')}
-          <Link className="vt-navlink" to="/changelog">
-            Changelog
-          </Link>
         </nav>
       </div>
       <div className="vt-topnav__right">
@@ -243,7 +239,6 @@ export const SiteNav = ({
             <nav aria-label="Mobile navigation">
               <a href="/">Product</a>
               <a href="/pricing">Pricing</a>
-              <a href="/changelog">Changelog</a>
               <a href="/auth">Sign in</a>
             </nav>
           </details>

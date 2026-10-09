@@ -303,8 +303,42 @@ describe('translate credit ordering', () => {
     })
     expect(res.status).toBe(201)
     expect(credits.reconcileSpend).toHaveBeenCalledTimes(1)
+    expect(credits.reconcileSpend).toHaveBeenCalledWith(
+      fakeDb,
+      'user_1',
+      { ledgerId: 'ledger_1', reserved: 5 },
+      {
+        credits: 8,
+        promptTokens: 5,
+        completionTokens: 3,
+        modelId: 'test/model',
+      },
+      SEGMENT,
+    )
     expect(credits.refundReservation).not.toHaveBeenCalled()
     errors.mockRestore()
+  })
+
+  it('persists the same credit charge that settlement applies', async () => {
+    let usage: unknown
+    answer = (sql, params) => {
+      if (sql.startsWith('insert into segments')) usage = JSON.parse(params[6] as string)
+      return createAnswers(sql)
+    }
+    const res = await postJson('/api/segments', { threadId: THREAD, sourceText: 'hi', vibe: 'casual' })
+    expect(res.status).toBe(201)
+    expect(usage).toMatchObject({ promptTokens: 5, completionTokens: 3, creditsCharged: 8 })
+  })
+  it('reports the remaining balance and required hold when a translation is rejected', async () => {
+    vi.mocked(credits.reserveCredits).mockResolvedValueOnce(null)
+    answer = (sql) => sql.startsWith('select credits_balance')
+      ? { rows: [{ credits_balance: 198 }] } : createAnswers(sql)
+    const res = await postJson('/api/segments', { threadId: THREAD, sourceText: 'hi', vibe: 'casual' })
+    expect(res.status).toBe(402)
+    expect(await res.json()).toMatchObject({ error: { details: {
+      code: 'insufficient_credits', balance: 198, requiredCredits: 402,
+    } } })
+    expect(credits.reconcileSpend).not.toHaveBeenCalled()
   })
 
   it('refunds when the Segment insert itself fails', async () => {
@@ -857,4 +891,41 @@ describe('character workspace', () => {
       expect(fakeDb.query).not.toHaveBeenCalled()
     },
   )
+})
+
+describe('credit page boundaries', () => {
+  it('rejects invalid pack ids before checkout or profile provisioning', async () => {
+    const res = await postJson('/api/billing/credits/checkout', {
+      pack: 'unlimited',
+      credits: 999999,
+    })
+    expect(res.status).toBe(400)
+    expect(queries).toEqual([])
+  })
+  it('rejects malformed order ids before reading credit history', async () => {
+    const res = await call('/api/users/me/credits?orderId=bad')
+    expect(res.status).toBe(400)
+    expect(queries).toEqual([])
+  })
+  it('does not reveal another user’s credit order', async () => {
+    const res = await call(`/api/users/me/credits?orderId=${SEGMENT}`)
+    expect(res.status).toBe(404)
+    const lookup = fakeDb.query.mock.calls.find(([sql]) =>
+      sql.includes('from credit_purchases'),
+    )
+    expect(lookup?.[0]).toContain('user_id = $2')
+    expect(lookup?.[1]).toEqual([SEGMENT, 'user_1'])
+  })
+  it('rejects an unsigned credit payment before touching the database', async () => {
+    const res = await app.request(
+      '/api/billing/webhooks/dodo',
+      {
+        method: 'POST',
+        body: JSON.stringify({ type: 'payment.succeeded', data: {} }),
+      },
+      { ...env, DODO_WEBHOOK_SECRET: btoa('test-signing-key') },
+    )
+    expect(res.status).toBe(400)
+    expect(queries).toEqual([])
+  })
 })

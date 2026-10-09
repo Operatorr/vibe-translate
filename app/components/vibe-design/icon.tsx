@@ -20,6 +20,7 @@ const ICONS: Record<string, LucideIcon> = {
   'chevron-right': Icons.ChevronRight,
   copy: Icons.Copy,
   download: Icons.Download,
+  expand: Icons.Expand,
   'external-link': Icons.ExternalLink,
   'file-text': Icons.FileText,
   languages: Icons.Languages,

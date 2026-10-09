@@ -162,3 +162,26 @@ One read-only public link per Thread.
 
 - ~~Webhook surface: do we need identity-provider webhooks (user-deleted, email-changed) wired to the DB?~~ **Resolved:** no. Identity lives in our own DB ([adr/0008](./adr/0008-better-auth-replaces-clerk.md)). Deleting an `auth_users` row cascades through all app data, and `users.email` is synchronized whenever an app-data handler or billing checkout calls `getOrCreateUser` with a different session email.
 - Should `/api/memory` also return embedding-similarity scores normalized 0..1, or expose raw cosine distance? (Today: similarity 0..1.)
+
+### Credit balance and top-ups
+
+- `GET /api/users/me/credits?orderId=<uuid>` — authenticated, `no-store`. Returns
+  `{ me, packs, order, ledger }`. `ledger` is the latest 50 owner-scoped entries;
+  `pending` marks temporary reservations. `packs` lists `small` (25,000), `medium`
+  (50,000), `large` (100,000), each with availability and a Dodo base price
+  `{ amount, currency }` in currency minor units, or null. Optional `orderId` is
+  UUID-validated and owner-scoped; a missing/foreign order returns 404.
+- `POST /api/billing/credits/checkout` — authenticated, Zod-validated
+  `{ pack: 'small' | 'medium' | 'large' }` → `{ checkoutUrl }`. The credit amount
+  and product come from the server's catalog, never the client. Provisions the
+  account, stores an order, then creates a one-time Dodo checkout. Returns 503
+  when the selected pack is unconfigured/unavailable.
+- A verified `payment.succeeded` with `metadata.kind = 'credit_topup'` fulfills
+  a matching order, updates the balance, and writes `grant.purchase` in the same
+  transaction as event deduplication. Subscription payments use their existing
+  allowance path. Returning from checkout is not proof of payment.
+
+Insufficient-credit API responses (402) open the app's credit recovery dialog:
+full-screen on phones, centered on desktop, linking to `/pricing` and `/app/credits`.
+
+Insufficient-credit errors return HTTP 402 with `error.details = { code: "insufficient_credits", balance, requiredCredits }`. `requiredCredits` is the temporary pre-call reservation, not the final debit. Translation `tokenUsage.creditsCharged` snapshots the generation-time debit (zero for BYOK); provider input/output counts remain separate. Legacy rows may omit the charge.

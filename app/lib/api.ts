@@ -9,6 +9,26 @@ export class ApiError extends Error {
   }
 }
 
+export type CreditRequirement = {
+  balance: number
+  requiredCredits: number
+}
+
+function creditRequirement(value: unknown): CreditRequirement | null {
+  if (typeof value !== 'object' || value === null) return null
+  const details = value as Record<string, unknown>
+  if (
+    details.code !== 'insufficient_credits' ||
+    typeof details.balance !== 'number' ||
+    !Number.isSafeInteger(details.balance) ||
+    typeof details.requiredCredits !== 'number' ||
+    !Number.isSafeInteger(details.requiredCredits) ||
+    details.requiredCredits <= 0
+  )
+    return null
+  return { balance: details.balance, requiredCredits: details.requiredCredits }
+}
+
 // Auth is the Better Auth session cookie (same origin), sent automatically.
 type ApiFetchOptions = RequestInit & {
   responseType?: 'json' | 'blob'
@@ -41,10 +61,17 @@ export async function apiFetch<TData>(
   const payload = (
     contentType.includes('application/json') ? await response.json() : null
   ) as {
-    error?: { message?: string }
+    error?: { message?: string; details?: unknown }
   } | null
 
   if (!response.ok) {
+    if (response.status === 402 && typeof window !== 'undefined') {
+      window.dispatchEvent(
+        new CustomEvent('vibe:credits-required', {
+          detail: creditRequirement(payload?.error?.details),
+        }),
+      )
+    }
     throw new ApiError(
       payload?.error?.message ?? 'Request failed',
       response.status,

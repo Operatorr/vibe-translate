@@ -196,6 +196,8 @@ export const Composer = React.forwardRef<
     },
     [contextId],
   )
+  const [settingsOpen, setSettingsOpen] = React.useState(false)
+  const settingsId = React.useId()
   const [interim, setInterimState] = React.useState('')
   const [recording, setRecording] = React.useState(false)
   const recognizerRef = React.useRef<Recognizer | null>(null)
@@ -337,13 +339,27 @@ export const Composer = React.forwardRef<
 
   return (
     <div className="composer">
-      <div className="composer__settings">
-        <VibeMini vibes={vibes} valueIdx={vibeIdx} onChange={onVibeChange} />
-        <TempSlider
-          value={temperature}
-          onChange={onTemperatureChange}
-          onCommit={onTemperatureCommit}
-        />
+      <div
+        className="composer__settings-drawer"
+        data-open={settingsOpen}
+        id={settingsId}
+        inert={!settingsOpen}
+        aria-hidden={!settingsOpen}
+      >
+        <div className="composer__settings-clip">
+          <div className="composer__settings">
+            <VibeMini
+              vibes={vibes}
+              valueIdx={vibeIdx}
+              onChange={onVibeChange}
+            />
+            <TempSlider
+              value={temperature}
+              onChange={onTemperatureChange}
+              onCommit={onTemperatureCommit}
+            />
+          </div>
+        </div>
       </div>
       <div className="composer__row">
         <div className={'composer__field ' + (recording ? 'is-recording' : '')}>
@@ -417,19 +433,32 @@ export const Composer = React.forwardRef<
             </div>
           </div>
         </div>
-        <button
-          type="button"
-          className="composer__send"
-          onClick={() => void send()}
-          disabled={!canSend}
-          title="Translate · Enter"
-          aria-label="Translate"
-        >
-          <Icon
-            name={sending ? 'loader' : 'arrow-right'}
-            className={sending ? 'vt-spin' : ''}
-          />
-        </button>
+        <div className="composer__buttons">
+          <button
+            type="button"
+            className="composer__settings-toggle"
+            aria-label="Vibe and temperature"
+            title="Vibe and temperature"
+            aria-expanded={settingsOpen}
+            aria-controls={settingsId}
+            onClick={() => setSettingsOpen((open) => !open)}
+          >
+            <Icon name="sliders-horizontal" />
+          </button>
+          <button
+            type="button"
+            className="composer__send"
+            onClick={() => void send()}
+            disabled={!canSend}
+            title="Translate · Enter"
+            aria-label="Translate"
+          >
+            <Icon
+              name={sending ? 'loader' : 'arrow-right'}
+              className={sending ? 'vt-spin' : ''}
+            />
+          </button>
+        </div>
       </div>
     </div>
   )

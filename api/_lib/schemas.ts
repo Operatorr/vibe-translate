@@ -220,6 +220,14 @@ export const checkoutSchema = z.object({
   billingPeriod: z.enum(['monthly', 'annual']).default('monthly'),
 })
 
+export const creditCheckoutSchema = z.object({
+  pack: z.enum(['small', 'medium', 'large']),
+})
+
+export const creditHistorySchema = z.object({
+  orderId: z.uuid().optional(),
+})
+
 export const textToSpeechSchema = z.object({
   text: z.string().trim().min(1).max(1000),
   vibe: vibeStopSchema,

@@ -13,9 +13,6 @@ export function MarketingShell({ children }: PropsWithChildren) {
             <Link className="text-muted hover:text-foreground" to="/pricing">
               Pricing
             </Link>
-            <Link className="text-muted hover:text-foreground" to="/changelog">
-              Changelog
-            </Link>
             <Link className="button-primary" to="/app">
               App
             </Link>

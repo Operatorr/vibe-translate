@@ -1,3 +1,4 @@
+import * as Dialog from '@radix-ui/react-dialog'
 import * as React from 'react'
 
 import { Icon } from '@/components/vibe-design/icon'
@@ -6,6 +7,7 @@ import type { ExplainBody, SegmentToken, VibeStop } from '@/lib/types'
 import { normalizeWord, srcWordSet } from '@/lib/alignment'
 
 import { ExplainPanel } from './explain-panel'
+import { SegmentUsage } from './segment-usage'
 
 export type SegmentView = {
   id: string
@@ -31,16 +33,6 @@ const eyebrow: React.CSSProperties = {
   letterSpacing: '0.12em',
   color: 'var(--fg-subtle)',
   textTransform: 'uppercase',
-}
-
-// The worker stamps `{ cached: true }` on Segments served from the shared
-// translation cache. Rows with unknown usage show nothing rather than a guess.
-function tokenMeta(seg: SegmentView): string {
-  const usage = seg.tokenUsage ?? {}
-  if (usage.cached === true) return 'cached · 0 cr'
-  const completion = Number(usage.completionTokens)
-  if (Number.isFinite(completion) && completion > 0) return `${completion} tok`
-  return ''
 }
 
 // Alignment selection: a target token index, plus whether it was pinned by a
@@ -135,7 +127,6 @@ export function SegmentCard({
     if (e.pointerType === 'mouse')
       setSelection((curr) => (curr?.pinned ? curr : null))
   }
-  const meta = readOnly ? '' : tokenMeta(seg)
 
   return (
     <div
@@ -207,7 +198,7 @@ export function SegmentCard({
                 {vibe?.label ?? 'Vibe not recorded'}
               </span>
             </div>
-            {meta && <div className="segment__tgt-meta">{meta}</div>}
+            {!readOnly && <SegmentUsage usage={seg.tokenUsage} />}
           </div>
           <div
             className={
@@ -228,6 +219,45 @@ export function SegmentCard({
           </div>
           <div className="segment__tgt-row">
             <div className="segment__actions">
+              <Dialog.Root>
+                <Dialog.Trigger asChild>
+                  <button
+                    type="button"
+                    className="segment__action segment__action--display"
+                    title="Show translation full screen"
+                    aria-label="Show translation full screen"
+                  >
+                    <Icon name="expand" />
+                  </button>
+                </Dialog.Trigger>
+                <Dialog.Portal>
+                  <Dialog.Overlay className="translation-display__overlay" />
+                  <Dialog.Content
+                    className="translation-display"
+                    aria-describedby={undefined}
+                  >
+                    <Dialog.Title className="sr-only">
+                      Translation display
+                    </Dialog.Title>
+                    <Dialog.Close asChild>
+                      <button
+                        type="button"
+                        className="translation-display__close"
+                        title="Close translation display"
+                        aria-label="Close translation display"
+                      >
+                        <Icon name="x" />
+                      </button>
+                    </Dialog.Close>
+                    <div
+                      className="translation-display__text"
+                      lang={targetLanguage}
+                    >
+                      {seg.targetText}
+                    </div>
+                  </Dialog.Content>
+                </Dialog.Portal>
+              </Dialog.Root>
               <button
                 type="button"
                 className="segment__action"
