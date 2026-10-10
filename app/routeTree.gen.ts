@@ -12,13 +12,13 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as PricingRouteImport } from './routes/pricing'
 import { Route as LegalRouteImport } from './routes/legal'
 import { Route as InviteRouteImport } from './routes/invite'
-import { Route as ChangelogRouteImport } from './routes/changelog'
 import { Route as AuthRouteImport } from './routes/auth'
 import { Route as AppRouteRouteImport } from './routes/app/route'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AppIndexRouteImport } from './routes/app/index'
 import { Route as ShareTokenRouteImport } from './routes/share.$token'
 import { Route as DevDiagnosticsRouteImport } from './routes/dev/diagnostics'
+import { Route as AppCreditsRouteImport } from './routes/app/credits'
 
 const PricingRoute = PricingRouteImport.update({
   id: '/pricing',
@@ -33,11 +33,6 @@ const LegalRoute = LegalRouteImport.update({
 const InviteRoute = InviteRouteImport.update({
   id: '/invite',
   path: '/invite',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ChangelogRoute = ChangelogRouteImport.update({
-  id: '/changelog',
-  path: '/changelog',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AuthRoute = AuthRouteImport.update({
@@ -70,15 +65,20 @@ const DevDiagnosticsRoute = DevDiagnosticsRouteImport.update({
   path: '/dev/diagnostics',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AppCreditsRoute = AppCreditsRouteImport.update({
+  id: '/credits',
+  path: '/credits',
+  getParentRoute: () => AppRouteRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/app': typeof AppRouteRouteWithChildren
   '/auth': typeof AuthRoute
-  '/changelog': typeof ChangelogRoute
   '/invite': typeof InviteRoute
   '/legal': typeof LegalRoute
   '/pricing': typeof PricingRoute
+  '/app/credits': typeof AppCreditsRoute
   '/dev/diagnostics': typeof DevDiagnosticsRoute
   '/share/$token': typeof ShareTokenRoute
   '/app/': typeof AppIndexRoute
@@ -86,10 +86,10 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
-  '/changelog': typeof ChangelogRoute
   '/invite': typeof InviteRoute
   '/legal': typeof LegalRoute
   '/pricing': typeof PricingRoute
+  '/app/credits': typeof AppCreditsRoute
   '/dev/diagnostics': typeof DevDiagnosticsRoute
   '/share/$token': typeof ShareTokenRoute
   '/app': typeof AppIndexRoute
@@ -99,10 +99,10 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/app': typeof AppRouteRouteWithChildren
   '/auth': typeof AuthRoute
-  '/changelog': typeof ChangelogRoute
   '/invite': typeof InviteRoute
   '/legal': typeof LegalRoute
   '/pricing': typeof PricingRoute
+  '/app/credits': typeof AppCreditsRoute
   '/dev/diagnostics': typeof DevDiagnosticsRoute
   '/share/$token': typeof ShareTokenRoute
   '/app/': typeof AppIndexRoute
@@ -113,10 +113,10 @@ export interface FileRouteTypes {
     | '/'
     | '/app'
     | '/auth'
-    | '/changelog'
     | '/invite'
     | '/legal'
     | '/pricing'
+    | '/app/credits'
     | '/dev/diagnostics'
     | '/share/$token'
     | '/app/'
@@ -124,10 +124,10 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/auth'
-    | '/changelog'
     | '/invite'
     | '/legal'
     | '/pricing'
+    | '/app/credits'
     | '/dev/diagnostics'
     | '/share/$token'
     | '/app'
@@ -136,10 +136,10 @@ export interface FileRouteTypes {
     | '/'
     | '/app'
     | '/auth'
-    | '/changelog'
     | '/invite'
     | '/legal'
     | '/pricing'
+    | '/app/credits'
     | '/dev/diagnostics'
     | '/share/$token'
     | '/app/'
@@ -149,7 +149,6 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AppRouteRoute: typeof AppRouteRouteWithChildren
   AuthRoute: typeof AuthRoute
-  ChangelogRoute: typeof ChangelogRoute
   InviteRoute: typeof InviteRoute
   LegalRoute: typeof LegalRoute
   PricingRoute: typeof PricingRoute
@@ -178,13 +177,6 @@ declare module '@tanstack/react-router' {
       path: '/invite'
       fullPath: '/invite'
       preLoaderRoute: typeof InviteRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/changelog': {
-      id: '/changelog'
-      path: '/changelog'
-      fullPath: '/changelog'
-      preLoaderRoute: typeof ChangelogRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/auth': {
@@ -229,14 +221,23 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DevDiagnosticsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/app/credits': {
+      id: '/app/credits'
+      path: '/credits'
+      fullPath: '/app/credits'
+      preLoaderRoute: typeof AppCreditsRouteImport
+      parentRoute: typeof AppRouteRoute
+    }
   }
 }
 
 interface AppRouteRouteChildren {
+  AppCreditsRoute: typeof AppCreditsRoute
   AppIndexRoute: typeof AppIndexRoute
 }
 
 const AppRouteRouteChildren: AppRouteRouteChildren = {
+  AppCreditsRoute: AppCreditsRoute,
   AppIndexRoute: AppIndexRoute,
 }
 
@@ -248,7 +249,6 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AppRouteRoute: AppRouteRouteWithChildren,
   AuthRoute: AuthRoute,
-  ChangelogRoute: ChangelogRoute,
   InviteRoute: InviteRoute,
   LegalRoute: LegalRoute,
   PricingRoute: PricingRoute,

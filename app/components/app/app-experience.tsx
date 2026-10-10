@@ -75,11 +75,6 @@ type Panel = { mode: 'create' } | { mode: 'edit'; character: Character } | null
 const langName = (code: string) => LANGUAGE_NAMES[code] ?? code
 
 function errorMessage(error: unknown, fallback: string): string {
-  if (error instanceof ApiError) {
-    if (error.status === 402)
-      return 'Out of credits — upgrade or add an OpenRouter key.'
-    return error.message
-  }
   return error instanceof Error ? error.message : fallback
 }
 
@@ -413,7 +408,8 @@ export function AppExperience() {
           vibe,
         })
       } catch (error) {
-        toast.error(errorMessage(error, 'Translation failed.'))
+        if (!(error instanceof ApiError && error.status === 402))
+          toast.error(errorMessage(error, 'Translation failed.'))
         // Don't leave an empty thread behind for a translation that never landed.
         if (createdForSend) {
           autoTitled.current.delete(createdForSend.id)
@@ -494,7 +490,10 @@ export function AppExperience() {
           if (explainOpenId === seg.id) setExplainOpenId(null)
           toast.success('Re-translated.')
         },
-        onError: (error) => toast.error(errorMessage(error, 'Retry failed.')),
+        onError: (error) => {
+          if (!(error instanceof ApiError && error.status === 402))
+            toast.error(errorMessage(error, 'Retry failed.'))
+        },
       },
     )
   }
@@ -858,7 +857,7 @@ export function AppExperience() {
             ))}
           </div>
           <div className="chars__foot">
-            <Link className="vt-side-foot chars__status" to="/pricing">
+            <Link className="vt-side-foot chars__status" to="/app/credits">
               <div
                 className="vt-status-dot"
                 style={{
@@ -1029,19 +1028,6 @@ export function AppExperience() {
             </div>
             {thread && char && (
               <div className="workspace__head-right">
-                <button
-                  type="button"
-                  className={
-                    'workspace__icon-btn ' +
-                    (thread.starred ? 'is-active is-star' : '')
-                  }
-                  title={thread.starred ? 'Unstar' : 'Star'}
-                  aria-label={thread.starred ? 'Unstar thread' : 'Star thread'}
-                  aria-pressed={thread.starred}
-                  onClick={toggleStar}
-                >
-                  <Icon name="star" fill={thread.starred} />
-                </button>
                 <SharePopover
                   open={shareOpen}
                   onOpenChange={setShareOpen}
@@ -1051,25 +1037,11 @@ export function AppExperience() {
                   loading={share.isPending || setShare.isPending}
                   onToggle={toggleShare}
                 />
-                <button
-                  type="button"
-                  className="workspace__icon-btn"
-                  title={
-                    exporter.preparing
-                      ? 'Preparing Markdown…'
-                      : 'Download as Markdown'
-                  }
-                  aria-label="Download as Markdown"
-                  aria-busy={exporter.preparing}
-                  onClick={exporter.download}
-                  disabled={segList.length === 0 || exporter.preparing}
-                >
-                  <Icon
-                    name={exporter.preparing ? 'loader' : 'download'}
-                    className={exporter.preparing ? 'vt-spin' : undefined}
-                  />
-                </button>
                 <ThreadOptionsMenu
+                  starred={thread.starred}
+                  onToggleStar={toggleStar}
+                  onDownload={exporter.download}
+                  downloadDisabled={segList.length === 0}
                   onRename={startRename}
                   onArchive={archiveThread}
                   onDelete={removeThread}
@@ -1244,6 +1216,7 @@ export function AppExperience() {
               onTemperatureCommit={commitTemperature}
               onSend={send}
               sending={pendingHere || threads.isPending}
+              draftOwner={userId}
             />
           )}
         </main>

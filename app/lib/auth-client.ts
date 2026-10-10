@@ -1,5 +1,6 @@
 import { createAuthClient } from 'better-auth/react'
 
+import { clearDrafts } from '@/lib/draft-store'
 import { clearPersistedCache } from '@/lib/query-cache-store'
 
 // Better Auth client. Same origin as the worker (/api/auth/*), so the session
@@ -16,12 +17,14 @@ export function useSignedIn(): boolean | undefined {
   return isPending || error ? undefined : false
 }
 
-// Ends the session, wipes the offline query cache, and hard-navigates home so
-// no in-memory data from this account survives into the next one.
+// Ends the session, wipes the offline query cache and unsent drafts, and
+// hard-navigates home so no in-memory data from this account survives into the
+// next one. A failed sign-out keeps the drafts: the user is still signed in.
 export async function signOut(): Promise<void> {
   await clearPersistedCache().catch(() => undefined)
   const { error } = await authClient.signOut()
   if (error) throw new Error(error.message ?? 'Could not sign out.')
+  clearDrafts()
   window.location.assign('/')
 }
 
@@ -29,6 +32,7 @@ export async function signOut(): Promise<void> {
 // store because /reset-password is not a built-in session notification path.
 export async function clearResetSession(): Promise<void> {
   await clearPersistedCache().catch(() => undefined)
+  clearDrafts()
   const session = authClient.$store.atoms.session
   session.set({ ...session.get(), data: null, error: null, isPending: false })
 }

@@ -183,3 +183,67 @@ Use Cloudflare's version history: `wrangler rollback` (or pin a prior version vi
 - [ ] `ELEVENLABS_API_KEY` + the six `ELEVENLABS_VOICE_*` ids.
 - [x] Dodo webhook signature verification wired (see [SECURITY.md](./SECURITY.md#webhook-signatures)) — launch blocker. Set `DODO_WEBHOOK_SECRET` (and the `DODO_PRODUCT_*` ids) before go-live. Payments are intentionally off until then.
 - [ ] Six `public/demo/vibe-*.mp3` clips rendered (see [public/demo/README.md](../public/demo/README.md)).
+
+## Credit top-ups
+
+Apply migrations `0009_credit_purchases.sql` and `0010_credit_purchase_lifecycle.sql`
+in each environment before enabling purchases.
+Create three **one-time, fixed-price** products in Dodo (not recurring or pay-what-you-want):
+
+| Credits | Worker binding                | Dodo product       |
+| ------- | ----------------------------- | ------------------ |
+| 25,000  | `DODO_PRODUCT_CREDITS_SMALL`  | Small credit pack  |
+| 50,000  | `DODO_PRODUCT_CREDITS_MEDIUM` | Medium credit pack |
+| 100,000 | `DODO_PRODUCT_CREDITS_LARGE`  | Large credit pack  |
+
+Set each product's price/currency in Dodo. The credits page fetches current base prices
+and discounts from Dodo; final localized currency/taxes are shown at checkout. Each
+pack can be enabled separately. Missing or unavailable products disable its purchase
+button while balance and usage history remain available. Local uses Dodo test mode;
+production uses live mode and needs matching live product IDs.
+
+The catalog is cached per Worker isolate for five minutes, or 30 seconds after a
+transient Dodo failure (timeout, network error, 429 or 5xx), so a price or product
+change can take up to five minutes to appear. Checkout always re-reads its product
+and returns 503 `This credit pack is currently unavailable` if the lookup fails. A
+configured pack that fails to load logs `dodo credit pack unavailable` with the pack
+and a category (`http` with status, `schema`, `pay_what_you_want`, `exception`). An
+unset binding is treated as intentional and is not logged.
+
+Set `DODO_API_KEY`, `DODO_WEBHOOK_SECRET`, and the product bindings. Subscribe
+`/api/billing/webhooks/dodo` to `payment.succeeded`, `refund.succeeded`,
+`dispute.accepted` and `dispute.lost` in addition to the subscription events.
+`APP_URL` must be the public origin for checkout returns. Top-up orders snapshot
+credits and product before checkout. A signed payment must match the order's user,
+product and quantity; order locking and a unique payment ID ensure one grant even
+across different webhook delivery IDs. The redirect itself grants nothing.
+
+After payment the browser returns to `/app/credits?orderId=…`, polls for verified
+fulfillment for up to one minute, and offers a manual check if confirmation is delayed.
+Top-ups add to the existing balance without changing the subscription tier or refill date.
+
+### Refunds and disputes
+
+Refund or dispute events are matched to a top-up order by `payment_id`. Events
+for subscription payments, or for payments that were never fulfilled, match no
+order and are ignored.
+
+- A full refund (`is_partial: false`) or an accepted or lost dispute reverses the
+  order's entire credit grant once: the balance drops by the order's credits and
+  a `reversal.purchase` ledger row records the payment and refund/dispute IDs.
+  Further refund or dispute events for that order are deduplicated.
+- Partial refunds, and any refund not explicitly marked `is_partial: false`, are
+  not reversed automatically. The webhook logs
+  `dodo webhook: partial credit refund needs manual adjustment` with the order,
+  refund and payment IDs; adjust the balance by hand (a `grant.adjustment` row with
+  a negative delta and the matching `credits_balance` change, in one transaction).
+- Spent credits are still taken back, so the balance can go negative. A negative
+  balance blocks platform-funded calls until later grants cover it; BYOK calls
+  keep working.
+- Known gap: a refund delivered before its payment was fulfilled finds no order
+  and is ignored. If `payment.succeeded` then arrives, the credits are granted and
+  the refund is not reversed. Reconcile such payments by hand from the Dodo
+  dashboard.
+
+Unfulfilled orders are never cleaned up automatically; see
+[DATABASE.md](./DATABASE.md#credit_purchases) before deleting any.

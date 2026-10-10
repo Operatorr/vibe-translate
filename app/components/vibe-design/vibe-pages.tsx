@@ -847,7 +847,7 @@ const LandingContent = ({ onNavigate }: { onNavigate: NavigateFn }) => {
             />
             <FAQItem
               q="Do you have a free tier?"
-              a="Yes — 10k tokens a day, 3 saved characters, no API access. Enough to use it as a daily-driver translator if you're not running a localization shop."
+              a="Yes — 1,000 welcome credits, 3 saved characters, no API access. Enough to try every vibe; top up or upgrade when you need more."
             />
           </div>
         </div>
@@ -962,13 +962,6 @@ const LandingContent = ({ onNavigate }: { onNavigate: NavigateFn }) => {
                 onClick={(e) => e.preventDefault()}
               >
                 API
-              </a>
-              <a
-                className="footer__link"
-                href="#"
-                onClick={(e) => e.preventDefault()}
-              >
-                Changelog
               </a>
             </div>
             <div>

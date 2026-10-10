@@ -1,19 +1,25 @@
 import { createFileRoute } from '@tanstack/react-router'
 import * as React from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 
 import { AppExperience } from '@/components/app/app-experience'
+import { keys } from '@/lib/query-keys'
 
 export const Route = createFileRoute('/app/')({
   component: AppIndex,
 })
 
 function AppIndex() {
-  // Dodo checkout returns to `/app?upgraded=1`; confirm and clean the URL.
+  const qc = useQueryClient()
+  // Dodo checkout returns to /app?upgraded=1; refresh server-owned plan state and clean the URL.
   React.useEffect(() => {
     const params = new URLSearchParams(window.location.search)
     if (params.get('upgraded') === '1') {
-      toast.success('Subscription active — your new credits are ready.')
+      toast.message(
+        'Checking your subscription. Your plan and credits update after payment is confirmed.',
+      )
+      void qc.invalidateQueries({ queryKey: keys.me })
       params.delete('upgraded')
       const query = params.toString()
       window.history.replaceState(
@@ -22,7 +28,7 @@ function AppIndex() {
         window.location.pathname + (query ? `?${query}` : ''),
       )
     }
-  }, [])
+  }, [qc])
 
   return <AppExperience />
 }

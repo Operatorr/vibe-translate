@@ -33,7 +33,7 @@
 | `workspace.ts`         | Character/Thread/Segment column lists, row types and camelCase mappers. `toSegmentPage` and `loadSegmentPage` own the bounded Segment page (50 rows, one lookahead row, `(created_at, id)` microsecond cursor). `loadBootstrap` (roster + preferred-or-first Character) and `loadWorkspace` (one owned Character, no fallback) share the Thread/head-page CTEs and each run as one owner-scoped statement.                                                                                    |
 | `translation-cache.ts` | Shared canonical translation cache: `isCanonical`, `fingerprint`, `lookupCache`, `upsertCache`. Cache hits cost 0 credits. See [adr/0004](./adr/0004-shared-canonical-translation-cache.md).                                                                                                                                                                                                                                                                                                  |
 | `explain.ts`           | `generateExplain(input, config)` → `{ version, body, tokenUsage }`. Language-aware: a full Japanese body (romaji/morphemes/kanji/grammar) when the target is `ja`, a lighter generic body otherwise. Exports `EXPLAIN_PAYLOAD_VERSION`; bumping invalidates older `explains` rows.                                                                                                                                                                                                            |
-| `payments.ts`          | Dodo Payments. `verifyDodoSignature` (Standard Webhooks, raw-body HMAC-SHA256) + `processDodoWebhook` (idempotent, transactional tier/credit application via `webhook_events`). The `app.ts` webhook route delegates here.                                                                                                                                                                                                                                                                    |
+| `payments.ts`          | Dodo Payments. `verifyDodoSignature` (Standard Webhooks, raw-body HMAC-SHA256) + `processDodoWebhook` (idempotent, transactional tier/credit application via `webhook_events`). Credit top-ups: the cached `creditPacks` catalog, `createCreditCheckout` (snapshots the order first), fulfillment, and reversal on a full refund or lost/accepted dispute. The `app.ts` webhook route delegates here.                                                                                         |
 | `email.ts`             | Transactional email via Resend (raw `fetch`). `sendTransactionalEmail({ env, to, subject, html, text? })` no-ops + warns if `RESEND_API_KEY` is unset. Templates: `verifyEmailContent(url)` / `resetPasswordContent(url)` (auth links) and `subscriptionConfirmationEmail({ plan })`. Sender from `RESEND_FROM`.                                                                                                                                                                              |
 
 ## Boundaries
@@ -54,7 +54,7 @@
 ## Authorization
 
 - **Per-user scoping** is the primary axis. Every row in `characters`, `threads`, `segments`, `activity_log` carries `user_id = users.auth_user_id` (the Better Auth user id). All read and write queries must filter by it. `assertUserOwnsResource(row.user_id, c.get('userId'))` is the explicit guard when ownership needs to be checked imperatively (e.g. after a single-row lookup).
-- **Tier gates** use `canUseFeature(tierLimits[user.tier].aiDictation)` etc. Caps (characters per user, threads per character, segments per month) are enforced inline before the insert.
+- **Tier gates** use `canUseFeature(tierLimits[user.tier].aiDictation)` etc. The characters-per-user cap is enforced in `POST /api/characters`: the account row is locked (`for update`) before counting, so concurrent creates cannot both slip under it, and a full account gets `403`. `threadsPerCharacter` is defined but not enforced yet. Spending is gated by credits, not a per-month segment count ([adr/0003](./adr/0003-credits-byok-and-model-registry.md)).
 
 ## Tiers
 
@@ -62,7 +62,7 @@ Defined in [`api/_lib/tier.ts`](../api/_lib/tier.ts):
 
 |                       | `free` | `pro`  | `team`  |
 | --------------------- | ------ | ------ | ------- |
-| `characters`          | 5      | 100    | 1000    |
+| `characters`          | 3      | 100    | 1000    |
 | `threadsPerCharacter` | 20     | 200    | 2000    |
 | `credits` (monthly)   | 1 000  | 25 000 | 250 000 |
 | `retentionDays`       | 30     | 365    | 1095    |
@@ -82,14 +82,14 @@ Notes:
 
 ## Integrations
 
-| Integration               | Purpose                                              | Notes                                                                                                                                                                                                                                                                              |
-| ------------------------- | ---------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Better Auth**           | Auth (self-hosted: sessions, users)                  | `BETTER_AUTH_SECRET` (required); `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET` enable Google, redirect URI `<APP_URL>/api/auth/callback/google`. A library in this worker on our Postgres, not a vendor.                                                                               |
-| **Cloudflare Hyperdrive** | Postgres connection pool at the edge                 | `HYPERDRIVE.connectionString`; falls back to `DATABASE_URL` in local dev. Query caching is **off** (stale sessions/lists); pooling only.                                                                                                                                           |
-| **OpenRouter**            | LLM provider for translation, explain, and dictation | `OPENROUTER_API_KEY`; key/model routing lives in `openrouter.ts → resolveCallTarget`, calls go through `chatJson`.                                                                                                                                                                 |
-| **ElevenLabs**            | TTS                                                  | One voice ID per **Vibe stop** (`ELEVENLABS_VOICE_<STOP>`); proxied from `/api/ai/text-to-speech`. The `ja` language code triggers `apply_language_text_normalization: true`.                                                                                                      |
-| **Dodo Payments**         | Subscriptions                                        | `DODO_API_KEY`, `DODO_WEBHOOK_SECRET`, `DODO_PRODUCT_{PRO,TEAM}[_ANNUAL]`. Raw-`fetch` REST calls (test/live base URL by `APP_ENV`): `/checkouts`, `/subscriptions/{id}` cancel, `/subscriptions/{id}/change-plan`. Signature-verified, idempotent webhooks. All in `payments.ts`. |
-| **Resend**                | Transactional email                                  | `RESEND_API_KEY`, `RESEND_FROM` (verified sender). `email.ts`. **Required in production** for auth emails (verification, password reset). The Dodo webhook also sends a best-effort subscription-confirmation email on activation.                                                 |
+| Integration               | Purpose                                              | Notes                                                                                                                                                                                                                                                                        |
+| ------------------------- | ---------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Better Auth**           | Auth (self-hosted: sessions, users)                  | `BETTER_AUTH_SECRET` (required); `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET` enable Google, redirect URI `<APP_URL>/api/auth/callback/google`. A library in this worker on our Postgres, not a vendor.                                                                         |
+| **Cloudflare Hyperdrive** | Postgres connection pool at the edge                 | `HYPERDRIVE.connectionString`; falls back to `DATABASE_URL` in local dev. Query caching is **off** (stale sessions/lists); pooling only.                                                                                                                                     |
+| **OpenRouter**            | LLM provider for translation, explain, and dictation | `OPENROUTER_API_KEY`; key/model routing lives in `openrouter.ts → resolveCallTarget`, calls go through `chatJson`.                                                                                                                                                           |
+| **ElevenLabs**            | TTS                                                  | One voice ID per **Vibe stop** (`ELEVENLABS_VOICE_<STOP>`); proxied from `/api/ai/text-to-speech`. The `ja` language code triggers `apply_language_text_normalization: true`.                                                                                                |
+| **Dodo Payments**         | Subscriptions, credit top-ups                        | `DODO_API_KEY`, `DODO_WEBHOOK_SECRET`, `DODO_PRODUCT_*`. Raw-`fetch` REST (test/live base URL by `APP_ENV`): `/checkouts`, `/products/{id}`, `/subscriptions/{id}` cancel, `/subscriptions/{id}/change-plan`. Signature-verified, idempotent webhooks. All in `payments.ts`. |
+| **Resend**                | Transactional email                                  | `RESEND_API_KEY`, `RESEND_FROM` (verified sender). `email.ts`. **Required in production** for auth emails (verification, password reset). The Dodo webhook also sends a best-effort subscription-confirmation email on activation.                                           |
 
 ## Error model
 
@@ -144,8 +144,8 @@ client GET /api/segments/:segmentId/explain
 ```
 
 - The client never supplies `targetText` or `tokenAlignment` on create.
-- Tier `segmentsPerMonth` cap is enforced _before_ the provider call so a quota-busting attempt doesn't burn tokens.
-- Provider timeout → `504`. Malformed model output (alignment parse failure) → `502`. Tier cap hit → `403`.
+- The credit reservation runs _before_ the provider call, so a request the balance cannot cover never burns tokens.
+- Provider timeout → `504`. Malformed model output (alignment parse failure) → `502`. Insufficient credits → `402`.
 - Streaming is intentionally deferred — the structured output (`targetText` + `tokenAlignment` + Explain hooks) doesn't streaming-render cleanly, and the latency budget (~1–4s) fits a spinner. Revisit when load data warrants it.
 
 ## Open questions

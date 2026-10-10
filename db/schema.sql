@@ -292,3 +292,33 @@ create unique index if not exists users_subscription_id_uniq
 -- Stable backward cursor pagination within a Thread.
 create index if not exists segments_user_thread_created_id_idx
   on segments (user_id, thread_id, created_at desc, id desc);
+
+-- Snapshot the purchased credit amount before checkout. Fulfillment locks the
+-- order and grants once, independently of webhook delivery ids. A full refund
+-- or lost/accepted dispute reverses the grant once (0010).
+create table if not exists credit_purchases (
+  id uuid primary key default gen_random_uuid(),
+  user_id text not null references users (auth_user_id) on delete cascade,
+  product_id text not null,
+  quantity integer not null check (quantity between 1 and 10),
+  credits integer not null check (credits > 0),
+  payment_id text unique,
+  created_at timestamptz not null default now(),
+  fulfilled_at timestamptz,
+  checkout_session_id text,
+  checkout_failed_at timestamptz,
+  reversed_at timestamptz,
+  reversal_id text,
+  reversal_reason text,
+  constraint credit_purchases_fulfillment_check
+    check ((payment_id is null) = (fulfilled_at is null)),
+  constraint credit_purchases_reversal_reason_check
+    check (reversal_reason in ('refund', 'dispute')),
+  constraint credit_purchases_reversal_check check (
+    (reversed_at is null) = (reversal_id is null)
+    and (reversed_at is null) = (reversal_reason is null)
+    and (reversed_at is null or fulfilled_at is not null)
+  )
+);
+create index if not exists credit_purchases_user_created_idx
+  on credit_purchases (user_id, created_at desc);

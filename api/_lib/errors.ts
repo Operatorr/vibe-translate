@@ -7,7 +7,28 @@ export type FormattedApiError = {
   details?: unknown
 }
 
+export class InsufficientCreditsError extends Error {
+  constructor(
+    readonly balance: number,
+    readonly requiredCredits: number,
+  ) {
+    super('Not enough credits to start this request')
+    this.name = 'InsufficientCreditsError'
+  }
+}
+
 export function formatError(error: unknown): FormattedApiError {
+  if (error instanceof InsufficientCreditsError) {
+    return {
+      message: error.message,
+      status: 402,
+      details: {
+        code: 'insufficient_credits',
+        balance: error.balance,
+        requiredCredits: error.requiredCredits,
+      },
+    }
+  }
   if (error instanceof HTTPException) {
     return {
       message: error.message,

@@ -31,6 +31,11 @@ function fakeClient(rowCounts: Record<string, number> = {}, balance = 100) {
 }
 
 describe('computeCredits', () => {
+  it('does not round an exact decimal cost up by an extra credit', () => {
+    expect(computeCredits(60, 40, 'm', 1.1).credits).toBe(110)
+    expect(computeCredits(600, 400, 'm', 1.001).credits).toBe(1001)
+    expect(computeCredits(60, 41, 'm', 1.1).credits).toBe(112)
+  })
   it('floors at 1 credit and scales by the multiplier', () => {
     expect(computeCredits(0, 0, 'm', 1).credits).toBe(1)
     expect(computeCredits(100, 100, 'm', 0.5).credits).toBe(100)

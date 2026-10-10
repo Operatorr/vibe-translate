@@ -75,7 +75,7 @@ The user's subscription level — `free`, `pro`, or `team` — granting a monthl
 _Avoid_: plan (used only at billing checkout), subscription level
 
 **Credits**:
-The platform-key budget unit. Spent on every **Segment** create and **Explain** generate (token-derived × per-model multiplier). Granted monthly per **Tier**. Free tier's monthly grant is the trial allowance. Stored on `users.credits_balance`; every spend and grant is recorded in `credit_ledger`. **BYOK** users bypass credits.
+The platform-key budget unit. Spent on every **Segment** create and **Explain** generate (token-derived × per-model multiplier). Granted monthly per **Tier**, or bought as one-time top-up packs. Free tier's monthly grant is the trial allowance. A fully refunded or charged-back top-up is reversed in full, which can leave the balance negative until later grants cover it. Stored on `users.credits_balance`; every spend and grant is recorded in `credit_ledger`. **BYOK** users bypass credits.
 _Avoid_: tokens (confusable with model tokens), quota, allowance
 
 **BYOK** (Bring Your Own Key):

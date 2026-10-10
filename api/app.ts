@@ -9,6 +9,7 @@ import { auth, authBaseURL, authHandler } from './_lib/auth'
 import {
   computeCredits,
   estimateCredits,
+  getBalance,
   reconcileSpend,
   refundReservation,
   reserveCredits,
@@ -26,7 +27,7 @@ import {
   subscriptionConfirmationEmail,
 } from './_lib/email'
 import type { AppEnv } from './_lib/env'
-import { formatError } from './_lib/errors'
+import { formatError, InsufficientCreditsError } from './_lib/errors'
 import {
   appBootstrapSchema,
   appWorkspaceSchema,
@@ -36,6 +37,8 @@ import {
   characterReorderSchema,
   characterUpdateSchema,
   checkoutSchema,
+  creditCheckoutSchema,
+  creditHistorySchema,
   memorySearchSchema,
   onboardingDictateSchema,
   segmentCreateSchema,
@@ -58,7 +61,7 @@ import {
   lookupCache,
   upsertCache,
 } from './_lib/translation-cache'
-import { getOrCreateUser, toMeResponse } from './_lib/users'
+import { findUser, getOrCreateUser, toMeResponse } from './_lib/users'
 import {
   CHARACTER_COLUMNS,
   SEGMENT_COLUMNS,
@@ -76,6 +79,9 @@ import {
 import {
   cancelSubscription,
   createCheckoutSession,
+  createCreditCheckout,
+  creditPacks,
+  dodoEventSchema,
   processDodoWebhook,
   switchPlan,
   verifyDodoSignature,
@@ -157,6 +163,7 @@ app.use('/api/ai/text-to-speech', auth())
 // unauthenticated by design (Dodo cannot present a session cookie) and instead
 // verifies a Standard Webhooks signature. See SECURITY.md#webhook-signatures.
 app.use('/api/billing/checkout', auth())
+app.use('/api/billing/credits/checkout', auth())
 app.use('/api/billing/cancel', auth())
 app.use('/api/billing/switch-plan', auth())
 app.use('/api/export', auth())
@@ -354,27 +361,52 @@ app.post('/api/characters', zValidator('json', characterCreateSchema), (c) => {
   const payload = c.req.valid('json')
   const userId = c.get('userId')
   return withDb(c.env, async (db) => {
-    await getOrCreateUser(db, userId, c.get('email'))
-    const res = await db.query<CharacterDbRow>(
-      `insert into characters
-         (user_id, name, initials, color, source_language, target_language,
-          default_vibe, temperature, persona, instructions)
-       values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
-       returning ${CHARACTER_COLUMNS}`,
-      [
+    const user = await getOrCreateUser(db, userId, c.get('email'))
+    const limit = tierLimits[user.tier].characters
+    await db.query('begin')
+    try {
+      // Lock the account row so concurrent creates count one at a time and
+      // cannot both slip under the plan's character cap.
+      await db.query(`select 1 from users where auth_user_id = $1 for update`, [
         userId,
-        payload.name,
-        payload.initials ?? null,
-        payload.color ?? null,
-        payload.sourceLanguage,
-        payload.targetLanguage,
-        payload.defaultVibe,
-        payload.temperature,
-        JSON.stringify(payload.persona),
-        payload.instructions ?? null,
-      ],
-    )
-    return c.json(mapCharacter(res.rows[0]), 201)
+      ])
+      const owned = await db.query<{ count: number }>(
+        `select count(*)::int as count from characters where user_id = $1`,
+        [userId],
+      )
+      if (owned.rows[0].count >= limit) {
+        throw new HTTPException(403, {
+          message:
+            user.tier === 'team'
+              ? `Your plan includes up to ${limit} saved characters. Delete one to add another.`
+              : `Your plan includes up to ${limit} saved characters. Delete one or upgrade to add more.`,
+        })
+      }
+      const res = await db.query<CharacterDbRow>(
+        `insert into characters
+           (user_id, name, initials, color, source_language, target_language,
+            default_vibe, temperature, persona, instructions)
+         values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+         returning ${CHARACTER_COLUMNS}`,
+        [
+          userId,
+          payload.name,
+          payload.initials ?? null,
+          payload.color ?? null,
+          payload.sourceLanguage,
+          payload.targetLanguage,
+          payload.defaultVibe,
+          payload.temperature,
+          JSON.stringify(payload.persona),
+          payload.instructions ?? null,
+        ],
+      )
+      await db.query('commit')
+      return c.json(mapCharacter(res.rows[0]), 201)
+    } catch (error) {
+      await db.query('rollback').catch(() => undefined)
+      throw error
+    }
   })
 })
 
@@ -839,9 +871,7 @@ async function translateWithCredits(
     const estimate = estimateCredits(sourceText, target.creditCostMultiplier)
     reservation = await reserveCredits(db, userId, estimate, 'spend.translate')
     if (!reservation) {
-      throw new HTTPException(402, {
-        message: 'Insufficient credits — add credits or configure BYOK',
-      })
+      throw new InsufficientCreditsError(await getBalance(db, userId), estimate)
     }
   }
   // Release the hold. The handle is cleared only after the refund commits, and a
@@ -886,18 +916,27 @@ async function translateWithCredits(
     await refund().catch(() => undefined)
     throw error
   }
+  const cost = computeCredits(
+    result.tokenUsage.promptTokens,
+    result.tokenUsage.completionTokens,
+    result.tokenUsage.modelId,
+    target.creditCostMultiplier,
+  )
+  // Persist the generation-time charge alongside usage; later registry changes
+  // must not change the amount a card displays. BYOK has no platform charge.
+  const billedResult = {
+    ...result,
+    tokenUsage: {
+      ...result.tokenUsage,
+      creditsCharged: target.isByok ? 0 : cost.credits,
+    },
+  }
   const settle = async (referenceId: string | null) => {
     if (!reservation) return
-    const cost = computeCredits(
-      result.tokenUsage.promptTokens,
-      result.tokenUsage.completionTokens,
-      result.tokenUsage.modelId,
-      target.creditCostMultiplier,
-    )
     await reconcileSpend(db, userId, reservation, cost, referenceId)
     reservation = null
   }
-  return { result, target, settle, refund }
+  return { result: billedResult, target, settle, refund }
 }
 
 app.get('/api/segments/page', zValidator('query', segmentPageSchema), (c) => {
@@ -1362,9 +1401,10 @@ app.get('/api/segments/:segmentId/explain', (c) => {
       )
       reservation = await reserveCredits(db, userId, estimate, 'spend.explain')
       if (!reservation) {
-        throw new HTTPException(402, {
-          message: 'Insufficient credits — add credits or configure BYOK',
-        })
+        throw new InsufficientCreditsError(
+          await getBalance(db, userId),
+          estimate,
+        )
       }
     }
 
@@ -1580,9 +1620,10 @@ app.post(
         'spend.dictation',
       )
       if (!reservation) {
-        throw new HTTPException(402, {
-          message: 'Insufficient credits — add credits to continue',
-        })
+        throw new InsufficientCreditsError(
+          await getBalance(db, userId),
+          estimate,
+        )
       }
 
       const { draft, tokenUsage } = await draftCharacterFromDictation(prompt, {
@@ -1758,6 +1799,91 @@ app.post(
   },
 )
 
+app.get(
+  '/api/users/me/credits',
+  zValidator('query', creditHistorySchema),
+  async (c) => {
+    const { orderId } = c.req.valid('query')
+    c.header('Cache-Control', 'no-store')
+    const payload = await withDb(c.env, async (db) => {
+      const userId = c.get('userId')
+      // Provision first (it may write), then read balance, ledger and order from
+      // one snapshot. Separate reads could pair an order the webhook just
+      // fulfilled with the pre-purchase balance, and the page stops polling.
+      await getOrCreateUser(db, userId, c.get('email'))
+      await db.query(
+        'begin transaction isolation level repeatable read read only',
+      )
+      try {
+        const user = await findUser(db, userId)
+        if (!user) throw new Error('User disappeared after provisioning')
+        const ledger = await db.query<{
+          id: string
+          delta: number
+          reason: string
+          metadata: Record<string, unknown>
+          created_at: Date
+        }>(
+          `select id, delta, reason, metadata, created_at from credit_ledger
+            where user_id = $1 order by created_at desc, id desc limit 50`,
+          [userId],
+        )
+        let order: { credits: number; fulfilled: boolean } | null = null
+        if (orderId) {
+          const result = await db.query<{
+            credits: number
+            fulfilled_at: Date | null
+          }>(
+            `select credits, fulfilled_at from credit_purchases where id = $1 and user_id = $2`,
+            [orderId, userId],
+          )
+          if (!result.rows[0])
+            throw new HTTPException(404, { message: 'Credit order not found' })
+          order = {
+            credits: result.rows[0].credits,
+            fulfilled: Boolean(result.rows[0].fulfilled_at),
+          }
+        }
+        await db.query('commit')
+        return {
+          me: toMeResponse(user),
+          order,
+          ledger: ledger.rows.map((row) => ({
+            id: row.id,
+            delta: row.delta,
+            reason: row.reason,
+            pending: row.metadata.reservation === true,
+            createdAt: new Date(row.created_at).toISOString(),
+          })),
+        }
+      } catch (error) {
+        await db.query('rollback').catch(() => undefined)
+        throw error
+      }
+    })
+    return c.json({ ...payload, packs: await creditPacks(c.env) })
+  },
+)
+
+app.post(
+  '/api/billing/credits/checkout',
+  zValidator('json', creditCheckoutSchema),
+  async (c) => {
+    const { pack } = c.req.valid('json')
+    return withDb(c.env, async (db) => {
+      await getOrCreateUser(db, c.get('userId'), c.get('email'))
+      const checkout = await createCreditCheckout({
+        db,
+        env: c.env,
+        userId: c.get('userId'),
+        email: c.get('email'),
+        pack,
+      })
+      return c.json(checkout)
+    })
+  },
+)
+
 app.post('/api/billing/cancel', async (c) => {
   const subscriptionId = await getSubscriptionId(c.env, c.get('userId'))
   if (!subscriptionId) {
@@ -1807,7 +1933,7 @@ app.post('/api/billing/webhooks/dodo', async (c) => {
 
   let event: DodoEvent
   try {
-    event = JSON.parse(rawBody) as DodoEvent
+    event = dodoEventSchema.parse(JSON.parse(rawBody))
   } catch {
     throw new HTTPException(400, { message: 'Malformed webhook body' })
   }

@@ -1,12 +1,13 @@
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu'
 import * as React from 'react'
+import { Link } from '@tanstack/react-router'
 import { toast } from 'sonner'
 
 import { Icon } from '@/components/vibe-design/icon'
 import { authClient, signOut } from '@/lib/auth-client'
 import { initialsFor } from '@/lib/initials'
 
-// Top-nav account slot on /app: who's signed in, plus sign-out.
+// Top-nav account menu: identity, profile/credits, upgrades and sign-out.
 export function AccountMenu() {
   const { data } = authClient.useSession()
   const [open, setOpen] = React.useState(false)
@@ -37,6 +38,13 @@ export function AccountMenu() {
             {user.name && <strong>{user.name}</strong>}
             <span>{user.email}</span>
           </DropdownMenu.Label>
+          <DropdownMenu.Separator className="vt-menu__sep" />
+          <DropdownMenu.Item asChild className="vt-menu__item">
+            <Link to="/app/credits">Profile &amp; credits</Link>
+          </DropdownMenu.Item>
+          <DropdownMenu.Item asChild className="vt-menu__item">
+            <Link to="/pricing">Upgrade account</Link>
+          </DropdownMenu.Item>
           <DropdownMenu.Separator className="vt-menu__sep" />
           <DropdownMenu.Item
             className="vt-menu__item"

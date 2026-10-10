@@ -2,7 +2,7 @@
 // bypass this entirely and pay OpenRouter directly. See docs/adr/0003.
 export const tierLimits = {
   free: {
-    characters: 5,
+    characters: 3,
     threadsPerCharacter: 20,
     credits: 1000,
     retentionDays: 30,

@@ -26,12 +26,6 @@ type FileRouteMap = {
     fullPath: '/legal'
     parentRoute: typeof RootRoute
   }
-  '/changelog': {
-    id: '/changelog'
-    path: '/changelog'
-    fullPath: '/changelog'
-    parentRoute: typeof RootRoute
-  }
   '/invite': {
     id: '/invite'
     path: '/invite'
@@ -64,7 +58,6 @@ declare module '@tanstack/react-router' {
     '/pricing': FileRouteMap['/pricing']
     '/auth': FileRouteMap['/auth']
     '/legal': FileRouteMap['/legal']
-    '/changelog': FileRouteMap['/changelog']
     '/invite': FileRouteMap['/invite']
     '/dev/diagnostics': FileRouteMap['/dev/diagnostics']
     '/app': FileRouteMap['/app']
@@ -78,7 +71,6 @@ declare module '@tanstack/router-core' {
     '/pricing': FileRouteMap['/pricing']
     '/auth': FileRouteMap['/auth']
     '/legal': FileRouteMap['/legal']
-    '/changelog': FileRouteMap['/changelog']
     '/invite': FileRouteMap['/invite']
     '/dev/diagnostics': FileRouteMap['/dev/diagnostics']
     '/app': FileRouteMap['/app']

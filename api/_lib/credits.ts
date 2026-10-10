@@ -17,6 +17,8 @@ export type LedgerReason =
   | 'grant.monthly'
   | 'grant.subscription'
   | 'grant.adjustment'
+  | 'grant.purchase'
+  | 'reversal.purchase'
   | 'spend.translate'
   | 'spend.explain'
   | 'spend.dictation'
@@ -68,7 +70,12 @@ export async function reserveCredits(
     const ledger = await db.query<{ id: string }>(
       `insert into credit_ledger (user_id, delta, reason, metadata)
        values ($1, $2, $3, $4) returning id`,
-      [userId, -estimate, reason, JSON.stringify({ reservation: true, estimate })],
+      [
+        userId,
+        -estimate,
+        reason,
+        JSON.stringify({ reservation: true, estimate }),
+      ],
     )
     await db.query('commit')
     return { ledgerId: ledger.rows[0].id, reserved: estimate }
@@ -142,7 +149,9 @@ export async function refundReservation(
        where auth_user_id = $1`,
       [userId, reservation.reserved],
     )
-    await db.query(`delete from credit_ledger where id = $1`, [reservation.ledgerId])
+    await db.query(`delete from credit_ledger where id = $1`, [
+      reservation.ledgerId,
+    ])
     await db.query('commit')
   } catch (error) {
     await db.query('rollback').catch(() => undefined)
@@ -154,7 +163,10 @@ export async function recordGrant(
   db: Client,
   userId: string,
   amount: number,
-  reason: Extract<LedgerReason, 'grant.signup' | 'grant.monthly' | 'grant.adjustment'>,
+  reason: Extract<
+    LedgerReason,
+    'grant.signup' | 'grant.monthly' | 'grant.adjustment'
+  >,
   metadata: Record<string, unknown> = {},
 ): Promise<number> {
   await db.query('begin')
@@ -191,7 +203,7 @@ export function computeCredits(
   modelId: string,
   multiplier: number,
 ): CreditCost {
-  const credits = Math.max(1, Math.ceil((promptTokens + completionTokens) * multiplier))
+  const credits = tokenCredits(promptTokens + completionTokens, multiplier)
   return { credits, promptTokens, completionTokens, modelId }
 }
 
@@ -202,8 +214,14 @@ export function computeCredits(
 // over-estimating only tightens the concurrency gate, it does not over-charge.
 const PROMPT_OVERHEAD_TOKENS = 400
 
+// Registry multipliers are NUMERIC(6,3). Multiply integers first so e.g.
+// 100 × 1.1 cannot become 110.00000000000001 and charge 111 credits.
+function tokenCredits(tokens: number, multiplier: number): number {
+  return Math.max(1, Math.ceil((tokens * Math.round(multiplier * 1000)) / 1000))
+}
+
 export function estimateCredits(text: string, multiplier: number): number {
   const inputTokens = Math.ceil(text.length / 4)
   const estimatedTokens = PROMPT_OVERHEAD_TOKENS + inputTokens * 2
-  return Math.max(1, Math.ceil(estimatedTokens * multiplier))
+  return tokenCredits(estimatedTokens, multiplier)
 }
