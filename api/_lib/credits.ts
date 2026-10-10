@@ -18,6 +18,7 @@ export type LedgerReason =
   | 'grant.subscription'
   | 'grant.adjustment'
   | 'grant.purchase'
+  | 'reversal.purchase'
   | 'spend.translate'
   | 'spend.explain'
   | 'spend.dictation'

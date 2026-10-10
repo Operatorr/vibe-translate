@@ -3,6 +3,7 @@ import * as React from 'react'
 
 import { Icon } from '@/components/vibe-design/icon'
 import type { VibePreset } from '@/components/vibe-design/design-data'
+import { useBackButtonClose } from '@/hooks/use-back-button-close'
 import type { ExplainBody, SegmentToken, VibeStop } from '@/lib/types'
 import { normalizeWord, srcWordSet } from '@/lib/alignment'
 
@@ -219,45 +220,10 @@ export function SegmentCard({
           </div>
           <div className="segment__tgt-row">
             <div className="segment__actions">
-              <Dialog.Root>
-                <Dialog.Trigger asChild>
-                  <button
-                    type="button"
-                    className="segment__action segment__action--display"
-                    title="Show translation full screen"
-                    aria-label="Show translation full screen"
-                  >
-                    <Icon name="expand" />
-                  </button>
-                </Dialog.Trigger>
-                <Dialog.Portal>
-                  <Dialog.Overlay className="translation-display__overlay" />
-                  <Dialog.Content
-                    className="translation-display"
-                    aria-describedby={undefined}
-                  >
-                    <Dialog.Title className="sr-only">
-                      Translation display
-                    </Dialog.Title>
-                    <Dialog.Close asChild>
-                      <button
-                        type="button"
-                        className="translation-display__close"
-                        title="Close translation display"
-                        aria-label="Close translation display"
-                      >
-                        <Icon name="x" />
-                      </button>
-                    </Dialog.Close>
-                    <div
-                      className="translation-display__text"
-                      lang={targetLanguage}
-                    >
-                      {seg.targetText}
-                    </div>
-                  </Dialog.Content>
-                </Dialog.Portal>
-              </Dialog.Root>
+              <TranslationDisplay
+                text={seg.targetText}
+                language={targetLanguage}
+              />
               <button
                 type="button"
                 className="segment__action"
@@ -318,6 +284,56 @@ export function SegmentCard({
         />
       )}
     </div>
+  )
+}
+
+// Full-screen target text. Its open state is controlled so Back closes it
+// first (without changing the mobile pane or leaving the route); Radix
+// returns focus to the trigger on every close.
+function TranslationDisplay({
+  text,
+  language,
+}: {
+  text: string
+  language: string
+}) {
+  const [open, setOpen] = React.useState(false)
+  useBackButtonClose(open, () => setOpen(false))
+  return (
+    <Dialog.Root open={open} onOpenChange={setOpen}>
+      <Dialog.Trigger asChild>
+        <button
+          type="button"
+          className="segment__action segment__action--display"
+          title="Show translation full screen"
+          aria-label="Show translation full screen"
+        >
+          <Icon name="expand" />
+        </button>
+      </Dialog.Trigger>
+      <Dialog.Portal>
+        <Dialog.Overlay className="translation-display__overlay" />
+        <Dialog.Content
+          className="translation-display"
+          aria-describedby={undefined}
+        >
+          <Dialog.Title className="sr-only">Translation display</Dialog.Title>
+          <Dialog.Close asChild>
+            <button
+              type="button"
+              className="translation-display__close"
+              title="Close translation display"
+              aria-label="Close translation display"
+            >
+              <Icon name="x" />
+            </button>
+          </Dialog.Close>
+          <div className="translation-display__text" lang={language}>
+            {text}
+          </div>
+        </Dialog.Content>
+      </Dialog.Portal>
+    </Dialog.Root>
   )
 }
 

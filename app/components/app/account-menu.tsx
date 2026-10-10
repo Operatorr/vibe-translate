@@ -7,7 +7,7 @@ import { Icon } from '@/components/vibe-design/icon'
 import { authClient, signOut } from '@/lib/auth-client'
 import { initialsFor } from '@/lib/initials'
 
-// Top-nav account slot on /app: who's signed in, plus sign-out.
+// Top-nav account menu: identity, profile/credits, upgrades and sign-out.
 export function AccountMenu() {
   const { data } = authClient.useSession()
   const [open, setOpen] = React.useState(false)

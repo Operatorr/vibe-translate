@@ -48,7 +48,7 @@ Only these routes are intentionally public:
 Two layers (see [adr/0003](./adr/0003-credits-byok-and-model-registry.md) and CLOUDFLARE.md):
 
 1. **Edge (coarse).** Cloudflare Rate Limiting Rules / WAF on `/api/*`, per-IP. Runs before the worker, so abusive traffic never reaches metered providers. This is the first line for the public routes and for burst protection everywhere.
-2. **Application (fine).** The **credits** system is the per-user cost control on the expensive model paths (translate, explain, dictation). Each paid call takes an **atomic credit reservation** (`reserveCredits`, a conditional `credits_balance >= estimate` decrement) _before_ the model call, reconciled to the real cost afterwards. A request that can't cover the hold returns `402`. Because the reservation row-locks, concurrent requests serialize — a near-zero-balance user can't fan out many simultaneous paid calls past a single stale balance read. We deliberately do **not** maintain a bespoke KV/Durable-Object limiter unless edge rules prove insufficient.
+2. **Application (fine).** The **credits** system is the per-user cost control on the expensive model paths (translate, explain, dictation). Each paid call takes an **atomic credit reservation** (`reserveCredits`, a conditional `credits_balance >= estimate` decrement) _before_ the model call, reconciled to the real cost afterwards. A request that can't cover the hold returns `402`, including while the balance is negative after a top-up reversal. Because the reservation row-locks, concurrent requests serialize — a near-zero-balance user can't fan out many simultaneous paid calls past a single stale balance read. We deliberately do **not** maintain a bespoke KV/Durable-Object limiter unless edge rules prove insufficient.
 
 Onboarding dictation is free and costs tokens, so it's bounded three ways: only callable while `onboarding_complete = false`, a lifetime call counter in `activity_log`, and the edge rate limit.
 
@@ -62,10 +62,11 @@ Onboarding dictation is free and costs tokens, so it's bounded three ways: only 
 
 ## Webhook signatures {#webhook-signatures}
 
-- `POST /api/billing/webhooks/dodo` is unauthenticated by design (Dodo calls it) and is therefore **exempted from the `auth()` session middleware** — only `/checkout`, `/cancel`, and `/switch-plan` under `/api/billing/*` are authenticated.
+- `POST /api/billing/webhooks/dodo` is unauthenticated by design (Dodo calls it) and is therefore **exempted from the `auth()` session middleware** — only `/checkout`, `/credits/checkout`, `/cancel`, and `/switch-plan` under `/api/billing/*` are authenticated.
 - It **verifies the Dodo signature** using `DODO_WEBHOOK_SECRET` before trusting the body. Dodo follows the [Standard Webhooks](https://www.standardwebhooks.com/) spec: `verifyDodoSignature` in `api/_lib/payments.ts` runs on the **raw body before any JSON parsing**, computing `HMAC-SHA256` over `${webhook-id}.${webhook-timestamp}.${rawBody}` with the base64-decoded secret and comparing (constant-time) against each `v1,<sig>` entry in the `webhook-signature` header.
 - If signature verification fails, the route returns `400` and **does not parse or mutate state**. A missing `DODO_WEBHOOK_SECRET` fails closed with `500`.
 - **Replay protection** is twofold: the timestamp must be within a ±5-minute window, and every accepted event is recorded in `webhook_events` (keyed by `webhook-id`). The dedupe insert and the tier/credit mutation share **one transaction**, so redelivered events are a no-op and a mid-flight failure rolls back cleanly for the provider's retry.
+- **Credit top-ups** are granted only by a signed `payment.succeeded` that matches its locked `credit_purchases` order (user, product, quantity) and grants the order's snapshotted credits; the checkout redirect grants nothing. A unique `payment_id` stops one payment from funding two orders. A signed full `refund.succeeded` or `dispute.accepted`/`dispute.lost` reverses the grant once per order, even into a negative balance, so spending credits before a chargeback gains nothing. See [adr/0005](./adr/0005-commerce-checkout-and-webhook-idempotency.md#addendum-credit-top-up-reversals).
 
 ## Input validation
 

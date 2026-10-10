@@ -4,11 +4,14 @@ import { z } from 'zod'
 
 import type { Bindings } from './env'
 import { logActivity } from './activity'
+import { CREDIT_PACK_IDS, type CreditPackId } from './schemas'
 import { tierLimits, type Tier } from './tier'
 
-// Dodo Payments commerce: Standard-Webhooks signature verification + checkout/
-// subscription lifecycle handling. Verification runs on the raw body before any
-// parsing or state mutation. See docs/SECURITY.md#webhook-signatures and
+// Dodo Payments commerce: Standard-Webhooks signature verification, plan
+// checkout and subscription lifecycle, and one-time credit top-ups (the cached
+// credit-pack catalog, order fulfillment, and refund/dispute reversals).
+// Verification runs on the raw body before any parsing or state mutation. See
+// docs/SECURITY.md#webhook-signatures, docs/DEPLOYMENT.md#credit-top-ups and
 // docs/adr/0005.
 
 // Reject webhooks whose timestamp is outside this window (replay guard).
@@ -17,12 +20,15 @@ const SIGNATURE_TOLERANCE_SECONDS = 5 * 60
 export type PaidPlan = 'pro' | 'team'
 export type BillingPeriod = 'monthly' | 'annual'
 
-const CREDIT_PACKS = [
-  { id: 'small', credits: 25000, envKey: 'DODO_PRODUCT_CREDITS_SMALL' },
-  { id: 'medium', credits: 50000, envKey: 'DODO_PRODUCT_CREDITS_MEDIUM' },
-  { id: 'large', credits: 100000, envKey: 'DODO_PRODUCT_CREDITS_LARGE' },
-] as const
-type CreditPackId = (typeof CREDIT_PACKS)[number]['id']
+// Credits and product binding per pack. Prices live in Dodo.
+const CREDIT_PACKS = {
+  small: { credits: 25000, envKey: 'DODO_PRODUCT_CREDITS_SMALL' },
+  medium: { credits: 50000, envKey: 'DODO_PRODUCT_CREDITS_MEDIUM' },
+  large: { credits: 100000, envKey: 'DODO_PRODUCT_CREDITS_LARGE' },
+} as const satisfies Record<
+  CreditPackId,
+  { credits: number; envKey: keyof Bindings }
+>
 const productPriceSchema = z.object({
   price: z.object({
     type: z.literal('one_time_price'),
@@ -34,54 +40,116 @@ const productPriceSchema = z.object({
   }),
 })
 
-async function loadCreditPack(
+export type CreditPack = {
+  id: CreditPackId
+  credits: number
+  available: boolean
+  price: { amount: number; currency: string } | null
+}
+type PackLookup = { pack: CreditPack; productId?: string; transient: boolean }
+
+// The credits page polls every 2s, so catalog reads get a short timeout and a
+// per-isolate cache. Checkout always reads its product fresh.
+const CATALOG_TIMEOUT_MS = 4_000
+const CATALOG_TTL_MS = 5 * 60_000
+// Retry sooner when a configured pack failed in a way that may clear itself.
+const CATALOG_RETRY_TTL_MS = 30_000
+
+// Reads one pack's live price. Never throws: an unavailable pack must not hide
+// the user's balance and history. Failures of a configured pack are logged by
+// category, without credentials; a missing binding is expected and silent.
+async function lookupCreditPack(
   env: Bindings,
-  pack: (typeof CREDIT_PACKS)[number],
-) {
-  const productId = env[pack.envKey]?.trim()
-  const result = {
-    id: pack.id,
-    credits: pack.credits,
-    available: false,
-    price: null as { amount: number; currency: string } | null,
+  id: CreditPackId,
+): Promise<PackLookup> {
+  const { credits, envKey } = CREDIT_PACKS[id]
+  const pack: CreditPack = { id, credits, available: false, price: null }
+  const productId = env[envKey]?.trim()
+  if (!env.DODO_API_KEY?.trim() || !productId) return { pack, transient: false }
+  const unavailable = (
+    category: 'http' | 'schema' | 'pay_what_you_want' | 'exception',
+    transient: boolean,
+    detail: Record<string, unknown> = {},
+  ): PackLookup => {
+    console.warn('dodo credit pack unavailable', {
+      pack: id,
+      category,
+      ...detail,
+    })
+    return { pack, transient }
   }
-  if (!env.DODO_API_KEY?.trim() || !productId) return result
-  const res = await dodoFetch(
-    env,
-    `/products/${encodeURIComponent(productId)}`,
-    { method: 'GET' },
-  )
-  if (!res.ok) return result
-  const product = productPriceSchema.safeParse(await res.json())
-  if (!product.success || product.data.price.pay_what_you_want) return result
-  const price = product.data.price
-  const discount = price.discount_bps ?? (price.discount ?? 0) * 100
-  return {
-    ...result,
-    available: true,
-    price: {
-      amount: Math.round((price.price * (10000 - discount)) / 10000),
-      currency: price.currency,
-    },
+  try {
+    const res = await dodoFetch(
+      env,
+      `/products/${encodeURIComponent(productId)}`,
+      { method: 'GET', signal: AbortSignal.timeout(CATALOG_TIMEOUT_MS) },
+    )
+    if (!res.ok)
+      return unavailable('http', res.status === 429 || res.status >= 500, {
+        status: res.status,
+      })
+    const product = productPriceSchema.safeParse(
+      await res.json().catch(() => null),
+    )
+    if (!product.success)
+      return unavailable('schema', false, {
+        fields: product.error.issues
+          .slice(0, 3)
+          .map((issue) => issue.path.join('.')),
+      })
+    const price = product.data.price
+    if (price.pay_what_you_want) return unavailable('pay_what_you_want', false)
+    const discount = price.discount_bps ?? (price.discount ?? 0) * 100
+    return {
+      productId,
+      transient: false,
+      pack: {
+        ...pack,
+        available: true,
+        price: {
+          amount: Math.round((price.price * (10000 - discount)) / 10000),
+          currency: price.currency,
+        },
+      },
+    }
+  } catch (error) {
+    return unavailable('exception', true, {
+      error: error instanceof Error ? error.name : typeof error,
+    })
   }
 }
 
-export async function creditPacks(env: Bindings) {
-  // Catalog failures must not hide the user's balance and history.
-  return Promise.all(
-    CREDIT_PACKS.map(async (pack) => {
-      try {
-        return await loadCreditPack(env, pack)
-      } catch {
-        return {
-          id: pack.id,
-          credits: pack.credits,
-          available: false,
-          price: null,
-        }
-      }
-    }),
+type CatalogEntry = { key: string; expiresAt: number; packs: CreditPack[] }
+let catalogCache: CatalogEntry | undefined
+
+export function clearCreditPackCache(): void {
+  catalogCache = undefined
+}
+
+export async function creditPacks(env: Bindings): Promise<CreditPack[]> {
+  // Keyed by endpoint and product ids, never the API key.
+  const key = [
+    dodoBaseUrl(env),
+    ...CREDIT_PACK_IDS.map((id) => env[CREDIT_PACKS[id].envKey]?.trim() ?? ''),
+  ].join('|')
+  if (catalogCache?.key === key && catalogCache.expiresAt > Date.now())
+    return catalogCache.packs
+  // Cache settled data only, never the in-flight load: a Worker request that
+  // is cancelled mid-fetch would strand every other request awaiting it.
+  const lookups = await Promise.all(
+    CREDIT_PACK_IDS.map((id) => lookupCreditPack(env, id)),
   )
+  const packs = lookups.map((lookup) => lookup.pack)
+  catalogCache = {
+    key,
+    expiresAt:
+      Date.now() +
+      (lookups.some((lookup) => lookup.transient)
+        ? CATALOG_RETRY_TTL_MS
+        : CATALOG_TTL_MS),
+    packs,
+  }
+  return packs
 }
 
 export async function createCreditCheckout(params: {
@@ -92,12 +160,12 @@ export async function createCreditCheckout(params: {
   pack: CreditPackId
 }): Promise<{ checkoutUrl: string }> {
   const { db, env, userId, email } = params
-  const definition = CREDIT_PACKS.find((pack) => pack.id === params.pack)!
-  const pack = await loadCreditPack(env, definition)
-  const productId = env[definition.envKey]?.trim()
+  // Fresh, uncached read: the price type or availability may have changed.
+  // Every lookup failure surfaces as the documented 503.
+  const { pack, productId } = await lookupCreditPack(env, params.pack)
   if (!pack.available || !productId) {
     throw new HTTPException(503, {
-      message: 'Credit top-ups are not available yet',
+      message: 'This credit pack is currently unavailable',
     })
   }
   if (!email)
@@ -117,16 +185,51 @@ export async function createCreditCheckout(params: {
       metadata: { user_id: userId, kind: 'credit_topup', order_id: orderId },
     }),
   })
-  if (!res.ok) await dodoErrorMessage(res, 'credit checkout')
+  // Definitive failures are marked on the order. A transport error is left
+  // unmarked: Dodo may still have created the session.
+  if (!res.ok) {
+    await recordCheckout(db, orderId, null)
+    await dodoErrorMessage(res, 'credit checkout')
+  }
   const body = (await res.json().catch(() => ({}))) as {
+    session_id?: unknown
     checkout_url?: string | null
   }
   if (!body.checkout_url) {
+    await recordCheckout(db, orderId, null)
     throw new HTTPException(502, {
       message: 'Dodo did not return a checkout URL',
     })
   }
+  if (typeof body.session_id === 'string' && body.session_id)
+    await recordCheckout(db, orderId, body.session_id)
   return { checkoutUrl: body.checkout_url }
+}
+
+// Stores the Dodo session id, or with null marks a definitively failed
+// checkout. Traceability only, so a write failure never masks the outcome.
+async function recordCheckout(
+  db: Client,
+  orderId: string,
+  sessionId: string | null,
+): Promise<void> {
+  try {
+    if (sessionId)
+      await db.query(
+        `update credit_purchases set checkout_session_id = $2 where id = $1`,
+        [orderId, sessionId],
+      )
+    else
+      await db.query(
+        `update credit_purchases set checkout_failed_at = now() where id = $1`,
+        [orderId],
+      )
+  } catch (error) {
+    console.error('credit checkout tracking failed', {
+      orderId,
+      error: error instanceof Error ? error.name : typeof error,
+    })
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -380,6 +483,10 @@ export const dodoEventSchema = z.object({
       subscription_ids: z.array(z.string()).optional(),
       product_id: z.string().optional(),
       payment_id: z.string().optional(),
+      // Refund and dispute payloads reference the original payment_id.
+      refund_id: z.string().nullish(),
+      dispute_id: z.string().nullish(),
+      is_partial: z.boolean().nullish(),
       status: z.string().nullish(),
       product_cart: z
         .array(
@@ -494,6 +601,88 @@ async function applySubscriptionGrant(
   )
 }
 
+// Postgres unique_violation on the one-order-per-payment constraint.
+function isPaymentReuse(error: unknown): boolean {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    'code' in error &&
+    error.code === '23505' &&
+    'constraint' in error &&
+    error.constraint === 'credit_purchases_payment_id_key'
+  )
+}
+
+// Takes back a top-up whose funds returned to the cardholder: a full refund,
+// or a dispute that was accepted or lost. Runs inline in the webhook
+// transaction like the grant, once per order. Credits already spent leave the
+// balance negative until later grants cover it (adr/0005).
+async function reverseCreditPurchase(
+  db: Client,
+  type: 'refund.succeeded' | 'dispute.accepted' | 'dispute.lost',
+  data: NonNullable<DodoEvent['data']>,
+): Promise<WebhookResult> {
+  const paymentId = data.payment_id
+  if (!paymentId) return { status: 'ignored' }
+  const orders = await db.query<{
+    id: string
+    user_id: string
+    credits: number
+    reversed_at: Date | null
+  }>(
+    `select id, user_id, credits, reversed_at
+        from credit_purchases where payment_id = $1 for update`,
+    [paymentId],
+  )
+  const order = orders.rows[0]
+  // Subscription payments have no order. Neither does a payment that was not
+  // fulfilled yet, so a refund that arrives first is ignored (documented gap).
+  if (!order) return { status: 'ignored' }
+  if (order.reversed_at) return { status: 'deduped' }
+  const isRefund = type === 'refund.succeeded'
+  const reversalId = isRefund ? data.refund_id : data.dispute_id
+  if (!reversalId)
+    throw new HTTPException(400, { message: 'Invalid credit reversal' })
+  if (isRefund && data.is_partial !== false) {
+    // Only an explicitly full refund is reversed automatically.
+    console.warn(
+      'dodo webhook: partial credit refund needs manual adjustment',
+      {
+        orderId: order.id,
+        refundId: reversalId,
+        paymentId,
+      },
+    )
+    return { status: 'ignored' }
+  }
+  await db.query(
+    `update credit_purchases
+        set reversed_at = now(), reversal_id = $2, reversal_reason = $3
+      where id = $1`,
+    [order.id, reversalId, isRefund ? 'refund' : 'dispute'],
+  )
+  await db.query(
+    `update users set credits_balance = credits_balance - $2,
+                   updated_at = now() where auth_user_id = $1`,
+    [order.user_id, order.credits],
+  )
+  await db.query(
+    `insert into credit_ledger (user_id, delta, reason, reference_id, metadata)
+     values ($1, $2, 'reversal.purchase', $3, $4)`,
+    [
+      order.user_id,
+      -order.credits,
+      order.id,
+      JSON.stringify(
+        isRefund
+          ? { paymentId, refundId: reversalId }
+          : { paymentId, disputeId: reversalId },
+      ),
+    ],
+  )
+  return { status: 'processed', userId: order.user_id }
+}
+
 // Applies one Dodo event to user state. Assumes the caller holds an open
 // transaction; performs no begin/commit of its own.
 async function handleDodoEvent(
@@ -553,12 +742,21 @@ async function handleDodoEvent(
         }
         return { status: 'deduped' }
       }
-      // Unique payment_id also prevents using one payment for two orders.
-      await db.query(
-        `update credit_purchases set payment_id = $2, fulfilled_at = now()
-                       where id = $1`,
-        [orderId.data, data.payment_id],
-      )
+      // Unique payment_id also prevents using one payment for two orders. The
+      // violation aborts the transaction; the caller rolls it back.
+      try {
+        await db.query(
+          `update credit_purchases set payment_id = $2, fulfilled_at = now()
+                         where id = $1`,
+          [orderId.data, data.payment_id],
+        )
+      } catch (error) {
+        if (isPaymentReuse(error))
+          throw new HTTPException(400, {
+            message: 'Credit payment already used',
+          })
+        throw error
+      }
       await db.query(
         `update users set credits_balance = credits_balance + $2,
                        updated_at = now() where auth_user_id = $1`,
@@ -576,6 +774,10 @@ async function handleDodoEvent(
       )
       return { status: 'processed', userId: order.user_id }
     }
+    case 'refund.succeeded':
+    case 'dispute.accepted':
+    case 'dispute.lost':
+      return reverseCreditPurchase(db, event.type, data)
     case 'subscription.active':
     case 'subscription.plan_changed':
     case 'subscription.renewed': {

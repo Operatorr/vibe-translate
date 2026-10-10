@@ -4,10 +4,15 @@ import { Popover } from '@/components/ui/popover'
 
 // Counts come from the provider, including the prompt and structured output.
 // Missing legacy fields stay unknown; do not substitute a sample or estimate.
+// Strings must be plain decimal digits: Number() would also accept hex ('0x1C')
+// and exponents ('1e3').
 function count(value: unknown): number | null {
-  if (typeof value !== 'number' && typeof value !== 'string') return null
-  if (typeof value === 'string' && !value.trim()) return null
-  const parsed = Number(value)
+  const parsed =
+    typeof value === 'number'
+      ? value
+      : typeof value === 'string' && /^\s*\d+\s*$/.test(value)
+        ? Number(value)
+        : NaN
   return Number.isSafeInteger(parsed) && parsed >= 0 ? parsed : null
 }
 
@@ -44,7 +49,11 @@ export function SegmentUsage({
           aria-label={[
             total !== null
               ? `Token usage: ${total} total tokens`
-              : 'Token usage: partial recording',
+              : output !== null
+                ? `Token usage: ${output} output tokens, total not recorded`
+                : input !== null
+                  ? `Token usage: ${input} input tokens, total not recorded`
+                  : 'Token usage: not recorded',
             charged !== null ? `${charged} credits charged` : null,
           ]
             .filter(Boolean)

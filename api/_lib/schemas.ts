@@ -220,8 +220,12 @@ export const checkoutSchema = z.object({
   billingPeriod: z.enum(['monthly', 'annual']).default('monthly'),
 })
 
+// Credit top-up pack ids; payments.ts maps each to its credits and product.
+export const CREDIT_PACK_IDS = ['small', 'medium', 'large'] as const
+export type CreditPackId = (typeof CREDIT_PACK_IDS)[number]
+
 export const creditCheckoutSchema = z.object({
-  pack: z.enum(['small', 'medium', 'large']),
+  pack: z.enum(CREDIT_PACK_IDS),
 })
 
 export const creditHistorySchema = z.object({

@@ -40,7 +40,9 @@ vi.mock('../_lib/db', () => ({
   withDb: (_env: unknown, fn: (db: unknown) => unknown) => fn(fakeDb),
   createDbClient: () => fakeDb,
 }))
-vi.mock('../_lib/users', () => ({
+// findUser stays real so the credit-history snapshot read reaches the fake db.
+vi.mock('../_lib/users', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../_lib/users')>()),
   getOrCreateUser: vi.fn(async () => ({
     tier: 'pro',
     onboardingComplete: true,
@@ -86,6 +88,7 @@ vi.mock('../_lib/translation-cache', async (importOriginal) => ({
 const { default: app } = await import('../app')
 const credits = await import('../_lib/credits')
 const cache = await import('../_lib/translation-cache')
+const { clearCreditPackCache } = await import('../_lib/payments')
 
 const env = { APP_URL: 'https://vibe.test' }
 const THREAD = '11111111-1111-4111-8111-111111111111'
@@ -113,6 +116,7 @@ const postJson = (path: string, body: unknown) =>
 
 beforeEach(() => {
   vi.clearAllMocks()
+  clearCreditPackCache()
   queries.length = 0
   answer = () => ({ rows: [] })
 })
@@ -319,26 +323,79 @@ describe('translate credit ordering', () => {
     errors.mockRestore()
   })
 
-  it('persists the same credit charge that settlement applies', async () => {
-    let usage: unknown
-    answer = (sql, params) => {
-      if (sql.startsWith('insert into segments')) usage = JSON.parse(params[6] as string)
-      return createAnswers(sql)
-    }
-    const res = await postJson('/api/segments', { threadId: THREAD, sourceText: 'hi', vibe: 'casual' })
-    expect(res.status).toBe(201)
-    expect(usage).toMatchObject({ promptTokens: 5, completionTokens: 3, creditsCharged: 8 })
-  })
+  // 5 prompt + 3 completion tokens from the translateSegment mock.
+  it.each([
+    { label: 'platform at 1x', isByok: false, multiplier: 1, charged: 8 },
+    { label: 'platform at 2x', isByok: false, multiplier: 2, charged: 16 },
+    { label: 'BYOK', isByok: true, multiplier: 2, charged: 0 },
+  ])(
+    'persists the same credit charge that settlement applies ($label)',
+    async ({ isByok, multiplier, charged }) => {
+      const openrouter = await import('../_lib/openrouter')
+      vi.mocked(openrouter.resolveCallTarget).mockResolvedValueOnce({
+        isByok,
+        apiKey: 'k',
+        modelId: 'test/model',
+        modelRowId: null,
+        creditCostMultiplier: multiplier,
+        reasoning: undefined,
+      })
+      let usage: { creditsCharged?: unknown } | undefined
+      answer = (sql, params) => {
+        if (sql.startsWith('insert into segments'))
+          usage = JSON.parse(params[6] as string)
+        return createAnswers(sql)
+      }
+      const res = await postJson('/api/segments', {
+        threadId: THREAD,
+        sourceText: 'hi',
+        vibe: 'casual',
+      })
+      expect(res.status).toBe(201)
+      expect(usage).toMatchObject({
+        promptTokens: 5,
+        completionTokens: 3,
+        creditsCharged: charged,
+      })
+      if (isByok) {
+        expect(credits.reserveCredits).not.toHaveBeenCalled()
+        expect(credits.reconcileSpend).not.toHaveBeenCalled()
+        return
+      }
+      expect(credits.reconcileSpend).toHaveBeenCalledTimes(1)
+      const [, , , cost] = vi.mocked(credits.reconcileSpend).mock.calls[0]
+      expect(usage?.creditsCharged).toBe(cost.credits)
+    },
+  )
+
   it('reports the remaining balance and required hold when a translation is rejected', async () => {
     vi.mocked(credits.reserveCredits).mockResolvedValueOnce(null)
-    answer = (sql) => sql.startsWith('select credits_balance')
-      ? { rows: [{ credits_balance: 198 }] } : createAnswers(sql)
-    const res = await postJson('/api/segments', { threadId: THREAD, sourceText: 'hi', vibe: 'casual' })
+    answer = (sql) =>
+      sql.startsWith('select credits_balance')
+        ? { rows: [{ credits_balance: 198 }] }
+        : createAnswers(sql)
+    const res = await postJson('/api/segments', {
+      threadId: THREAD,
+      sourceText: 'hi',
+      vibe: 'casual',
+    })
     expect(res.status).toBe(402)
-    expect(await res.json()).toMatchObject({ error: { details: {
-      code: 'insufficient_credits', balance: 198, requiredCredits: 402,
-    } } })
+    expect(await res.json()).toMatchObject({
+      error: {
+        details: {
+          code: 'insufficient_credits',
+          balance: 198,
+          requiredCredits: 402,
+        },
+      },
+    })
+    const ai = await import('../_lib/ai')
+    expect(ai.translateSegment).not.toHaveBeenCalled()
+    expect(queries.some((q) => q.startsWith('insert into segments'))).toBe(
+      false,
+    )
     expect(credits.reconcileSpend).not.toHaveBeenCalled()
+    expect(credits.refundReservation).not.toHaveBeenCalled()
   })
 
   it('refunds when the Segment insert itself fails', async () => {
@@ -893,6 +950,219 @@ describe('character workspace', () => {
   )
 })
 
+const ORDER = uuidFor(0x0de7)
+const SNAPSHOT = 'begin transaction isolation level repeatable read read only'
+
+// Collapses each query to its table (or the transaction keyword) so tests can
+// assert which reads ran inside the snapshot, in order.
+const statements = () =>
+  queries.map((q) =>
+    q.startsWith('begin') || q === 'commit' || q === 'rollback'
+      ? q
+      : (/ from (\w+)/.exec(q)?.[1] ?? q),
+  )
+
+// The snapshot's profile row carries the post-purchase balance; the provisioning
+// read (getOrCreateUser, mocked) happens before it.
+const creditAnswers =
+  (order: Row | null = null) =>
+  (sql: string): Answer => {
+    if (sql.startsWith('select auth_user_id') && sql.includes('from users'))
+      return {
+        rows: [
+          {
+            auth_user_id: 'user_1',
+            email: 'a@example.com',
+            display_name: null,
+            tier: 'free',
+            onboarding_complete: true,
+            credits_balance: 25200,
+            credits_refilled_at: null,
+            byok_configured: false,
+            openrouter_api_key_last4: null,
+            byok_translate_model_id: null,
+            byok_explain_model_id: null,
+            locale: null,
+          },
+        ],
+      }
+    if (sql.includes('from credit_ledger'))
+      return {
+        rows: [
+          {
+            id: 'ledger_hold',
+            delta: -412,
+            reason: 'spend.translate',
+            metadata: { reservation: true, estimate: 412 },
+            created_at: new Date('2026-10-01T10:00:02.000Z'),
+          },
+          {
+            id: 'ledger_spend',
+            delta: -8,
+            reason: 'spend.translate',
+            metadata: { modelId: 'test/model' },
+            created_at: '2026-10-01T12:00:01+02:00',
+          },
+          {
+            id: 'ledger_grant',
+            delta: 25000,
+            reason: 'grant.purchase',
+            metadata: {},
+            created_at: new Date('2026-10-01T10:00:00.000Z'),
+          },
+        ],
+      }
+    if (sql.includes('from credit_purchases'))
+      return { rows: order ? [order] : [] }
+    return { rows: [] }
+  }
+
+describe('credit history', () => {
+  type CreditHistory = {
+    me: unknown
+    order: { credits: number; fulfilled: boolean } | null
+    ledger: unknown[]
+    packs: { id: string }[]
+  }
+
+  const expectSnapshotResponse = async (res: Response) => {
+    const users = await import('../_lib/users')
+    expect(res.status).toBe(200)
+    expect(res.headers.get('cache-control')).toBe('no-store')
+    // Built from the snapshot row, not the provisioning read's stale balance.
+    expect(users.toMeResponse).toHaveBeenCalledTimes(1)
+    expect(users.toMeResponse).toHaveBeenCalledWith(
+      expect.objectContaining({ userId: 'user_1', creditsBalance: 25200 }),
+    )
+    const body = (await res.json()) as CreditHistory
+    expect(body.me).toEqual({ id: 'snapshot-me' })
+    expect(body.ledger).toEqual([
+      {
+        id: 'ledger_hold',
+        delta: -412,
+        reason: 'spend.translate',
+        pending: true,
+        createdAt: '2026-10-01T10:00:02.000Z',
+      },
+      {
+        id: 'ledger_spend',
+        delta: -8,
+        reason: 'spend.translate',
+        pending: false,
+        createdAt: '2026-10-01T10:00:01.000Z',
+      },
+      {
+        id: 'ledger_grant',
+        delta: 25000,
+        reason: 'grant.purchase',
+        pending: false,
+        createdAt: '2026-10-01T10:00:00.000Z',
+      },
+    ])
+    expect(body.packs.map((pack) => pack.id)).toEqual([
+      'small',
+      'medium',
+      'large',
+    ])
+    return body
+  }
+
+  beforeEach(async () => {
+    const users = await import('../_lib/users')
+    vi.mocked(users.getOrCreateUser).mockResolvedValueOnce({
+      userId: 'user_1',
+      creditsBalance: 200,
+    } as Awaited<ReturnType<typeof users.getOrCreateUser>>)
+    vi.mocked(users.toMeResponse).mockReturnValueOnce({
+      id: 'snapshot-me',
+    } as ReturnType<typeof users.toMeResponse>)
+  })
+
+  it('reads balance and ledger from one snapshot without an order', async () => {
+    answer = creditAnswers()
+    const body = await expectSnapshotResponse(
+      await call('/api/users/me/credits'),
+    )
+    expect(body.order).toBeNull()
+    expect(statements()).toEqual([SNAPSHOT, 'users', 'credit_ledger', 'commit'])
+  })
+
+  it.each([
+    ['fulfilled', new Date('2026-10-01T10:00:00.000Z'), true],
+    ['unfulfilled', null, false],
+  ])(
+    'reports a %s order from the same snapshot as the balance',
+    async (_, fulfilledAt, fulfilled) => {
+      answer = creditAnswers({ credits: 25000, fulfilled_at: fulfilledAt })
+      const body = await expectSnapshotResponse(
+        await call(`/api/users/me/credits?orderId=${ORDER}`),
+      )
+      expect(body.order).toEqual({ credits: 25000, fulfilled })
+      expect(statements()).toEqual([
+        SNAPSHOT,
+        'users',
+        'credit_ledger',
+        'credit_purchases',
+        'commit',
+      ])
+      expect(fakeDb.query).toHaveBeenCalledWith(
+        expect.stringContaining('from credit_purchases'),
+        [ORDER, 'user_1'],
+      )
+    },
+  )
+})
+
+describe('credit checkout', () => {
+  it('opens a hosted checkout for the requested pack', async () => {
+    answer = (sql) =>
+      sql.startsWith('insert into credit_purchases')
+        ? { rows: [{ id: ORDER }] }
+        : { rows: [] }
+    const fetch = vi
+      .spyOn(globalThis, 'fetch')
+      .mockImplementation(async (input) => {
+        const url = String(input)
+        if (url.endsWith('/products/prod-small'))
+          return Response.json({
+            price: { type: 'one_time_price', price: 499, currency: 'USD' },
+          })
+        if (url.endsWith('/checkouts'))
+          return Response.json({
+            checkout_url: 'https://checkout.test/credits',
+          })
+        throw new Error(`unexpected fetch ${url}`)
+      })
+    const res = await app.request(
+      '/api/billing/credits/checkout',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ pack: 'small' }),
+      },
+      {
+        ...env,
+        DODO_API_KEY: 'test-key',
+        DODO_PRODUCT_CREDITS_SMALL: 'prod-small',
+      },
+    )
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({
+      checkoutUrl: 'https://checkout.test/credits',
+    })
+    const checkout = fetch.mock.calls.find(([input]) =>
+      String(input).endsWith('/checkouts'),
+    )
+    expect(checkout?.[1]?.method).toBe('POST')
+    expect(JSON.parse(String(checkout?.[1]?.body))).toMatchObject({
+      product_cart: [{ product_id: 'prod-small', quantity: 1 }],
+      customer: { email: 'a@example.com' },
+      metadata: { user_id: 'user_1', kind: 'credit_topup' },
+    })
+    fetch.mockRestore()
+  })
+})
+
 describe('credit page boundaries', () => {
   it('rejects invalid pack ids before checkout or profile provisioning', async () => {
     const res = await postJson('/api/billing/credits/checkout', {
@@ -908,6 +1178,7 @@ describe('credit page boundaries', () => {
     expect(queries).toEqual([])
   })
   it('does not reveal another user’s credit order', async () => {
+    answer = creditAnswers()
     const res = await call(`/api/users/me/credits?orderId=${SEGMENT}`)
     expect(res.status).toBe(404)
     const lookup = fakeDb.query.mock.calls.find(([sql]) =>
@@ -915,6 +1186,13 @@ describe('credit page boundaries', () => {
     )
     expect(lookup?.[0]).toContain('user_id = $2')
     expect(lookup?.[1]).toEqual([SEGMENT, 'user_1'])
+    expect(statements()).toEqual([
+      SNAPSHOT,
+      'users',
+      'credit_ledger',
+      'credit_purchases',
+      'rollback',
+    ])
   })
   it('rejects an unsigned credit payment before touching the database', async () => {
     const res = await app.request(
@@ -928,4 +1206,89 @@ describe('credit page boundaries', () => {
     expect(res.status).toBe(400)
     expect(queries).toEqual([])
   })
+})
+
+describe('character cap', () => {
+  const CHARACTER = '44444444-4444-4444-8444-444444444444'
+  const characterRow = {
+    id: CHARACTER,
+    name: 'Aiko',
+    initials: null,
+    color: null,
+    source_language: 'en-US',
+    target_language: 'ja-JP',
+    default_vibe: 'casual',
+    temperature: '0.4',
+    persona: { traits: [] },
+    instructions: null,
+    sort_order: 0,
+    archived_at: null,
+    created_at: '2026-10-10T00:00:00.000Z',
+    updated_at: '2026-10-10T00:00:00.000Z',
+  }
+  const create = () =>
+    postJson('/api/characters', {
+      name: 'Aiko',
+      sourceLanguage: 'en-US',
+      targetLanguage: 'ja-JP',
+    })
+  const withTier = async (tier: 'free' | 'pro' | 'team') => {
+    const users = await import('../_lib/users')
+    vi.mocked(users.getOrCreateUser).mockResolvedValueOnce({
+      tier,
+    } as Awaited<ReturnType<typeof users.getOrCreateUser>>)
+  }
+  const ownedCharacters = (count: number) => {
+    answer = (sql) => {
+      if (sql.startsWith('select count(*)::int as count from characters'))
+        return { rows: [{ count }] }
+      if (sql.startsWith('insert into characters'))
+        return { rows: [characterRow] }
+      return { rows: [] }
+    }
+  }
+
+  it.each([
+    ['free', 2],
+    ['pro', 99],
+  ] as const)(
+    'creates a %s character under the cap after locking the account',
+    async (tier, count) => {
+      await withTier(tier)
+      ownedCharacters(count)
+      const res = await create()
+      expect(res.status).toBe(201)
+      expect(await res.json()).toMatchObject({ id: CHARACTER })
+      expect(queries).toEqual([
+        'begin',
+        'select 1 from users where auth_user_id = $1 for update',
+        'select count(*)::int as count from characters where user_id = $1',
+        expect.stringMatching(/^insert into characters/),
+        'commit',
+      ])
+    },
+  )
+
+  it.each([
+    ['free', 3, 'Delete one or upgrade to add more.'],
+    ['pro', 100, 'Delete one or upgrade to add more.'],
+    ['team', 1000, 'Delete one to add another.'],
+  ] as const)(
+    'rejects a %s account at its cap of %i without inserting',
+    async (tier, limit, hint) => {
+      await withTier(tier)
+      ownedCharacters(limit)
+      const res = await create()
+      expect(res.status).toBe(403)
+      expect(await res.json()).toMatchObject({
+        error: {
+          message: `Your plan includes up to ${limit} saved characters. ${hint}`,
+        },
+      })
+      expect(queries.some((q) => q.startsWith('insert into characters'))).toBe(
+        false,
+      )
+      expect(queries.at(-1)).toBe('rollback')
+    },
+  )
 })

@@ -4,6 +4,7 @@ import { toast } from 'sonner'
 import { Icon } from '@/components/vibe-design/icon'
 import type { VibePreset } from '@/components/vibe-design/design-data'
 import { cssVars } from '@/lib/css-vars'
+import { readDrafts, writeDrafts, type Drafts } from '@/lib/draft-store'
 import {
   createRecognizer,
   speechRecognitionSupported,
@@ -164,6 +165,9 @@ export const Composer = React.forwardRef<
     onSend: (text: string) => Promise<boolean>
     sending: boolean
     disabled?: boolean
+    // Account whose drafts persist in sessionStorage (see draft-store.ts);
+    // without one, drafts live in memory only.
+    draftOwner?: string | null
   }
 >(function Composer(
   {
@@ -179,25 +183,59 @@ export const Composer = React.forwardRef<
     onSend,
     sending,
     disabled,
+    draftOwner,
   },
   ref,
 ) {
   // Switching threads keeps each draft, and a completion clears only the draft
   // it submitted. One pending send must not lock the next thread's composer.
-  const [drafts, setDrafts] = React.useState<Record<string, string>>({})
-  const draft = drafts[contextId] ?? ''
+  // Drafts persist per account, so following a recovery link (or checkout)
+  // and coming back restores them; an account change swaps in that account's
+  // drafts during render, so another account's text is never shown.
+  const owner = draftOwner ?? null
+  const [store, setStore] = React.useState(() => ({
+    owner,
+    drafts: owner ? readDrafts(owner) : ({} as Drafts),
+  }))
+  let current = store
+  if (store.owner !== owner) {
+    current = { owner, drafts: owner ? readDrafts(owner) : {} }
+    setStore(current)
+  }
+  const draft = current.drafts[contextId] ?? ''
   const setDraft = React.useCallback(
     (update: React.SetStateAction<string>) => {
-      setDrafts((prev) => ({
-        ...prev,
-        [contextId]:
-          typeof update === 'function' ? update(prev[contextId] ?? '') : update,
-      }))
+      setStore((prev) => {
+        // A late completion must not write into the next account's drafts.
+        if (prev.owner !== owner) return prev
+        const before = prev.drafts[contextId] ?? ''
+        const next = typeof update === 'function' ? update(before) : update
+        if (next === before) return prev
+        return { owner, drafts: { ...prev.drafts, [contextId]: next } }
+      })
     },
-    [contextId],
+    [contextId, owner],
   )
+  React.useEffect(() => {
+    if (store.owner) writeDrafts(store.owner, store.drafts)
+  }, [store])
   const [settingsOpen, setSettingsOpen] = React.useState(false)
   const settingsId = React.useId()
+  const settingsRef = React.useRef<HTMLDivElement>(null)
+  // Set when the toggle is activated from the keyboard; the drawer precedes
+  // the toggle in DOM order, so forward Tab would never reach its controls.
+  const focusSettings = React.useRef(false)
+  React.useEffect(() => {
+    if (!settingsOpen || !focusSettings.current) return
+    // Wait a frame: the drawer must be un-inert and visible to take focus.
+    const frame = requestAnimationFrame(() => {
+      focusSettings.current = false
+      settingsRef.current
+        ?.querySelector<HTMLElement>('[role="slider"]')
+        ?.focus()
+    })
+    return () => cancelAnimationFrame(frame)
+  }, [settingsOpen])
   const [interim, setInterimState] = React.useState('')
   const [recording, setRecording] = React.useState(false)
   const recognizerRef = React.useRef<Recognizer | null>(null)
@@ -283,7 +321,15 @@ export const Composer = React.forwardRef<
       const ok = await onSend(text)
       // Clear only once the translation landed — a 402/timeout keeps the source
       // for a retry — and only if the user hasn't typed more in the meantime.
-      if (ok) setDraft((d) => (d.trim() === text ? '' : d))
+      if (!ok) return
+      setDraft((d) => (d.trim() === text ? '' : d))
+      // Also clear the stored copy directly: if this composer unmounted while
+      // the send was in flight, the state update above never persists.
+      if (owner) {
+        const stored = readDrafts(owner)
+        if (stored[contextId]?.trim() === text)
+          writeDrafts(owner, { ...stored, [contextId]: '' })
+      }
     } finally {
       inFlightRef.current.delete(contextId)
     }
@@ -336,10 +382,15 @@ export const Composer = React.forwardRef<
     : draft
   const chars = shown.length
   const canSend = shown.trim().length > 0 && !sending && !disabled
+  const activeVibe = vibes[vibeIdx] ?? vibes[0]
+  const settingsLabel = activeVibe
+    ? `Vibe and temperature · ${activeVibe.label}`
+    : 'Vibe and temperature'
 
   return (
     <div className="composer">
       <div
+        ref={settingsRef}
         className="composer__settings-drawer"
         data-open={settingsOpen}
         id={settingsId}
@@ -437,13 +488,24 @@ export const Composer = React.forwardRef<
           <button
             type="button"
             className="composer__settings-toggle"
-            aria-label="Vibe and temperature"
-            title="Vibe and temperature"
+            aria-label={settingsLabel}
+            title={settingsLabel}
             aria-expanded={settingsOpen}
             aria-controls={settingsId}
-            onClick={() => setSettingsOpen((open) => !open)}
+            onClick={(event) => {
+              // detail 0: Enter/Space, not a pointer click.
+              focusSettings.current = !settingsOpen && event.detail === 0
+              setSettingsOpen(!settingsOpen)
+            }}
           >
             <Icon name="sliders-horizontal" />
+            {activeVibe && (
+              <span
+                className="composer__settings-vibe"
+                style={{ background: activeVibe.color }}
+                aria-hidden
+              />
+            )}
           </button>
           <button
             type="button"

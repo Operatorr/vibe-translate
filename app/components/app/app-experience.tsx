@@ -75,9 +75,6 @@ type Panel = { mode: 'create' } | { mode: 'edit'; character: Character } | null
 const langName = (code: string) => LANGUAGE_NAMES[code] ?? code
 
 function errorMessage(error: unknown, fallback: string): string {
-  if (error instanceof ApiError) {
-    return error.message
-  }
   return error instanceof Error ? error.message : fallback
 }
 
@@ -1219,6 +1216,7 @@ export function AppExperience() {
               onTemperatureCommit={commitTemperature}
               onSend={send}
               sending={pendingHere || threads.isPending}
+              draftOwner={userId}
             />
           )}
         </main>

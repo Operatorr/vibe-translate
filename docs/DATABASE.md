@@ -182,19 +182,52 @@ Indexes: unique `(task) where is_default`, unique `(task, provider, provider_mod
 
 #### `credit_ledger`
 
-Append-only audit log. Every credit grant (signup, monthly refill, manual adjustment) and every credit spend (translate, explain) writes a row. The sum of all `delta` for a user always equals `users.credits_balance` (invariant — asserted against real Postgres by the opt-in `RUN_LOCAL_DB_PERF=1 pnpm exec vitest run api/_lib/__tests__/credits-integration.test.ts`). A platform-path spend first writes a **pending** reservation row (`metadata.reservation = true`, delta = estimated hold) via `credits.reserveCredits`; `reconcileSpend` then rewrites that row's `delta`/`reference_id`/`metadata` to the real token cost, or `refundReservation` deletes it. The row is mutated in place, so the invariant holds at every step (this is the one place a `credit_ledger` row is updated/deleted rather than purely appended).
+Append-only audit log. Every credit grant (signup, monthly refill, manual adjustment, top-up purchase), top-up reversal, and credit spend (translate, explain, dictation) writes a row. The sum of all `delta` for a user always equals `users.credits_balance` (invariant — asserted against real Postgres by the opt-in `RUN_LOCAL_DB_PERF=1 pnpm exec vitest run api/_lib/__tests__/credits-integration.test.ts`). A platform-path spend first writes a **pending** reservation row (`metadata.reservation = true`, delta = estimated hold) via `credits.reserveCredits`; `reconcileSpend` then rewrites that row's `delta`/`reference_id`/`metadata` to the real token cost, or `refundReservation` deletes it. The row is mutated in place, so the invariant holds at every step (this is the one place a `credit_ledger` row is updated/deleted rather than purely appended).
 
-| column         | type                                             | notes                                                                                                                                          |
-| -------------- | ------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------- |
-| `id`           | uuid pk                                          |                                                                                                                                                |
-| `user_id`      | text fk → `users.auth_user_id` on delete cascade |                                                                                                                                                |
-| `delta`        | int                                              | positive = grant, negative = spend                                                                                                             |
-| `reason`       | text                                             | enum-shaped (`grant.signup`, `grant.monthly`, `grant.subscription`, `grant.adjustment`, `spend.translate`, `spend.explain`, `spend.dictation`) |
-| `reference_id` | uuid nullable                                    | e.g. the `segments.id` or `explains.id` the spend was for; `null` for in-app dictation                                                         |
-| `metadata`     | jsonb default `{}`                               | model id, token breakdown                                                                                                                      |
-| `created_at`   | timestamptz                                      |                                                                                                                                                |
+| column         | type                                             | notes                                                                                                                                                                                 |
+| -------------- | ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `id`           | uuid pk                                          |                                                                                                                                                                                       |
+| `user_id`      | text fk → `users.auth_user_id` on delete cascade |                                                                                                                                                                                       |
+| `delta`        | int                                              | positive = grant, negative = spend or top-up reversal                                                                                                                                 |
+| `reason`       | text                                             | enum-shaped (`grant.signup`, `grant.monthly`, `grant.subscription`, `grant.adjustment`, `grant.purchase`, `reversal.purchase`, `spend.translate`, `spend.explain`, `spend.dictation`) |
+| `reference_id` | uuid nullable                                    | e.g. the `segments.id` or `explains.id` the spend was for, or the `credit_purchases.id` for `grant.purchase`/`reversal.purchase`; `null` for in-app dictation                         |
+| `metadata`     | jsonb default `{}`                               | model id, token breakdown; `paymentId` (and `refundId` or `disputeId` on a reversal) for top-ups                                                                                      |
+| `created_at`   | timestamptz                                      |                                                                                                                                                                                       |
 
 Index: `(user_id, created_at desc)`.
+
+#### `credit_purchases`
+
+One-time credit top-up orders (`0009_credit_purchases.sql`, lifecycle columns in `0010_credit_purchase_lifecycle.sql`). `payments.ts → createCreditCheckout` inserts the order, snapshotting the product and credit allowance, **before** creating the Dodo checkout, so later pack or price changes cannot alter a purchase. Fulfillment and reversal run inside the Dodo webhook transaction (see [adr/0005](./adr/0005-commerce-checkout-and-webhook-idempotency.md#addendum-credit-top-up-reversals)).
+
+| column                   | type                                             | notes                                                                                            |
+| ------------------------ | ------------------------------------------------ | ------------------------------------------------------------------------------------------------ |
+| `id`                     | uuid pk                                          | the checkout's `metadata.order_id`; `reference_id` of the order's ledger rows                    |
+| `user_id`                | text fk → `users.auth_user_id` on delete cascade | owner; every read filters on it                                                                  |
+| `product_id`, `quantity` | text, int (1–10)                                 | snapshotted Dodo product; a payment must match both                                              |
+| `credits`                | int (> 0)                                        | snapshotted allowance; exactly this amount is granted and, on reversal, taken back               |
+| `payment_id`             | text unique, nullable                            | Dodo payment that fulfilled the order; unique so one payment can never fund two orders           |
+| `created_at`             | timestamptz                                      |                                                                                                  |
+| `fulfilled_at`           | timestamptz nullable                             | set with `payment_id` when the `grant.purchase` row is written                                   |
+| `checkout_session_id`    | text nullable                                    | Dodo checkout `session_id`, when Dodo returns one                                                |
+| `checkout_failed_at`     | timestamptz nullable                             | set when Dodo definitively rejected the checkout (non-OK response, or OK without a checkout URL) |
+| `reversed_at`            | timestamptz nullable                             | set when a full refund or an accepted/lost dispute took the credits back                         |
+| `reversal_id`            | text nullable                                    | the Dodo `refund_id` or `dispute_id` that caused the reversal                                    |
+| `reversal_reason`        | text nullable (`refund`/`dispute`)               |                                                                                                  |
+
+Index: `(user_id, created_at desc)`. Check constraints:
+
+- `credit_purchases_fulfillment_check`: `payment_id` and `fulfilled_at` are both null or both set.
+- `credit_purchases_reversal_check`: `reversed_at`, `reversal_id` and `reversal_reason` are all null or all set, and only on a fulfilled order. `credit_purchases_reversal_reason_check` limits the reason to `refund`/`dispute`.
+
+**Lifecycle.** Fulfillment locks the order (`for update`), checks the signed payment against the order's user, product and quantity, sets `payment_id`/`fulfilled_at`, and writes `grant.purchase`. A reversal finds the order by `payment_id`, locks it, sets the reversal columns, and writes `reversal.purchase` with `delta = -credits`. Each happens at most once per order, independently of webhook delivery ids. Neither changes the subscription tier or `credits_refilled_at`.
+
+**Unfulfilled orders are inert.** An order without `fulfilled_at` grants nothing and nothing expires it. No scheduler runs in this worker. To find stale orders:
+
+- failed checkouts: `fulfilled_at is null and checkout_failed_at is not null`;
+- abandoned or unknown checkouts: `fulfilled_at is null and checkout_failed_at is null` and old `created_at`. A transport timeout while creating the checkout also leaves an order like this, because Dodo may still have created the session.
+
+Fulfillment still accepts a late valid payment for any unfulfilled order, including one marked `checkout_failed_at`. **Do not delete unfulfilled orders while a payment could still arrive.** Without the row, a paid webhook fails with `Unknown credit order` and the customer is never credited.
 
 #### `translation_cache`
 
@@ -245,13 +278,13 @@ Derived/operational data — not user-scoped, no cascade.
 - **Embeddings are derived data.** Source-of-truth is `source_text` (and for explains, `target_text` + `body`). Re-embedding is always safe; never trust the embedding vector over the underlying text.
 - **Explain payload versioning.** Bumping `EXPLAIN_PAYLOAD_VERSION` in `api/_lib/explain.ts` invalidates older `explains` rows. The next read on those segments triggers re-generation. Old rows are retained as a fallback only — they should never be served above a newer one.
 - **`segments.source_embedding` dimension must equal `models.embedding_dimensions` for the default embed row.** Today both are 1536 (`text-embedding-3-small`), which keeps the column within pgvector's 2,000-dim HNSW index limit. A future embed model swap requires (a) an `alter table` to change the vector dimension, (b) re-embedding every existing Segment, (c) updating the default `models` row. There is no migration shortcut. `db/migrations/0004_embed_dims_1536.sql` is the worked example: it drops the HNSW index, `alter`s `source_embedding` to `vector(1536)` resetting data to `null` (3072→1536 isn't convertible; rows re-embed on demand), recreates the index, and re-points the `models` embed row — all guarded so it's a no-op on an already-1536 database.
-- **Credit-balance invariant.** `users.credits_balance = sum(credit_ledger.delta)` per user. Spend and grant writes happen inside a transaction so the two never drift.
+- **Credit-balance invariant.** `users.credits_balance = sum(credit_ledger.delta)` per user. Spend and grant writes happen inside a transaction so the two never drift. There is no `credits_balance >= 0` check: a top-up reversal after the credits were spent leaves a negative balance (debt). `reserveCredits` needs `balance >= estimate`, so platform-funded calls stay blocked until later grants cover the debt; BYOK calls are unaffected.
 
 ## Migrations
 
 - New incremental changes go in `db/migrations/000N_<slug>.sql`. Apply manually for now; deploy hooks land later.
 - `db/schema.sql` is the canonical bootstrap — keep it in sync with the latest migration so fresh environments are one step.
-- The `0001_initial.sql` migration establishes the Character/Thread/Segment model directly; there is no pre-character schema in production. Later migrations are additive: `0002_commerce.sql` (webhook idempotency + `subscription_id` index), `0003_embed_via_openrouter.sql` (embed routed via OpenRouter), `0004_embed_dims_1536.sql` (embed columns/model to 1536 for any pre-1536 DB), `0005_thread_star_share.sql` (starring + share links), `0006_better_auth.sql` (`auth_*` tables; renames `users.clerk_user_id` → `auth_user_id` and adds the cascading FK to `auth_users`).
+- The `0001_initial.sql` migration establishes the Character/Thread/Segment model directly; there is no pre-character schema in production. Later migrations are additive: `0002_commerce.sql` (webhook idempotency + `subscription_id` index), `0003_embed_via_openrouter.sql` (embed routed via OpenRouter), `0004_embed_dims_1536.sql` (embed columns/model to 1536 for any pre-1536 DB), `0005_thread_star_share.sql` (starring + share links), `0006_better_auth.sql` (`auth_*` tables; renames `users.clerk_user_id` → `auth_user_id` and adds the cascading FK to `auth_users`), `0007_auth_account_uniqueness.sql` (unique provider/account), `0008_segment_pagination.sql` (cursor index, below), `0009_credit_purchases.sql` (top-up orders), `0010_credit_purchase_lifecycle.sql` (checkout traceability, reversal state and the fulfillment/reversal checks on `credit_purchases`).
 - **Never edit an applied migration in place.** Because every statement is `if not exists` / `on conflict do nothing` / type-guarded, re-running an edited file won't change existing objects — only a new forward migration reaches provisioned databases.
 
 ## Open questions
@@ -262,12 +295,3 @@ Derived/operational data — not user-scoped, no cascade.
 ## Cursor history index
 
 Migration `0008_segment_pagination.sql` adds `(user_id, thread_id, created_at desc, id desc)` for owner-scoped backward Segment pages. The existing user/time and thread/time indexes continue to support other reads and are retained. Apply the concurrent migration outside a transaction to each environment separately. The bootstrap schema includes the same index with a normal `CREATE INDEX`. Local fixture plans and deployment instructions are in [PERFORMANCE.md](./PERFORMANCE.md).
-
-### Credit purchases
-
-`credit_purchases` (migration `0009_credit_purchases.sql`) stores owner-scoped
-one-time top-up orders: product ID, quantity, snapshotted credits, unique payment
-ID, creation and fulfillment timestamps. Fulfillment locks the order and writes
-`grant.purchase` to `credit_ledger` with the order UUID as `reference_id`. No
-subscription or credit refill timestamp is changed. The unique payment ID and
-fulfilled timestamp protect against repeat grants across distinct webhook IDs.

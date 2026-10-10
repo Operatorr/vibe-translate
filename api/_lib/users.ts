@@ -71,6 +71,16 @@ const selectUser = async (db: Client, userId: string) =>
     )
   ).rows[0]
 
+// Plain read with no provisioning or email sync, so callers can include the
+// profile in their own transaction snapshot after getOrCreateUser has run.
+export async function findUser(
+  db: Client,
+  userId: string,
+): Promise<UserRow | null> {
+  const row = await selectUser(db, userId)
+  return row ? mapUser(row) : null
+}
+
 // A null session email never clears a stored one.
 async function syncEmail(
   db: Client,

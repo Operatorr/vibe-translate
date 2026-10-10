@@ -12,7 +12,7 @@ export const Route = createFileRoute('/app/')({
 
 function AppIndex() {
   const qc = useQueryClient()
-  // Dodo checkout returns to `/app?upgraded=1`; confirm and clean the URL.
+  // Dodo checkout returns to /app?upgraded=1; refresh server-owned plan state and clean the URL.
   React.useEffect(() => {
     const params = new URLSearchParams(window.location.search)
     if (params.get('upgraded') === '1') {

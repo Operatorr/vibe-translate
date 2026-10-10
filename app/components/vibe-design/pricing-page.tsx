@@ -80,8 +80,8 @@ const PricingContent = ({ onNavigate }: { onNavigate: NavigateFn }) => {
             <div className="tier">
               <h3 className="tier__name">Free</h3>
               <p className="tier__pitch">
-                For language learners and the curious. Daily-driver translator
-                without the bill.
+                For language learners and the curious. Start on welcome credits,
+                no bill.
               </p>
               <div className="tier__price">
                 <span className="tier__price-num">$0</span>
@@ -118,9 +118,9 @@ const PricingContent = ({ onNavigate }: { onNavigate: NavigateFn }) => {
                   <Icon name="check" />
                   <span>6-stop vibe slider</span>
                 </div>
-                <div className="tier__feat">
-                  <Icon name="check" />
-                  <span>Inline Explain (limited to 20 / day)</span>
+                <div className="tier__feat tier__feat--off">
+                  <Icon name="x" />
+                  <span>Inline Explain</span>
                 </div>
                 <div className="tier__feat tier__feat--off">
                   <Icon name="x" />
@@ -144,8 +144,8 @@ const PricingContent = ({ onNavigate }: { onNavigate: NavigateFn }) => {
               </span>
               <h3 className="tier__name">Pro</h3>
               <p className="tier__pitch">
-                For technical writers and devs shipping in 2+ languages. The
-                Explain panel comes off the leash.
+                For technical writers and devs shipping in 2+ languages. Unlocks
+                the Explain panel.
               </p>
               <div className="tier__price">
                 <span className="tier__price-num">{price(18, 14)}</span>
@@ -174,7 +174,7 @@ const PricingContent = ({ onNavigate }: { onNavigate: NavigateFn }) => {
                 <div className="tier__feat">
                   <Icon name="check" />
                   <span>
-                    <strong>Unlimited</strong> saved characters
+                    <strong>100</strong> saved characters
                   </span>
                 </div>
                 <div className="tier__feat">
@@ -183,7 +183,7 @@ const PricingContent = ({ onNavigate }: { onNavigate: NavigateFn }) => {
                 </div>
                 <div className="tier__feat">
                   <Icon name="check" />
-                  <span>API access · 100k tok/mo</span>
+                  <span>API access, charged from credits</span>
                 </div>
                 <div className="tier__feat">
                   <Icon name="check" />
@@ -208,8 +208,8 @@ const PricingContent = ({ onNavigate }: { onNavigate: NavigateFn }) => {
             <div className="tier">
               <h3 className="tier__name">Linguist</h3>
               <p className="tier__pitch">
-                For localization shops and full-time translators. Unmetered,
-                premium model, every feature on.
+                For localization shops and full-time translators. Premium model,
+                every feature on.
               </p>
               <div className="tier__price">
                 <span className="tier__price-num">{price(64, 49)}</span>
@@ -237,6 +237,12 @@ const PricingContent = ({ onNavigate }: { onNavigate: NavigateFn }) => {
                 </div>
                 <div className="tier__feat">
                   <Icon name="check" />
+                  <span>
+                    <strong>1,000</strong> saved characters
+                  </span>
+                </div>
+                <div className="tier__feat">
+                  <Icon name="check" />
                   <span>Premium model (Opus tier)</span>
                 </div>
                 <div className="tier__feat">
@@ -249,7 +255,7 @@ const PricingContent = ({ onNavigate }: { onNavigate: NavigateFn }) => {
                 </div>
                 <div className="tier__feat">
                   <Icon name="check" />
-                  <span>API · unmetered for individual use</span>
+                  <span>API webhooks</span>
                 </div>
                 <div className="tier__feat">
                   <Icon name="check" />
@@ -305,16 +311,28 @@ const PricingContent = ({ onNavigate }: { onNavigate: NavigateFn }) => {
                   <td colSpan={4}>USAGE</td>
                 </tr>
                 <tr>
-                  <td>Daily token quota</td>
-                  <td>10k</td>
-                  <td>33k (1M / mo)</td>
-                  <td>Unmetered</td>
+                  <td>Credits</td>
+                  <td>1,000 welcome</td>
+                  <td>25,000 per renewal</td>
+                  <td>250,000 per renewal</td>
+                </tr>
+                <tr>
+                  <td>One-time credit top-ups</td>
+                  <td>
+                    <Icon name="check" className="matrix__check" />
+                  </td>
+                  <td>
+                    <Icon name="check" className="matrix__check" />
+                  </td>
+                  <td>
+                    <Icon name="check" className="matrix__check" />
+                  </td>
                 </tr>
                 <tr>
                   <td>Saved characters</td>
                   <td>3</td>
-                  <td>Unlimited</td>
-                  <td>Unlimited</td>
+                  <td>100</td>
+                  <td>1,000</td>
                 </tr>
                 <tr>
                   <td>Languages</td>
@@ -364,9 +382,11 @@ const PricingContent = ({ onNavigate }: { onNavigate: NavigateFn }) => {
                 </tr>
                 <tr>
                   <td>Inline Explain</td>
-                  <td>20 / day</td>
-                  <td>Unlimited</td>
-                  <td>Unlimited</td>
+                  <td>
+                    <Icon name="minus" className="matrix__dash" />
+                  </td>
+                  <td>Charged from credits</td>
+                  <td>Charged from credits</td>
                 </tr>
 
                 <tr className="matrix__group-row">
@@ -421,8 +441,8 @@ const PricingContent = ({ onNavigate }: { onNavigate: NavigateFn }) => {
                   <td>
                     <Icon name="minus" className="matrix__dash" />
                   </td>
-                  <td>100k tok / mo</td>
-                  <td>Unmetered</td>
+                  <td>Charged from credits</td>
+                  <td>Charged from credits</td>
                 </tr>
                 <tr>
                   <td>CLI (npx vibe-translate)</td>
@@ -520,11 +540,11 @@ const PricingContent = ({ onNavigate }: { onNavigate: NavigateFn }) => {
                 <Icon name="plus" />
               </h3>
               <p className="faq__a">
-                Each request uses the model’s actual prompt and completion
-                token counts, multiplied by its credit rate and rounded up.
-                The prompt includes your character settings. Saved and cached
-                translations are free, and using your own OpenRouter key skips
-                credits for translations and explanations.
+                Each request uses the model’s actual prompt and completion token
+                counts, multiplied by its credit rate and rounded up. The prompt
+                includes your character settings. Saved and cached translations
+                are free, and using your own OpenRouter key skips credits for
+                translations and explanations.
               </p>
             </div>
             <div className="faq__item">
@@ -555,8 +575,8 @@ const PricingContent = ({ onNavigate }: { onNavigate: NavigateFn }) => {
               </h3>
               <p className="faq__a">
                 Open Profile &amp; credits to see your balance and recent usage.
-                You can buy a one-time credit pack through Dodo Payments or
-                use your own OpenRouter key. Your saved translations remain
+                You can buy a one-time credit pack through Dodo Payments or use
+                your own OpenRouter key. Your saved translations remain
                 available when your credits run out.
               </p>
             </div>
