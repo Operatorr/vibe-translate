@@ -3,6 +3,7 @@ import { Navigate, Outlet, createFileRoute } from '@tanstack/react-router'
 import { authClient } from '@/lib/auth-client'
 import { useCacheReady } from '@/lib/query-cache-context'
 import { CreditRequiredModal } from '@/components/app/credit-required-modal'
+import { StartupScreen } from '@/components/app/startup-screen'
 
 export const Route = createFileRoute('/app')({
   component: AppLayout,
@@ -14,14 +15,7 @@ function AppLayout() {
   const { data, isPending, error } = authClient.useSession()
   const cacheReady = useCacheReady()
   if (isPending || !cacheReady) {
-    return (
-      <main
-        className="app-shell"
-        style={{ display: 'grid', placeItems: 'center' }}
-      >
-        <p className="text-sm text-muted">Loading…</p>
-      </main>
-    )
+    return <StartupScreen />
   }
   if (!data && !error) return <Navigate to="/auth" replace />
   return (
