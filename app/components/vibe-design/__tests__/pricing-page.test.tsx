@@ -43,13 +43,22 @@ describe('pricing copy', () => {
     expect(text).not.toMatch(/unmetered/i)
     // Character caps are enforced (api/_lib/tier.ts), so never "unlimited".
     expect(text).not.toMatch(/unlimited/i)
+    expect(text).not.toMatch(/trial|14 days|38 languages/i)
+    expect(
+      screen.getByRole('button', { name: 'Subscribe to Pro' }),
+    ).toBeTruthy()
+    expect(
+      screen.getByRole('button', { name: 'Subscribe to Linguist' }),
+    ).toBeTruthy()
+    expect(card('Free')).toContain('All 5 languages')
+    expect(row('Languages')).toEqual(['Languages', '5', '5', '5'])
 
-    expect(card('Free')).toContain('1,000 credits')
+    expect(card('Free')).toContain('10,000 credits')
     expect(card('Pro')).toContain('25,000 credits per billing renewal')
     expect(card('Linguist')).toContain('250,000 credits per billing renewal')
     expect(row('Credits')).toEqual([
       'Credits',
-      '1,000 welcome',
+      '10,000 welcome',
       '25,000 per renewal',
       '250,000 per renewal',
     ])

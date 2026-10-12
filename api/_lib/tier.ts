@@ -1,10 +1,11 @@
-// `credits` is the monthly credit grant on the platform key path. BYOK users
-// bypass this entirely and pay OpenRouter directly. See docs/adr/0003.
+// `credits` is the one-time welcome grant for Free, or the billing-renewal
+// grant for paid tiers on the platform key path. BYOK users bypass credits
+// and pay OpenRouter directly. See docs/adr/0003.
 export const tierLimits = {
   free: {
     characters: 3,
     threadsPerCharacter: 20,
-    credits: 1000,
+    credits: 10000,
     retentionDays: 30,
     aiDictation: false,
     explain: false,

@@ -24,7 +24,7 @@ const UPGRADES: Record<UserTier | 'unknown', Upgrade | null> = {
   free: {
     eyebrow: 'MORE ROOM TO EXPLORE',
     title: 'Upgrade to Pro',
-    body: '25,000 credits every renewal, up from the one-time 1,000 welcome credits.',
+    body: '25,000 credits every renewal, up from the one-time 10,000 welcome credits.',
     cta: 'Explore Pro',
     plan: 'Pro',
   },

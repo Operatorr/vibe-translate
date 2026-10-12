@@ -497,16 +497,12 @@ const LandingContent = ({ onNavigate }: { onNavigate: NavigateFn }) => {
 
             <div className="hero__bench">
               <div className="hero__bench-item">
-                <span className="hero__bench-num">38</span>
+                <span className="hero__bench-num">5</span>
                 <span>languages</span>
               </div>
               <div className="hero__bench-item">
                 <span className="hero__bench-num">6</span>
                 <span>vibe stops</span>
-              </div>
-              <div className="hero__bench-item">
-                <span className="hero__bench-num">12k</span>
-                <span>tokens / second</span>
               </div>
             </div>
           </div>
@@ -835,7 +831,7 @@ const LandingContent = ({ onNavigate }: { onNavigate: NavigateFn }) => {
             />
             <FAQItem
               q="What languages are supported?"
-              a="38 today. Full register support (6-stop vibe) for JP, KR, ZH, DE, FR, ES, PT, IT, TR, RU. Other languages get a 3-stop fallback. Roadmap: VI, TH, AR full register support by Q3."
+              a="5: English, Simplified Chinese, Traditional Chinese, Japanese, and Thai. English is available as a source language; translate into either Chinese variant, Japanese, or Thai."
             />
             <FAQItem
               q="Can I use this from the command line?"
@@ -847,7 +843,7 @@ const LandingContent = ({ onNavigate }: { onNavigate: NavigateFn }) => {
             />
             <FAQItem
               q="Do you have a free tier?"
-              a="Yes — 1,000 welcome credits, 3 saved characters, no API access. Enough to try every vibe; top up or upgrade when you need more."
+              a="Yes — 10,000 welcome credits, 3 saved characters, no API access. Enough to try every vibe; top up or upgrade when you need more."
             />
           </div>
         </div>

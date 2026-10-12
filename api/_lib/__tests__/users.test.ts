@@ -73,6 +73,7 @@ describe('user provisioning reads', () => {
       row.email,
     )
     expect(user.userId).toBe('a')
+    expect(query.mock.calls[1][1]).toEqual(['a', row.email, 10000])
     expect(query.mock.calls[1][0]).toContain('insert into credit_ledger')
     expect(query.mock.calls[1][0]).toContain(
       'on conflict (auth_user_id) do nothing',

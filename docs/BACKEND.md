@@ -19,7 +19,7 @@
 | `validation.ts`        | `parseJson(schema, value)` — manual fallback when `zValidator` middleware isn't a fit.                                                                                                                                                                                                                                                                                                                                                                                                        |
 | `errors.ts`            | `formatError(unknown)` — uniform JSON error envelope; converts `HTTPException`, `ZodError`, `Error`, and unknowns.                                                                                                                                                                                                                                                                                                                                                                            |
 | `permissions.ts`       | `assertUserOwnsResource`, `canUseFeature` — small guard helpers.                                                                                                                                                                                                                                                                                                                                                                                                                              |
-| `tier.ts`              | `tierLimits` for `free` / `pro` / `team` and the `Tier` type. Tier carries the monthly **Credits** allowance and feature flags.                                                                                                                                                                                                                                                                                                                                                               |
+| `tier.ts`              | `tierLimits` for `free` / `pro` / `team` and the `Tier` type. Tier carries the signup or billing-renewal **Credits** allowance and feature flags.                                                                                                                                                                                                                                                                                                                                             |
 | `models.ts`            | Reads the active default model per task (`translate`, `explain`, `dictation`, `embed`) from the `models` table. Operators flip defaults with SQL — no deploy.                                                                                                                                                                                                                                                                                                                                 |
 | `credits.ts`           | Token-derived credit accounting: `estimateCredits`/`computeCredits`, the `reserveCredits` → `reconcileSpend`/`refundReservation` spend flow (atomic pre-call hold, settled to the real cost), `recordGrant`, `getBalance`. Transactional writes keep `users.credits_balance` in sync with `credit_ledger`.                                                                                                                                                                                    |
 | `secrets.ts`           | AES-GCM `encryptSecret` / `decryptSecret` for at-rest BYOK keys, using `CREDENTIALS_ENCRYPTION_KEY`. Storage format: `base64(iv):base64(cipher)`.                                                                                                                                                                                                                                                                                                                                             |
@@ -60,17 +60,17 @@
 
 Defined in [`api/_lib/tier.ts`](../api/_lib/tier.ts):
 
-|                       | `free` | `pro`  | `team`  |
-| --------------------- | ------ | ------ | ------- |
-| `characters`          | 3      | 100    | 1000    |
-| `threadsPerCharacter` | 20     | 200    | 2000    |
-| `credits` (monthly)   | 1 000  | 25 000 | 250 000 |
-| `retentionDays`       | 30     | 365    | 1095    |
-| `aiDictation`         | ❌     | ✅     | ✅      |
-| `explain`             | ❌     | ✅     | ✅      |
-| `translationMemory`   | ❌     | ✅     | ✅      |
-| `customVibeStops`     | ❌     | ❌     | ✅      |
-| `elevenLabsTts`       | ❌     | ✅     | ✅      |
+|                       | `free`          | `pro`            | `team`            |
+| --------------------- | --------------- | ---------------- | ----------------- |
+| `characters`          | 3               | 100              | 1000              |
+| `threadsPerCharacter` | 20              | 200              | 2000              |
+| `credits`             | 10 000 (signup) | 25 000 (renewal) | 250 000 (renewal) |
+| `retentionDays`       | 30              | 365              | 1095              |
+| `aiDictation`         | ❌              | ✅               | ✅                |
+| `explain`             | ❌              | ✅               | ✅                |
+| `translationMemory`   | ❌              | ✅               | ✅                |
+| `customVibeStops`     | ❌              | ❌               | ✅                |
+| `elevenLabsTts`       | ❌              | ✅               | ✅                |
 
 Notes:
 

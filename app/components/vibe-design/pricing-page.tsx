@@ -88,7 +88,7 @@ const PricingContent = ({ onNavigate }: { onNavigate: NavigateFn }) => {
                 <span className="tier__price-unit">/ forever</span>
               </div>
               <div className="tier__price-meta">
-                no credit card · 1,000 welcome credits
+                no credit card · 10,000 welcome credits
               </div>
               <button
                 className="vt-btn vt-btn--ghost vt-btn--block"
@@ -101,7 +101,7 @@ const PricingContent = ({ onNavigate }: { onNavigate: NavigateFn }) => {
                 <div className="tier__feat">
                   <Icon name="check" />
                   <span>
-                    <strong>1,000 credits</strong> to get started
+                    <strong>10,000 credits</strong> to get started
                   </span>
                 </div>
                 <div className="tier__feat">
@@ -112,7 +112,7 @@ const PricingContent = ({ onNavigate }: { onNavigate: NavigateFn }) => {
                 </div>
                 <div className="tier__feat">
                   <Icon name="check" />
-                  <span>All 38 languages</span>
+                  <span>All 5 languages</span>
                 </div>
                 <div className="tier__feat">
                   <Icon name="check" />
@@ -161,7 +161,7 @@ const PricingContent = ({ onNavigate }: { onNavigate: NavigateFn }) => {
                 onClick={() => startCheckout('pro')}
                 disabled={pendingPlan !== null}
               >
-                {pendingPlan === 'pro' ? 'Starting…' : 'Start 14-day trial'}
+                {pendingPlan === 'pro' ? 'Starting…' : 'Subscribe to Pro'}
               </button>
               <div className="tier__features">
                 <div className="tier__features-h">EVERYTHING IN FREE, PLUS</div>
@@ -225,7 +225,7 @@ const PricingContent = ({ onNavigate }: { onNavigate: NavigateFn }) => {
                 onClick={() => startCheckout('team')}
                 disabled={pendingPlan !== null}
               >
-                {pendingPlan === 'team' ? 'Starting…' : 'Start 14-day trial'}
+                {pendingPlan === 'team' ? 'Starting…' : 'Subscribe to Linguist'}
               </button>
               <div className="tier__features">
                 <div className="tier__features-h">EVERYTHING IN PRO, PLUS</div>
@@ -312,7 +312,7 @@ const PricingContent = ({ onNavigate }: { onNavigate: NavigateFn }) => {
                 </tr>
                 <tr>
                   <td>Credits</td>
-                  <td>1,000 welcome</td>
+                  <td>10,000 welcome</td>
                   <td>25,000 per renewal</td>
                   <td>250,000 per renewal</td>
                 </tr>
@@ -336,9 +336,9 @@ const PricingContent = ({ onNavigate }: { onNavigate: NavigateFn }) => {
                 </tr>
                 <tr>
                   <td>Languages</td>
-                  <td>38</td>
-                  <td>38</td>
-                  <td>38</td>
+                  <td>5</td>
+                  <td>5</td>
+                  <td>5</td>
                 </tr>
                 <tr>
                   <td>Vibe slider stops</td>
@@ -614,8 +614,8 @@ const PricingContent = ({ onNavigate }: { onNavigate: NavigateFn }) => {
           </span>
           <h2 className="cta-strip__title">Try it before you pay for it.</h2>
           <p className="cta-strip__sub">
-            Free tier is genuinely free. Pro and Linguist start with 14 days, no
-            card.
+            Start free with 10,000 welcome credits, no card required. Subscribe
+            to Pro or Linguist when you need more.
           </p>
           <div className="hero__ctas">
             <button
