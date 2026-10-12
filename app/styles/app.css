@@ -2733,7 +2733,7 @@ body,
 .workspace__scroll {
   flex: 1;
   overflow-y: auto;
-  padding: 24px 0 200px;
+  padding: 0 0 200px;
 }
 
 /* Translation segments — the "CAT tool" surface */
@@ -2872,7 +2872,7 @@ body,
   background: transparent;
   border: 1px solid var(--border);
   padding: 5px 10px;
-  font: 500 11px/1 var(--font-mono);
+  font: 500 10px/1 var(--font-mono);
   letter-spacing: 0.04em;
   color: var(--fg-muted);
   cursor: pointer;
@@ -4367,11 +4367,16 @@ body,
     overflow-wrap: anywhere;
   }
   .workspace__scroll {
-    padding: 12px 0 140px;
+    padding: 0 0 140px;
   }
   .segment__actions {
     opacity: 1;
     flex-wrap: wrap;
+  }
+  /* Keep all five actions on one row on ~380px phones. */
+  .segment__action {
+    padding: 5px 8px;
+    gap: 5px;
   }
   .composer {
     padding: 10px 12px calc(12px + env(safe-area-inset-bottom));

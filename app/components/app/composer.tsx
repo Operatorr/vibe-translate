@@ -422,7 +422,10 @@ export const Composer = React.forwardRef<
             maxLength={MAX_CHARS}
             disabled={disabled}
             onChange={(e) => {
+              // The edited value already holds the dictated words; end
+              // dictation so the next result can't append them again.
               setInterim('')
+              stopRecording()
               setDraft(e.target.value)
             }}
             onKeyDown={(e) => {

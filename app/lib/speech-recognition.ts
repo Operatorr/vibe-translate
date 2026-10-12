@@ -44,10 +44,27 @@ export type Recognizer = {
 // abandoned mic doesn't stay hot forever.
 const MAX_SILENT_RESTARTS = 2
 
-// Streams interim text into `onInterim` and appends finalized phrases via
-// `onFinal`. Chrome ends a `continuous` session after a pause, so the engine is
-// restarted until the user stops, an error occurs, or it hears nothing for a
-// few sessions in a row; `onEnd` fires once dictation is really over.
+// Rebuild one session's transcript from its full result list. Desktop Chrome
+// splits a session into separate phrases ("when will" + "the train arrive"),
+// while Android Chrome reports cumulative ones ("when", "when will", "when will
+// the", … often each marked final), so a result that repeats everything heard
+// so far replaces it instead of being appended.
+export function sessionTranscript(results: RecognitionResultList): string {
+  let text = ''
+  for (let i = 0; i < results.length; i += 1) {
+    const next = (results[i]?.[0]?.transcript ?? '').trim()
+    if (!next) continue
+    if (next.toLowerCase().startsWith(text.toLowerCase())) text = next
+    else text = `${text} ${next}`
+  }
+  return text
+}
+
+// Streams the current session's transcript into `onInterim` and commits it
+// via `onFinal` when the session ends. Chrome ends a `continuous` session after
+// a pause, so the engine is restarted until the user stops, an error occurs, or
+// it hears nothing for a few sessions in a row; `onEnd` fires once dictation is
+// really over.
 export function createRecognizer(opts: {
   languageCode: string
   onInterim: (text: string) => void
@@ -64,18 +81,21 @@ export function createRecognizer(opts: {
   let stopped = false
   let failed = false
   let silent = 0
+  let heard = ''
+  // Results only accumulate within a session, so the transcript is rebuilt
+  // from all of them rather than from `resultIndex` onward (Android's
+  // `resultIndex` and `isFinal` don't mean what desktop Chrome's do).
   rec.onresult = (event) => {
     silent = 0
-    let interim = ''
-    for (let i = event.resultIndex; i < event.results.length; i += 1) {
-      const result = event.results[i]
-      const transcript = result[0]?.transcript ?? ''
-      if (result.isFinal) opts.onFinal(transcript)
-      else interim += transcript
-    }
-    opts.onInterim(interim)
+    heard = sessionTranscript(event.results)
+    opts.onInterim(heard)
   }
   rec.onend = () => {
+    if (heard) {
+      opts.onFinal(heard)
+      opts.onInterim('')
+      heard = ''
+    }
     if (!stopped && !failed && silent <= MAX_SILENT_RESTARTS) {
       try {
         rec.start()
@@ -104,6 +124,7 @@ export function createRecognizer(opts: {
       stopped = false
       failed = false
       silent = 0
+      heard = ''
       rec.start()
     },
     stop: () => {
