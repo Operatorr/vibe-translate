@@ -3011,6 +3011,11 @@ body,
   border-color: var(--border-strong);
   background: var(--bg-elev-1);
 }
+.segment__action.is-open {
+  color: var(--fg);
+  border-color: var(--fg-muted);
+  background: var(--bg-elev-1);
+}
 .segment__action--explain {
   color: var(--cyan-400);
   border-color: var(--cyan-400);
@@ -3026,6 +3031,27 @@ body,
 .segment__action i {
   width: 12px;
   height: 12px;
+}
+/* Pinyin/Kana toggle: a glyph (ā / あ) sized like the lucide icons beside it. */
+.segment__action-glyph {
+  display: inline-block;
+  width: 14px;
+  font: 500 13px/14px var(--font-sans);
+  text-align: center;
+}
+
+/* Reading aids drawn above the target text. */
+.segment__tgt-text--reading {
+  line-height: 2.3;
+}
+.segment__tgt-text--reading ruby {
+  margin: 0 0.08em;
+}
+.segment__tgt-text rt {
+  font: 400 0.55em/1 var(--font-sans);
+  letter-spacing: 0;
+  color: var(--fg-muted);
+  user-select: none;
 }
 
 /* Word-level highlighting */
@@ -4499,7 +4525,7 @@ body,
     opacity: 1;
     flex-wrap: wrap;
   }
-  /* Keep all five actions on one row on ~380px phones. */
+  /* Keep all six actions on one row on ~380px phones. */
   .segment__action {
     padding: 5px 8px;
     gap: 5px;
@@ -5216,11 +5242,15 @@ body,
   height: 8px;
   border-radius: 50%;
 }
-.segment__action--display {
+.segment__action--icon {
   min-width: 32px;
   min-height: 32px;
   justify-content: center;
   padding: 5px 8px;
+}
+.segment__action--icon i {
+  width: 14px;
+  height: 14px;
 }
 .segment__actions {
   flex-wrap: wrap;

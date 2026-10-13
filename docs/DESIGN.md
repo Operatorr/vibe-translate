@@ -43,6 +43,12 @@ The color is consistent across all languages; only the **labels** localize (`kei
 - Hovering a word on the **source** or **target** side highlights its counterpart on the other side, using the per-token `token_alignment` map (`{ t, src }` pairs).
 - **Touch fallback:** there is no hover on touch devices, so the alignment is triggered by **tap** instead. Tapping a token — on either side — pins its pair; tapping it again, or anywhere outside the card, clears. A mouse click pins the same way, and mouse hover never overrides a pin. Matching is by exact word (`app/lib/alignment.ts`), never substring.
 
+### Reading toggle (Pinyin / Kana)
+
+- Chinese targets get a **Pinyin** toggle (glyph `ā`), Japanese targets a **Kana** toggle (glyph `あ`), between Speak and Explain. Off by default, per card and not persisted, so the learner tries to read the sentence first and checks after.
+- When enabled, the target text renders as `<ruby>`: Pinyin over every Chinese character, furigana over Japanese kanji only (okurigana stay bare). If a morpheme's kana can't be matched to its reading, the whole morpheme gets the reading instead. Readings sit inside the alignment tokens, so hover-align still works; they are `user-select: none` so a manual selection copies just the sentence. The sentence is always read as a whole, so a reading never depends on where the alignment splits it; a reading that spans two alignment tokens (御飯 split as 御 | 飯) can't be divided reliably and is left off. While the first Kana load downloads the dictionary the toggle is `aria-busy` and a polite status announces loading and completion.
+- Readings are generated in the browser (`app/lib/readings.ts`), free and available on every Segment, old ones and share links included. Accuracy is the library's: polyphones (長 cháng/zhǎng) and context-dependent kanji readings can be wrong. Explain is the authoritative breakdown.
+
 ### Explain panel
 
 - **Explain** opens **inline, directly under its Segment card**, not as a modal — the translation stays visible right above the breakdown so the learner can cross-reference. One panel is open at a time.

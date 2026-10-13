@@ -5,6 +5,9 @@
   Cache-Control: no-cache
 /manifest.webmanifest
   Cache-Control: no-cache
+# Versioned by path (build/kuromoji-dict.ts), so safe to cache forever.
+/dict/*
+  Cache-Control: public, max-age=31536000, immutable
 
 /share/*
   X-Robots-Tag: noindex, nofollow
