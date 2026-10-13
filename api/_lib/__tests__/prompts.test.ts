@@ -90,13 +90,19 @@ describe('buildTranslateMessages', () => {
 
   describe('perspective', () => {
     const system = (overrides: Partial<TranslateSegmentInput>) =>
-      buildTranslateMessages(baseInput(overrides)).find((m) => m.role === 'system')!.content
+      buildTranslateMessages(baseInput(overrides)).find(
+        (m) => m.role === 'system',
+      )!.content
     const register = (text: string) =>
       text.split('\n').find((l) => l.startsWith('REGISTER'))
 
     it('is stated even without a persona, since it changes the register', () => {
-      expect(system({ perspective: 'as' })).toContain('PERSPECTIVE: speaking AS the character')
-      expect(system({ perspective: 'to' })).toContain('PERSPECTIVE: speaking TO the character')
+      expect(system({ perspective: 'as' })).toContain(
+        'PERSPECTIVE: speaking AS the character',
+      )
+      expect(system({ perspective: 'to' })).toContain(
+        'PERSPECTIVE: speaking TO the character',
+      )
     })
 
     it.each(['yakuza', 'keigoplus', 'emperor'] as const)(
@@ -114,7 +120,9 @@ describe('buildTranslateMessages', () => {
       const to = system({ perspective: 'to', persona })
       expect(as).toContain('CHARACTER PERSONA (the speaker')
       expect(as).toContain('The persona describes the speaker')
-      expect(to).toContain('CHARACTER PERSONA (the person being addressed, not the speaker)')
+      expect(to).toContain(
+        'CHARACTER PERSONA (the person being addressed, not the speaker)',
+      )
       expect(to).toContain('The persona describes the person being addressed')
     })
 
@@ -189,5 +197,22 @@ describe('buildDictationMessages', () => {
     expect(system).toContain('"ok"')
     expect(system).toContain('"defaultVibe"')
     expect(messages[1]).toEqual({ role: 'user', content: 'text my friend Tomoko in Tokyo' })
+  })
+
+  // A Character may be spoken as or to (adr/0009), so no field may assume an
+  // addressee; the register is read per perspective.
+  it('describes the draft fields without assuming an addressee', () => {
+    const system = buildDictationMessages(
+      'I want to sound like a yakuza',
+    )[0].content.replace(/\s+/g, ' ')
+    expect(system).toContain(`"name": the Character's name`)
+    expect(system).toContain('the target is the output language')
+    expect(system).toContain(
+      'When the user speaks as the Character, it is how the Character talks',
+    )
+    expect(system).toContain(
+      'When the user writes to the Character, it is the register for addressing them',
+    )
+    expect(system).not.toMatch(/addressee|who they are writing to/)
   })
 })

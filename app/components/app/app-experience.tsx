@@ -318,8 +318,10 @@ export function AppExperience() {
   React.useEffect(() => {
     if (charId && charTemperature !== undefined) setTemp(charTemperature)
   }, [charId, charTemperature])
+  // A Character cached offline before Perspective existed has no field; it
+  // means the default, not "keep whatever the last Character had".
   React.useEffect(() => {
-    if (charId && charPerspective) setPerspective(charPerspective)
+    if (charId) setPerspective(charPerspective ?? 'to')
   }, [charId, charPerspective])
 
   React.useEffect(() => {
@@ -489,9 +491,10 @@ export function AppExperience() {
   }
 
   // Perspective belongs to the Character, so the radio saves it right away and
-  // the next visit opens with the same choice. The PATCH is optimistic: a
-  // failure rolls the roster back and the effect above resets the radio, and
-  // only for that Character, even if the user has switched since.
+  // the next visit opens with the same choice. The PATCH is optimistic and
+  // queued behind any earlier one (useUpdateCharacter), so quick clicks land in
+  // order and the radio stays on the last. A failure rolls back just that
+  // Character's perspective, and the effect above resets the radio.
   const changePerspective = (value: Perspective) => {
     setPerspective(value)
     if (!char || value === char.perspective) return

@@ -8,6 +8,7 @@ import {
   useAppBootstrap,
   useCharacters,
   useCreateCharacter,
+  useUpdateCharacter,
   type CharacterInput,
 } from '@/hooks/use-app-data'
 import type { AppBootstrap } from '@/lib/app-bootstrap'
@@ -169,5 +170,144 @@ describe('useCreateCharacter roster reconciliation', () => {
       'POST /api/characters',
       'GET /api/characters',
     ])
+  })
+})
+
+// Each PATCH waits on its own Response until the test settles it.
+function stubPatches() {
+  const calls: { path: string; body: unknown; reply: (r: Response) => void }[] =
+    []
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const response = deferred<Response>()
+      calls.push({
+        path: String(input),
+        body: JSON.parse(String(init?.body)),
+        reply: response.resolve,
+      })
+      return response.promise
+    }),
+  )
+  return calls
+}
+const failure = () =>
+  Response.json({ error: { message: 'down' } }, { status: 503 })
+
+describe('useUpdateCharacter overlapping writes', () => {
+  function render(roster: Character[]) {
+    const { client, wrapper } = setup()
+    client.setQueryData(keys.characters, roster)
+    const { result } = renderHook(() => useUpdateCharacter(), { wrapper })
+    const mutate = (vars: Parameters<typeof result.current.mutateAsync>[0]) =>
+      result.current.mutateAsync(vars).catch(() => undefined)
+    const cached = (id: string) =>
+      client
+        .getQueryData<Character[]>(keys.characters)
+        ?.find((c) => c.id === id)
+    return { mutate, cached }
+  }
+
+  it('keeps the last perspective when an older save answers after it', async () => {
+    const calls = stubPatches()
+    const { mutate, cached } = render([existing])
+    let first!: Promise<unknown>
+    let second!: Promise<unknown>
+    await act(async () => {
+      first = mutate({ id: 'a', perspective: 'as' })
+      second = mutate({ id: 'a', perspective: 'to' })
+    })
+    // Queued, not raced: the worker sees them in the order they were made.
+    await waitFor(() => expect(calls).toHaveLength(1))
+    expect(calls[0].body).toEqual({ perspective: 'as' })
+    expect(cached('a')?.perspective).toBe('to')
+
+    await act(async () => {
+      calls[0].reply(Response.json({ ...existing, perspective: 'as' }))
+      await first
+    })
+    expect(cached('a')?.perspective).toBe('to')
+    await waitFor(() => expect(calls).toHaveLength(2))
+    expect(calls[1].body).toEqual({ perspective: 'to' })
+
+    await act(async () => {
+      calls[1].reply(Response.json({ ...existing, perspective: 'to' }))
+      await second
+    })
+    expect(cached('a')?.perspective).toBe('to')
+  })
+
+  it('rolls back only the failed fields, keeping a queued edit and other Characters', async () => {
+    const calls = stubPatches()
+    const other = makeCharacter('b')
+    const { mutate, cached } = render([existing, other])
+    let failed!: Promise<unknown>
+    let renamed!: Promise<unknown>
+    let warmer!: Promise<unknown>
+    await act(async () => {
+      failed = mutate({ id: 'a', perspective: 'as' })
+      warmer = mutate({ id: 'a', temperature: 0.7 })
+      renamed = mutate({ id: 'b', name: 'Renamed' })
+    })
+    await waitFor(() => expect(calls).toHaveLength(1))
+    await act(async () => {
+      calls[0].reply(failure())
+      await failed
+    })
+    expect(cached('a')).toMatchObject({ perspective: 'to', temperature: 0.7 })
+    expect(cached('b')?.name).toBe('Renamed')
+
+    await waitFor(() => expect(calls).toHaveLength(2))
+    await act(async () => {
+      calls[1].reply(Response.json({ ...existing, temperature: 0.7 }))
+      await warmer
+    })
+    await waitFor(() => expect(calls).toHaveLength(3))
+    await act(async () => {
+      calls[2].reply(Response.json({ ...other, name: 'Renamed' }))
+      await renamed
+    })
+    expect(cached('a')).toMatchObject({ perspective: 'to', temperature: 0.7 })
+    expect(cached('b')?.name).toBe('Renamed')
+  })
+
+  it('rolls a failed write back to the value the worker last confirmed', async () => {
+    const calls = stubPatches()
+    const { mutate, cached } = render([existing])
+    let first!: Promise<unknown>
+    let second!: Promise<unknown>
+    await act(async () => {
+      first = mutate({ id: 'a', temperature: 0.6 })
+      second = mutate({ id: 'a', temperature: 0.8 })
+    })
+    await waitFor(() => expect(calls).toHaveLength(1))
+    await act(async () => {
+      calls[0].reply(Response.json({ ...existing, temperature: 0.6 }))
+      await first
+    })
+    expect(cached('a')?.temperature).toBe(0.8)
+    await waitFor(() => expect(calls).toHaveLength(2))
+    await act(async () => {
+      calls[1].reply(failure())
+      await second
+    })
+    // Not the 0.4 that was cached when this write began.
+    expect(cached('a')?.temperature).toBe(0.6)
+  })
+
+  it('resets a legacy cached Character without a perspective on failure', async () => {
+    const calls = stubPatches()
+    const { perspective: _omitted, ...legacy } = existing
+    const { mutate, cached } = render([legacy as Character])
+    let failed!: Promise<unknown>
+    await act(async () => {
+      failed = mutate({ id: 'a', perspective: 'as' })
+    })
+    await waitFor(() => expect(calls).toHaveLength(1))
+    await act(async () => {
+      calls[0].reply(failure())
+      await failed
+    })
+    expect(cached('a')?.perspective).toBeUndefined()
   })
 })

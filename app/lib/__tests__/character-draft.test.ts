@@ -138,3 +138,40 @@ describe('editing a legacy-language Character', () => {
     ).toBe('Choose Simplified Chinese, Traditional Chinese, Thai or Japanese')
   })
 })
+
+describe('perspective in the draft', () => {
+  it('defaults a new Character to "to"', () => {
+    const d = draftFrom(null, 'x')
+    expect(d.perspective).toBe('to')
+    expect(toInput({ ...d, name: 'Mei' }).perspective).toBe('to')
+  })
+
+  it('defaults a cached Character saved before Perspective existed to "to"', () => {
+    // An offline query cache can still hold Characters without the field.
+    const legacy: Partial<Character> = character()
+    delete legacy.perspective
+    const d = draftFrom(legacy as Character, 'x')
+    expect(d.perspective).toBe('to')
+    expect(toCharacterPatch(toInput(d), legacy as Character).perspective).toBe(
+      'to',
+    )
+  })
+
+  it('keeps "as" through an unrelated edit', () => {
+    const speaker = character({ perspective: 'as' })
+    const d = draftFrom(speaker, 'x')
+    expect(d.perspective).toBe('as')
+    const input = toInput({ ...d, name: 'Lina' })
+    expect(input.perspective).toBe('as')
+    expect(toCharacterPatch(input, speaker)).toMatchObject({
+      name: 'Lina',
+      perspective: 'as',
+    })
+  })
+
+  it('sends a changed perspective', () => {
+    const speaker = character({ perspective: 'as' })
+    const input = toInput({ ...draftFrom(speaker, 'x'), perspective: 'to' })
+    expect(toCharacterPatch(input, speaker).perspective).toBe('to')
+  })
+})

@@ -6,7 +6,7 @@
 
 - **React 19 + Vite + TypeScript** (strict). Source under `app/`.
 - **TanStack Router** — automatically split file-based routes in `app/routes/`, generated `app/routeTree.gen.ts` (via `@tanstack/router-plugin` in `vite.config.ts`).
-- **TanStack Query** — server-state cache, invalidation, optimistic updates. Segment creates cancel stale reads before the call and before merging its response. A dedupe hit (`reused: true`) is replaced in place when loaded, left in its unloaded older page otherwise, and never bumps the Thread count; unloaded or stale Segment history is refetched as a bounded first page.
+- **TanStack Query** — server-state cache, invalidation, optimistic updates. Segment creates cancel stale reads before the call and before merging its response. A dedupe hit (`reused: true`) is replaced in place when loaded, left in its unloaded older page otherwise, and never bumps the Thread count; unloaded or stale Segment history is refetched as a bounded first page. Character PATCHes share one mutation scope, so they reach the worker in the order they were made; optimistic writes are tracked per field, so an older response never overwrites a field a newer PATCH has set, and a failure rolls back only the fields it still owns on that Character.
 - **Better Auth** client (`better-auth/react`, `app/lib/auth-client.ts`) — auth/session over a same-origin httpOnly cookie. See [SECURITY.md](./SECURITY.md#authentication).
 - **Tailwind v4**, Radix, CVA, lucide, Framer Motion (see DESIGN.md).
 - `@/*` resolves to `app/*`.

@@ -193,31 +193,98 @@ export function useCreateCharacter() {
   })
 }
 
+// Optimistic Character writes, tracked per field so overlapping PATCHes (two
+// quick perspective clicks, a temperature release mid-save) can't undo each
+// other: `latest` is the newest write to set each field, `confirmed` the value
+// the worker last returned for it. Reset once no write is in flight.
+type CharacterWrites = {
+  inFlight: number
+  latest: Map<string, number>
+  confirmed: Map<string, unknown>
+}
+const characterWrites = new WeakMap<QueryClient, Map<string, CharacterWrites>>()
+let characterWriteSeq = 0
+
+function writesFor(qc: QueryClient, id: string) {
+  let byId = characterWrites.get(qc)
+  if (!byId) characterWrites.set(qc, (byId = new Map()))
+  let writes = byId.get(id)
+  if (!writes) {
+    writes = { inFlight: 0, latest: new Map(), confirmed: new Map() }
+    byId.set(id, writes)
+  }
+  return writes
+}
+
 export function useUpdateCharacter() {
   const { json } = useApi()
   const qc = useQueryClient()
   return useScopedMutation({
     mutationFn: ({ id, ...patch }: Partial<CharacterInput> & { id: string }) =>
       json<Character>(`/api/characters/${id}`, 'PATCH', patch),
+    // One at a time, in order: the worker commits the last choice last.
+    scope: { id: 'update-character' },
     // Optimistic: the temperature slider PATCHes on release and should not
     // snap back while the request is in flight.
     onMutate: async ({ id, ...patch }) => {
       if (!(await cancelOwnedQueries(qc, keys.characters))) return
-      const prev = qc.getQueryData<Character[]>(keys.characters)
+      const writes = writesFor(qc, id)
+      if (!writes.inFlight) {
+        writes.latest.clear()
+        writes.confirmed.clear()
+      }
+      writes.inFlight++
+      const seq = ++characterWriteSeq
+      const current = qc
+        .getQueryData<Character[]>(keys.characters)
+        ?.find((c) => c.id === id) as Record<string, unknown> | undefined
+      for (const field of Object.keys(patch)) {
+        if (current && !writes.confirmed.has(field))
+          writes.confirmed.set(field, current[field])
+        writes.latest.set(field, seq)
+      }
       qc.setQueryData<Character[]>(keys.characters, (list) =>
         // Unloaded roster: never persist an empty list in its place.
         list?.map((c) => (c.id === id ? { ...c, ...patch } : c)),
       )
-      return { prev }
+      return { seq }
     },
-    onError: (_err, _vars, ctx) => {
-      if (ctx?.prev) qc.setQueryData(keys.characters, ctx.prev)
-    },
-    onSuccess: async (updated) => {
-      if (!(await cancelOwnedQueries(qc, keys.characters))) return
-      qc.setQueryData<Character[]>(keys.characters, (list) =>
-        list?.map((c) => (c.id === updated.id ? updated : c)),
+    // Roll back only the fields no newer write has set since, and only on this
+    // Character: an edit to another one stays.
+    onError: (_err, { id, ...patch }, ctx) => {
+      if (!ctx) return
+      const writes = writesFor(qc, id)
+      const restore = Object.fromEntries(
+        Object.keys(patch)
+          .filter(
+            (f) => writes.latest.get(f) === ctx.seq && writes.confirmed.has(f),
+          )
+          .map((f) => [f, writes.confirmed.get(f)]),
       )
+      qc.setQueryData<Character[]>(keys.characters, (list) =>
+        list?.map((c) => (c.id === id ? { ...c, ...restore } : c)),
+      )
+    },
+    // A newer write's optimistic value outranks this older response.
+    onSuccess: async (updated, _vars, ctx) => {
+      if (!(await cancelOwnedQueries(qc, keys.characters))) return
+      const writes = writesFor(qc, updated.id)
+      for (const [f, value] of Object.entries(updated))
+        writes.confirmed.set(f, value)
+      const newer = (c: Character) =>
+        Object.fromEntries(
+          [...writes.latest]
+            .filter(([, seq]) => ctx && seq > ctx.seq)
+            .map(([f]) => [f, (c as Record<string, unknown>)[f]]),
+        )
+      qc.setQueryData<Character[]>(keys.characters, (list) =>
+        list?.map((c) =>
+          c.id === updated.id ? { ...updated, ...newer(c) } : c,
+        ),
+      )
+    },
+    onSettled: (_data, _err, { id }, ctx) => {
+      if (ctx) writesFor(qc, id).inFlight--
     },
   })
 }

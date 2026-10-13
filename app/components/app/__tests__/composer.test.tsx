@@ -30,13 +30,15 @@ function renderComposer(props: Partial<ComposerProps> = {}) {
   const onTemperatureCommit = vi.fn()
   const onPerspectiveChange = vi.fn()
   const onSend = vi.fn(async () => true)
-  // Stateful like AppExperience, so controlled sliders actually move.
-  function Harness(over: Partial<ComposerProps>) {
+  // Stateful like AppExperience, so controlled sliders and radios actually
+  // move. `perspective` only seeds the state; spreading it again would pin it.
+  function Harness({
+    perspective: initialPerspective = 'to',
+    ...over
+  }: Partial<ComposerProps>) {
     const [vibeIdx, setVibeIdx] = React.useState(over.vibeIdx ?? 0)
     const [temperature, setTemperature] = React.useState(0.4)
-    const [perspective, setPerspective] = React.useState(
-      over.perspective ?? ('to' as const),
-    )
+    const [perspective, setPerspective] = React.useState(initialPerspective)
     return (
       <Composer
         contextId="t1"
@@ -182,6 +184,69 @@ describe('composer settings disclosure', () => {
     expect(button.getAttribute('aria-expanded')).toBe('false')
     await nextFrame()
     expect(document.activeElement).toBe(button)
+  })
+
+  it('moves the perspective choice from a seeded "As" to "To"', async () => {
+    const user = userEvent.setup()
+    const { onPerspectiveChange } = renderComposer({ perspective: 'as' })
+    await user.click(toggle('Casual', 'As the speaker'))
+    const as = screen.getByRole<HTMLInputElement>('radio', {
+      name: 'As the speaker',
+    })
+    const to = screen.getByRole<HTMLInputElement>('radio', {
+      name: 'To the speaker',
+    })
+    expect(as.checked).toBe(true)
+    await user.click(to)
+    expect(onPerspectiveChange).toHaveBeenLastCalledWith('to')
+    expect(to.checked).toBe(true)
+    expect(as.checked).toBe(false)
+    expect(toggle('Casual', 'To the speaker')).toBeTruthy()
+  })
+
+  it('makes the perspective radios one tab stop that arrow keys move through', async () => {
+    // user-event 14 models native radio groups by `name`: Tab stops only on
+    // the checked radio and arrows walk the group. Radios with different
+    // names, or taken out of the tab order, fail here.
+    const user = userEvent.setup()
+    const { onPerspectiveChange } = renderComposer()
+    await user.click(toggle())
+    const as = screen.getByRole<HTMLInputElement>('radio', {
+      name: 'As the speaker',
+    })
+    const to = screen.getByRole<HTMLInputElement>('radio', {
+      name: 'To the speaker',
+    })
+    expect(as.name).not.toBe('')
+    expect(as.name).toBe(to.name)
+
+    // Tab from the help button skips the unchecked "As" and lands on "To".
+    screen.getByRole('button', { name: 'About perspective' }).focus()
+    await user.tab()
+    expect(document.activeElement).toBe(to)
+
+    await user.keyboard('{ArrowLeft}')
+    expect(document.activeElement).toBe(as)
+    expect(as.checked).toBe(true)
+    expect(to.checked).toBe(false)
+    expect(onPerspectiveChange).toHaveBeenLastCalledWith('as')
+
+    await user.keyboard('{ArrowRight}')
+    expect(document.activeElement).toBe(to)
+    expect(to.checked).toBe(true)
+    expect(onPerspectiveChange).toHaveBeenLastCalledWith('to')
+
+    // One Tab leaves the group; Shift+Tab comes back to the checked radio.
+    await user.tab()
+    expect(document.activeElement).not.toBe(as)
+    expect(document.activeElement).not.toBe(to)
+    expect(
+      screen
+        .getByRole('radiogroup', { name: 'PERSPECTIVE' })
+        .contains(document.activeElement),
+    ).toBe(false)
+    await user.tab({ shift: true })
+    expect(document.activeElement).toBe(to)
   })
 
   it('explains both perspectives from the "?" next to Perspective', async () => {

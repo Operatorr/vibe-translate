@@ -1,13 +1,17 @@
 // @vitest-environment jsdom
 import { cleanup, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import * as React from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { CharacterPanel } from '../character-panel'
 
 import type { Character } from '@/lib/types'
 
-const character = (persona: Character['persona']): Character => ({
+const character = (
+  persona: Character['persona'],
+  overrides: Partial<Character> = {},
+): Character => ({
   id: 'c1',
   name: 'Lin',
   sourceLanguage: 'en-US',
@@ -20,6 +24,7 @@ const character = (persona: Character['persona']): Character => ({
   archivedAt: null,
   createdAt: '2026-01-01T00:00:00Z',
   updatedAt: '2026-01-01T00:00:00Z',
+  ...overrides,
 })
 
 const renderPanel = (persona: Character['persona'] = { traits: [] }) => {
@@ -128,6 +133,90 @@ describe('legacy-language Characters', () => {
     await user.click(screen.getByRole('button', { name: 'Save character' }))
     expect(onSave).toHaveBeenCalledWith(
       expect.objectContaining({ name: 'Lina', targetLanguage: 'fr-FR' }),
+    )
+  })
+})
+
+describe('perspective in the Character editor', () => {
+  const radio = (name: 'As the speaker' | 'To the speaker') =>
+    screen.getByRole<HTMLInputElement>('radio', { name })
+  // The compiled prompt preview: its PERSPECTIVE line names who is talking.
+  const preview = () =>
+    screen.getByText(/PERSPECTIVE: speaking (AS|TO) the character/).textContent
+  const speaker = { age: '60s', traits: [] }
+
+  const onSave = vi.fn()
+  // Mounts and unmounts the panel like AppExperience, so reopening starts a
+  // fresh draft from the saved Character.
+  function Host({ saved }: { saved: Character | null }) {
+    const [open, setOpen] = React.useState(true)
+    return open ? (
+      <CharacterPanel
+        character={saved}
+        onClose={() => setOpen(false)}
+        onSave={onSave}
+        saving={false}
+      />
+    ) : (
+      <button type="button" onClick={() => setOpen(true)}>
+        Reopen
+      </button>
+    )
+  }
+  const renderHost = (saved: Character | null) => {
+    onSave.mockClear()
+    render(<Host saved={saved} />)
+    return userEvent.setup()
+  }
+
+  it('previews and saves a switch from "As" to "To"', async () => {
+    const user = renderHost(character(speaker, { perspective: 'as' }))
+    expect(radio('As the speaker').checked).toBe(true)
+    expect(radio('To the speaker').checked).toBe(false)
+    expect(preview()).toContain('PERSPECTIVE: speaking AS the character')
+    expect(preview()).toContain('CHARACTER PERSONA (the speaker;')
+
+    await user.click(radio('To the speaker'))
+    expect(radio('To the speaker').checked).toBe(true)
+    expect(radio('As the speaker').checked).toBe(false)
+    expect(preview()).toContain('PERSPECTIVE: speaking TO the character')
+    expect(preview()).toContain('CHARACTER PERSONA (the person being addressed')
+    expect(preview()).not.toContain('speaking AS')
+
+    await user.click(screen.getByRole('button', { name: 'Save character' }))
+    expect(onSave).toHaveBeenCalledOnce()
+    expect(onSave.mock.calls[0][0].perspective).toBe('to')
+  })
+
+  it('defaults a new Character to "To"', async () => {
+    const user = renderHost(null)
+    expect(radio('To the speaker').checked).toBe(true)
+    expect(preview()).toContain('PERSPECTIVE: speaking TO the character')
+    await user.type(screen.getByLabelText('Name'), 'Mei')
+    await user.click(screen.getByRole('button', { name: 'Create character' }))
+    expect(onSave).toHaveBeenCalledWith(
+      expect.objectContaining({ name: 'Mei', perspective: 'to' }),
+    )
+  })
+
+  it('drops an unsaved choice on Cancel, reopening with the saved one', async () => {
+    const user = renderHost(character(speaker, { perspective: 'as' }))
+    await user.click(radio('To the speaker'))
+    await user.click(screen.getByRole('button', { name: 'Cancel' }))
+    expect(screen.queryByRole('radiogroup')).toBeNull()
+
+    await user.click(screen.getByRole('button', { name: 'Reopen' }))
+    expect(radio('As the speaker').checked).toBe(true)
+    expect(preview()).toContain('PERSPECTIVE: speaking AS the character')
+    expect(onSave).not.toHaveBeenCalled()
+  })
+
+  it('keeps "As" through an unrelated edit', async () => {
+    const user = renderHost(character(speaker, { perspective: 'as' }))
+    await user.type(screen.getByLabelText('Name'), 'a')
+    await user.click(screen.getByRole('button', { name: 'Save character' }))
+    expect(onSave).toHaveBeenCalledWith(
+      expect.objectContaining({ name: 'Lina', perspective: 'as' }),
     )
   })
 })

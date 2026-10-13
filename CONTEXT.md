@@ -55,7 +55,7 @@ A read-only public URL (`/share/<token>`) for one **Thread**. The token is the c
 _Avoid_: public thread, export link (export is the Markdown download)
 
 **Retry**:
-Re-running the translation of an existing **Segment**, replacing the target in place. The user confirms a **Vibe stop** first: the stored one (a fresh sample) or a different one (the same row re-translated in another **Register**). The stored **Perspective** is always kept. Not a new Segment — it skips dedupe and the **Translation cache**.
+Re-running the translation of an existing **Segment**, replacing the target in place. The user confirms a **Vibe stop** first: the stored one (a fresh sample) or a different one (the same row re-translated in another **Register**). A recorded **Perspective** is kept; a legacy Segment with none resolves the Character's current Perspective and records it. Not a new Segment — it skips dedupe and the **Translation cache**.
 _Avoid_: regenerate, re-translate (in code)
 
 **Segment**:

@@ -201,6 +201,29 @@ describe('thread export preparation', () => {
     screen.getByText('idle')
   })
 
+  it('tags each heading with its Segment’s perspective, not the Character’s', () => {
+    client.setQueryData(keys.share('t'), SHARE)
+    mount({
+      // The Character now defaults to "as"; history keeps what each used.
+      character: { ...character, perspective: 'as' },
+      segments: [
+        { ...seg(1), perspective: 'to' },
+        { ...seg(2), perspective: null },
+        { ...seg(3), perspective: 'as' },
+      ],
+      complete: true,
+    })
+    click('Download')
+    const markdown: string = mocks.download.mock.calls[0][1]
+    expect(
+      markdown.split('\n').filter((line) => line.startsWith('## ')),
+    ).toEqual([
+      '## 01 · Casual · to speaker',
+      '## 02 · Casual',
+      '## 03 · Casual · as speaker',
+    ])
+  })
+
   it('advises reconnecting, not copying, when preparation fails', async () => {
     fetch.mockRejectedValue(new TypeError('Failed to fetch'))
     mount()

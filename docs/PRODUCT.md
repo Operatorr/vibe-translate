@@ -81,7 +81,7 @@ Explain payloads are stored as **Explain memory** — one row per `(segment, ver
 
 A new user's first job is to create a **Character**. The flow is **dictation-first with a form fallback**:
 
-1. **Dictation box with an on-screen sample.** The user describes who they're translating for in plain language — the sample shows them how (*"Help me text my friend Tomoko in Tokyo casually in Japanese"*). The model parses this into a **Character draft**: name, source/target language, default vibe, perspective, temperature, structured persona, and — most valuably — the free-form **Instructions** that extend the system prompt ("friend in Tokyo, named Tomoko").
+1. **Dictation box with an on-screen sample.** The user describes who they're translating for, or whose voice they want to speak in, in plain language — the sample shows them how (*"Help me text my friend Tomoko in Tokyo casually in Japanese"*). The model parses this into a **Character draft**: name, source/target language, default vibe, perspective, temperature, structured persona, and — most valuably — the free-form **Instructions** that extend the system prompt ("friend in Tokyo, named Tomoko").
 2. **Confirmation form, pre-filled.** The draft lands in the Character form for the user to confirm or edit. This is where dictation's power shows: it shapes the Character better than blank form fields could.
 3. **Fallbacks.** If the parse fails (`ok: false` — the user phrased it in a way the model couldn't turn into a config), the UI drops to an empty Character form. There's also a **Skip** button to bypass dictation and go straight to the form.
 

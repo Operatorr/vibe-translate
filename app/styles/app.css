@@ -3541,8 +3541,10 @@ body,
 }
 .persp__option {
   position: relative;
-  display: grid;
-  place-items: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
   min-height: 40px;
   padding: 6px 8px;
   border: 1px solid var(--border-strong);
@@ -3561,6 +3563,10 @@ body,
 .persp__option:has(input:checked) {
   border-color: var(--blue-400);
   color: var(--blue-400);
+}
+/* blue-400 text on the light drawer is 3.8:1; blue-600 clears 4.5:1. */
+[data-theme='light'] .persp__option:has(input:checked) {
+  color: var(--blue-600);
 }
 .persp__option:has(input:focus-visible) {
   outline: 2px solid var(--blue-400);
@@ -3816,6 +3822,7 @@ body,
   min-height: 36px;
   display: inline-flex;
   align-items: center;
+  gap: 6px;
 }
 .cust__radio input {
   position: absolute;
@@ -3823,6 +3830,30 @@ body,
   margin: 0;
   opacity: 0;
   cursor: pointer;
+}
+/* The hidden native radio's dot, redrawn: hollow, filled when checked, so the
+   choice never rests on color alone. forced-color-adjust keeps the fill in
+   Windows high-contrast, where backgrounds are otherwise dropped. */
+.persp__option::before,
+.cust__radio::before {
+  content: '';
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border: 1px solid currentColor;
+  border-radius: 50%;
+  forced-color-adjust: none;
+}
+.persp__option:has(input:checked)::before,
+.cust__radio:has(input:checked)::before {
+  background: currentColor;
+}
+@media (forced-colors: active) {
+  .persp__option:has(input:checked),
+  .cust__radio:has(input:checked) {
+    border-color: Highlight;
+    color: Highlight;
+  }
 }
 .cust-help__overlay {
   position: fixed;
