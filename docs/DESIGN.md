@@ -46,6 +46,7 @@ The color is consistent across all languages; only the **labels** localize (`kei
 ### Explain panel
 
 - **Explain** opens **inline, directly under its Segment card**, not as a modal — the translation stays visible right above the breakdown so the learner can cross-reference. One panel is open at a time.
+- On open, and again when its content loads, the panel **slides into view**: the thread scrolls smoothly up until the panel clears the composer, but never past the top of its Segment card, so the translation stays on screen above the breakdown. Instant under `prefers-reduced-motion`.
 - The panel renders the language-aware payload: romaji, literal gloss, morphemes & particles (color-coded by part of speech), kanji decomposition (radicals, readings, JLPT, stroke count), and grammar patterns with dialect notes.
 
 ## Layout
