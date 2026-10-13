@@ -3544,7 +3544,7 @@ body,
   min-width: 0;
 }
 
-/* Perspective radios (as / to the speaker) */
+/* Perspective radios (as / to the Character) */
 .persp {
   display: flex;
   flex-direction: column;
@@ -3913,6 +3913,13 @@ body,
   box-shadow: 0 16px 64px rgba(0, 0, 0, 0.35);
   color: var(--fg);
   font: 400 14px/1.6 var(--font-sans);
+}
+/* Help opened from inside Retry (251) must sit above it. */
+.cust-help__overlay--nested {
+  z-index: 260;
+}
+.cust-help--nested {
+  z-index: 261;
 }
 .cust-help__head {
   display: flex;
@@ -5463,7 +5470,7 @@ body,
   }
 }
 
-/* Retry's Vibe stop picker. Above the full-screen display (200), below
+/* Retry translation settings. Above the full-screen display (200), below
    credit recovery (300), which can open over it when the retry 402s. */
 .retry-modal__overlay {
   position: fixed;
@@ -5501,6 +5508,12 @@ body,
 }
 .retry-modal .vibe-mini__head-r {
   line-height: 1.4;
+}
+/* Vibe, then temperature, then perspective, as in the composer drawer. */
+.retry-modal__settings {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
 }
 .retry-modal__title {
   margin: 14px 0 8px;

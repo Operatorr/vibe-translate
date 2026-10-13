@@ -1196,7 +1196,8 @@ app.post('/api/segments', zValidator('json', segmentCreateSchema), (c) => {
 })
 
 // Retry: re-run the translation for an existing Segment and overwrite its
-// target in place, optionally at a different Vibe stop. Deliberately bypasses
+// target in place, optionally at a different Vibe stop, Perspective or
+// temperature. Deliberately bypasses
 // the in-thread dedupe and the shared cache — the whole point is a fresh
 // sample — and never seeds the cache. The row keeps its id so open Explain panels/links stay valid; stale `explains`
 // rows for the old target are dropped (they were keyed by the old text).
@@ -1206,7 +1207,11 @@ app.post(
   (c) => {
     const userId = c.get('userId')
     const segmentId = uuidParam(c.req.param('segmentId'), 'Segment')
-    const { vibe: requestedVibe } = c.req.valid('json')
+    const {
+      vibe: requestedVibe,
+      perspective: requestedPerspective,
+      temperature: requestedTemperature,
+    } = c.req.valid('json')
     return withDb(c.env, async (db) => {
       await getOrCreateUser(db, userId, c.get('email'))
       const segRes = await db.query<
@@ -1232,16 +1237,19 @@ app.post(
       assertUserOwnsResource(seg.user_id, userId)
 
       const vibe: VibeStop = requestedVibe ?? seg.vibe ?? seg.default_vibe
-      // Retry may change the stop but always keeps the recorded perspective. A
-      // legacy row without one resolves the Character's current perspective
-      // and records it with the new target (adr/0009).
+      // Without a requested perspective, Retry keeps the recorded one. A
+      // legacy row without one resolves the Character's current perspective.
+      // Either way the perspective used is recorded with the new target
+      // (adr/0009).
       const perspective: Perspective =
-        seg.perspective ?? seg.default_perspective
+        requestedPerspective ?? seg.perspective ?? seg.default_perspective
       const { result, target, settle, refund } = await translateWithCredits(
         db,
         c.env,
         userId,
-        seg,
+        // A requested temperature is for this retry only; the Character's
+        // saved temperature is untouched.
+        { ...seg, temperature: requestedTemperature ?? seg.temperature },
         seg.source_text,
         vibe,
         perspective,

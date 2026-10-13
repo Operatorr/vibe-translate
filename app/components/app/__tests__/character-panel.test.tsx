@@ -138,7 +138,7 @@ describe('legacy-language Characters', () => {
 })
 
 describe('perspective in the Character editor', () => {
-  const radio = (name: 'As the speaker' | 'To the speaker') =>
+  const radio = (name: 'As the Character' | 'To the Character') =>
     screen.getByRole<HTMLInputElement>('radio', { name })
   // The compiled prompt preview: its PERSPECTIVE line names who is talking.
   const preview = () =>
@@ -171,14 +171,14 @@ describe('perspective in the Character editor', () => {
 
   it('previews and saves a switch from "As" to "To"', async () => {
     const user = renderHost(character(speaker, { perspective: 'as' }))
-    expect(radio('As the speaker').checked).toBe(true)
-    expect(radio('To the speaker').checked).toBe(false)
+    expect(radio('As the Character').checked).toBe(true)
+    expect(radio('To the Character').checked).toBe(false)
     expect(preview()).toContain('PERSPECTIVE: speaking AS the character')
     expect(preview()).toContain('CHARACTER PERSONA (the speaker;')
 
-    await user.click(radio('To the speaker'))
-    expect(radio('To the speaker').checked).toBe(true)
-    expect(radio('As the speaker').checked).toBe(false)
+    await user.click(radio('To the Character'))
+    expect(radio('To the Character').checked).toBe(true)
+    expect(radio('As the Character').checked).toBe(false)
     expect(preview()).toContain('PERSPECTIVE: speaking TO the character')
     expect(preview()).toContain('CHARACTER PERSONA (the person being addressed')
     expect(preview()).not.toContain('speaking AS')
@@ -190,7 +190,7 @@ describe('perspective in the Character editor', () => {
 
   it('defaults a new Character to "To"', async () => {
     const user = renderHost(null)
-    expect(radio('To the speaker').checked).toBe(true)
+    expect(radio('To the Character').checked).toBe(true)
     expect(preview()).toContain('PERSPECTIVE: speaking TO the character')
     await user.type(screen.getByLabelText('Name'), 'Mei')
     await user.click(screen.getByRole('button', { name: 'Create character' }))
@@ -201,12 +201,12 @@ describe('perspective in the Character editor', () => {
 
   it('drops an unsaved choice on Cancel, reopening with the saved one', async () => {
     const user = renderHost(character(speaker, { perspective: 'as' }))
-    await user.click(radio('To the speaker'))
+    await user.click(radio('To the Character'))
     await user.click(screen.getByRole('button', { name: 'Cancel' }))
     expect(screen.queryByRole('radiogroup')).toBeNull()
 
     await user.click(screen.getByRole('button', { name: 'Reopen' }))
-    expect(radio('As the speaker').checked).toBe(true)
+    expect(radio('As the Character').checked).toBe(true)
     expect(preview()).toContain('PERSPECTIVE: speaking AS the character')
     expect(onSave).not.toHaveBeenCalled()
   })

@@ -12,14 +12,14 @@ export const PERSPECTIVE_OPTIONS: ReadonlyArray<{
 }> = [
   {
     id: 'as',
-    label: 'As the speaker',
-    short: 'as speaker',
+    label: 'As the Character',
+    short: 'as Character',
     hint: 'in their voice',
   },
   {
     id: 'to',
-    label: 'To the speaker',
-    short: 'to speaker',
+    label: 'To the Character',
+    short: 'to Character',
     hint: 'addressed to them',
   },
 ]

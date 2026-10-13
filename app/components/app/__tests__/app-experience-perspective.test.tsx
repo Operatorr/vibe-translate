@@ -8,14 +8,22 @@ import {
   createRoute,
   createRouter,
 } from '@tanstack/react-router'
-import { act, cleanup, render, screen, waitFor } from '@testing-library/react'
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { AppExperience } from '@/components/app/app-experience'
 import { keys } from '@/lib/query-keys'
 import type { SegmentHistory } from '@/lib/segment-history'
-import type { Character, CreatedSegment } from '@/lib/types'
+import type { Character, CreatedSegment, Segment } from '@/lib/types'
 import {
   deferred,
   makeCharacter,
@@ -62,8 +70,8 @@ type Call = {
   reply: (response: Response) => void
 }
 
-// PATCH /api/characters/:id and POST /api/segments wait on the test; the
-// account refresh after a translation answers straight away.
+// PATCH /api/characters/:id and POST /api/segments(/:id/retry) wait on the
+// test; the account refresh after a translation answers straight away.
 function stubFetch() {
   const calls: Call[] = []
   const unexpected: string[] = []
@@ -76,7 +84,7 @@ function stubFetch() {
         return Response.json(makeMe({ id: 'u1' }))
       if (
         (method === 'PATCH' && path.startsWith('/api/characters/')) ||
-        (method === 'POST' && path === '/api/segments')
+        (method === 'POST' && path.startsWith('/api/segments'))
       ) {
         const response = deferred<Response>()
         calls.push({
@@ -99,7 +107,7 @@ function stubFetch() {
 const failure = () =>
   Response.json({ error: { message: 'down' } }, { status: 503 })
 
-function renderApp(roster: Character[]) {
+function renderApp(roster: Character[], segments: Segment[] = []) {
   const qc = new QueryClient({
     defaultOptions: {
       // Seeded data stays fresh: the only traffic is what the test drives.
@@ -112,7 +120,7 @@ function renderApp(roster: Character[]) {
   for (const c of roster) {
     qc.setQueryData(keys.threads(c.id), [makeThread(`t-${c.id}`, c.id)])
     qc.setQueryData<SegmentHistory>(keys.segments(`t-${c.id}`), {
-      pages: [makePage([])],
+      pages: [makePage(segments.filter((s) => s.threadId === `t-${c.id}`))],
       pageParams: [null],
     })
   }
@@ -141,12 +149,12 @@ function renderApp(roster: Character[]) {
   return { qc, cached }
 }
 
-const radio = (name: 'As the speaker' | 'To the speaker') =>
+const radio = (name: 'As the Character' | 'To the Character') =>
   screen.getByRole('radio', { name }) as HTMLInputElement
 
 function expectRadio(value: 'as' | 'to') {
-  expect(radio('As the speaker').checked).toBe(value === 'as')
-  expect(radio('To the speaker').checked).toBe(value === 'to')
+  expect(radio('As the Character').checked).toBe(value === 'as')
+  expect(radio('To the Character').checked).toBe(value === 'to')
 }
 
 // The radios live in the composer's settings drawer, hidden until opened.
@@ -154,7 +162,7 @@ async function openSettings(user: ReturnType<typeof userEvent.setup>) {
   await user.click(
     await screen.findByRole('button', { name: /^Translation settings/ }),
   )
-  return radio('To the speaker')
+  return radio('To the Character')
 }
 
 const selectCharacter = (
@@ -194,9 +202,9 @@ afterEach(() => {
   vi.clearAllMocks()
 })
 
-function setup(roster: Character[]) {
+function setup(roster: Character[], segments?: Segment[]) {
   const fetch = stubFetch()
-  const app = renderApp(roster)
+  const app = renderApp(roster, segments)
   qcs.push(app.qc)
   return { ...fetch, ...app, user: userEvent.setup() }
 }
@@ -207,7 +215,7 @@ describe('AppExperience perspective radio', () => {
     await openSettings(user)
     expectRadio('to')
 
-    await user.click(radio('As the speaker'))
+    await user.click(radio('As the Character'))
     await waitFor(() => expect(patches()).toHaveLength(1))
     expect(patches()[0].body).toEqual({ perspective: 'as' })
 
@@ -219,7 +227,7 @@ describe('AppExperience perspective radio', () => {
       sourceText: 'Thank you for dinner',
       perspective: 'as',
     })
-    expect(pendingCard()?.textContent).toContain('as speaker')
+    expect(pendingCard()?.textContent).toContain('as Character')
 
     // The save lands while the translation is still running.
     await act(async () =>
@@ -227,13 +235,13 @@ describe('AppExperience perspective radio', () => {
     )
     await settle()
     expectRadio('as')
-    expect(pendingCard()?.textContent).toContain('as speaker')
+    expect(pendingCard()?.textContent).toContain('as Character')
 
     // Flipping the radio now changes the next send, not this one.
-    await user.click(radio('To the speaker'))
+    await user.click(radio('To the Character'))
     await waitFor(() => expect(patches()).toHaveLength(2))
-    expect(pendingCard()?.textContent).toContain('as speaker')
-    expect(pendingCard()?.textContent).not.toContain('to speaker')
+    expect(pendingCard()?.textContent).toContain('as Character')
+    expect(pendingCard()?.textContent).not.toContain('to Character')
     expect(posts()).toHaveLength(1)
 
     await act(async () => {
@@ -249,7 +257,7 @@ describe('AppExperience perspective radio', () => {
       posts()[0].reply(Response.json(created))
     })
     await waitFor(() => expect(pendingCard()).toBeNull())
-    expect(screen.getByText(/as speaker/)).toBeTruthy()
+    expect(screen.getByText(/as Character/)).toBeTruthy()
     expectRadio('to')
     expect(unexpected).toEqual([])
   })
@@ -258,7 +266,7 @@ describe('AppExperience perspective radio', () => {
     const { user, patches, cached, unexpected } = setup([aiko])
     await openSettings(user)
 
-    await user.click(radio('As the speaker'))
+    await user.click(radio('As the Character'))
     expectRadio('as')
     await waitFor(() => expect(patches()).toHaveLength(1))
     expect(cached('a')?.perspective).toBe('as')
@@ -274,11 +282,11 @@ describe('AppExperience perspective radio', () => {
     const { user, patches, cached, unexpected } = setup([aiko, botan])
     await openSettings(user)
 
-    await user.click(radio('As the speaker'))
+    await user.click(radio('As the Character'))
     await waitFor(() => expect(patches()).toHaveLength(1))
     await selectCharacter(user, 'Botan')
     await waitFor(() => expectRadio('to'))
-    await user.click(radio('As the speaker'))
+    await user.click(radio('As the Character'))
     expectRadio('as')
 
     await act(async () => patches()[0].reply(failure()))
@@ -307,7 +315,7 @@ describe('AppExperience perspective radio', () => {
     await openSettings(user)
     expectRadio('to')
 
-    await user.click(radio('As the speaker'))
+    await user.click(radio('As the Character'))
     await waitFor(() => expect(patches()).toHaveLength(1))
 
     // Switch while Aiko's save is still in flight.
@@ -332,8 +340,8 @@ describe('AppExperience perspective radio', () => {
     const { user, patches, cached, unexpected } = setup([aiko])
     await openSettings(user)
 
-    await user.click(radio('As the speaker'))
-    await user.click(radio('To the speaker'))
+    await user.click(radio('As the Character'))
+    await user.click(radio('To the Character'))
     expectRadio('to')
     await settle()
     // Queued, not raced: the second save waits for the first.
@@ -363,7 +371,7 @@ describe('AppExperience perspective radio', () => {
     const { user, patches, unexpected } = setup([aiko, legacy])
     await openSettings(user)
 
-    await user.click(radio('As the speaker'))
+    await user.click(radio('As the Character'))
     await waitFor(() => expect(patches()).toHaveLength(1))
     await act(async () =>
       patches()[0].reply(Response.json({ ...aiko, perspective: 'as' })),
@@ -374,6 +382,67 @@ describe('AppExperience perspective radio', () => {
     await selectCharacter(user, 'Chiyo')
     await waitFor(() => expectRadio('to'))
     expect(patches()).toHaveLength(1)
+    expect(unexpected).toEqual([])
+  })
+})
+
+describe('AppExperience retry settings', () => {
+  it('sends the dialog’s vibe, perspective and temperature without saving them to the Character', async () => {
+    const seg = makeSegment('s1', '2026-10-01T00:00:00.000Z', {
+      threadId: 't-a',
+      vibe: 'casual',
+      perspective: 'to',
+    })
+    const { user, qc, patches, posts, cached, unexpected } = setup(
+      [aiko],
+      [seg],
+    )
+    await user.click(
+      await screen.findByRole('button', { name: 'Retry translation' }),
+    )
+    const dialog = screen.getByRole('dialog', {
+      name: 'Retry translation settings',
+    })
+    const vibe = within(dialog).getByRole('slider', { name: 'Vibe' })
+    const before = vibe.getAttribute('aria-valuetext')
+    await user.keyboard('{ArrowRight}')
+    const picked = vibe.getAttribute('aria-valuetext')
+    expect(picked).not.toBe(before)
+    fireEvent.change(
+      within(dialog).getByRole('slider', { name: 'Temperature' }),
+      { target: { value: '0.75' } },
+    )
+    await user.click(
+      within(dialog).getByRole('radio', { name: 'As the Character' }),
+    )
+    await user.click(within(dialog).getByRole('button', { name: /confirm/i }))
+
+    await waitFor(() => expect(posts()).toHaveLength(1))
+    expect(posts()[0].path).toBe('/api/segments/s1/retry')
+    const body = posts()[0].body
+    expect(body).toMatchObject({ perspective: 'as', temperature: 0.75 })
+    expect(body?.vibe).toEqual(expect.any(String))
+    expect(body?.vibe).not.toBe('casual')
+
+    await act(async () =>
+      posts()[0].reply(
+        Response.json({
+          ...seg,
+          targetText: 'retried',
+          vibe: body?.vibe,
+          perspective: 'as',
+        }),
+      ),
+    )
+    await waitFor(() =>
+      expect(
+        qc.getQueryData<SegmentHistory>(keys.segments('t-a'))?.pages[0]
+          .segments[0],
+      ).toMatchObject({ id: 's1', perspective: 'as', vibe: body?.vibe }),
+    )
+    await settle()
+    expect(patches()).toEqual([])
+    expect(cached('a')).toMatchObject({ perspective: 'to', temperature: 0.4 })
     expect(unexpected).toEqual([])
   })
 })

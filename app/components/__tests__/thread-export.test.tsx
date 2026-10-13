@@ -218,9 +218,9 @@ describe('thread export preparation', () => {
     expect(
       markdown.split('\n').filter((line) => line.startsWith('## ')),
     ).toEqual([
-      '## 01 · Casual · to speaker',
+      '## 01 · Casual · to Character',
       '## 02 · Casual',
-      '## 03 · Casual · as speaker',
+      '## 03 · Casual · as Character',
     ])
   })
 

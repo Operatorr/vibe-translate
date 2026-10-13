@@ -680,6 +680,75 @@ describe('translate credit ordering', () => {
     )
   })
 
+  // The overrides apply to this retry only: the requested perspective is
+  // recorded on the Segment, and no Character UPDATE runs. A zero temperature
+  // is a real override; omitting it falls back to the Character's 0.4.
+  it.each([
+    { requested: 0, expected: 0 },
+    { requested: 0.85, expected: 0.85 },
+    { requested: undefined, expected: 0.4 },
+  ])(
+    'retry re-translates at a requested perspective and temperature $requested',
+    async ({ requested, expected }) => {
+      answer = (sql, params) => {
+        if (sql.startsWith('select s.id, s.thread_id'))
+          return {
+            rows: [
+              {
+                ...segmentRow('old'),
+                vibe: 'friend',
+                perspective: 'to',
+                user_id: 'user_1',
+                source_language: 'en-US',
+                target_language: 'ja-JP',
+                temperature: '0.4',
+                persona: { traits: [] },
+                instructions: null,
+                default_vibe: 'casual',
+                default_perspective: 'to',
+              },
+            ],
+          }
+        if (sql.startsWith('with updated as'))
+          return {
+            rows: [
+              { ...segmentRow(), vibe: params[5], perspective: params[6] },
+            ],
+          }
+        return { rows: [] }
+      }
+      const res = await postJson(`/api/segments/${SEGMENT}/retry`, {
+        perspective: 'as',
+        ...(requested === undefined ? {} : { temperature: requested }),
+      })
+      expect(res.status).toBe(200)
+      expect(await res.json()).toMatchObject({
+        vibe: 'friend',
+        perspective: 'as',
+      })
+      const ai = await import('../_lib/ai')
+      expect(vi.mocked(ai.translateSegment)).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          vibe: 'friend',
+          perspective: 'as',
+          temperature: expected,
+        }),
+        expect.anything(),
+      )
+      expect(queries.some((q) => q.startsWith('update characters'))).toBe(false)
+    },
+  )
+
+  it.each([{ perspective: 'about' }, { temperature: 1.5 }])(
+    'retry rejects %o before any model call',
+    async (body) => {
+      const res = await postJson(`/api/segments/${SEGMENT}/retry`, body)
+      expect(res.status).toBe(400)
+      const ai = await import('../_lib/ai')
+      expect(vi.mocked(ai.translateSegment)).not.toHaveBeenCalled()
+    },
+  )
+
   it('retry rejects an unknown vibe stop before any model call', async () => {
     const res = await postJson(`/api/segments/${SEGMENT}/retry`, {
       vibe: 'shouty',

@@ -401,15 +401,26 @@ export function useRetrySegment() {
   const { json } = useApi()
   const qc = useQueryClient()
   return useScopedMutation({
-    // Omitting `vibe` re-samples at the Segment's stored stop.
+    // Omitting `vibe` / `perspective` re-samples at the Segment's recorded
+    // ones; omitting `temperature` uses the Character's. None of them change
+    // the Character.
     mutationFn: ({
       id,
       vibe,
+      perspective,
+      temperature,
     }: {
       id: string
       threadId: string
       vibe?: VibeStop
-    }) => json<Segment>(`/api/segments/${id}/retry`, 'POST', { vibe }),
+      perspective?: Perspective
+      temperature?: number
+    }) =>
+      json<Segment>(`/api/segments/${id}/retry`, 'POST', {
+        vibe,
+        perspective,
+        temperature,
+      }),
     // A GET that started before the retry would land afterwards with the old
     // target and overwrite the fresh one.
     onMutate: async ({ threadId }) => {

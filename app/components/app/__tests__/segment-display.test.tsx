@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import {
   cleanup,
+  fireEvent,
   render,
   screen,
   waitFor,
@@ -73,7 +74,13 @@ const nextPopstate = () =>
   })
 
 const overlayOpen = () =>
-  Boolean((window.history.state as Record<string, unknown> | null)?.vtOverlay)
+  Boolean(
+    (
+      (window.history.state as Record<string, unknown> | null)?.vtOverlays as
+        | unknown[]
+        | undefined
+    )?.length,
+  )
 
 async function openDisplay(props?: Parameters<typeof card>[0]) {
   const user = userEvent.setup()
@@ -147,7 +154,7 @@ describe('full-screen translation display and the Back button', () => {
     expect(window.history.length).toBe(lengthBefore + 1)
     expect(window.history.state).toEqual({
       ...SEEDED,
-      vtOverlay: expect.any(String),
+      vtOverlays: [expect.any(String)],
     })
 
     // Re-rendering the open card (fresh onClose) must not push again.
@@ -256,7 +263,10 @@ describe('segment retry and delete', () => {
     },
   ]
   const actions = () => ({ onRetry: vi.fn(), onDelete: vi.fn() })
-  const renderCard = (handlers: ReturnType<typeof actions>) =>
+  const renderCard = (
+    handlers: ReturnType<typeof actions>,
+    seg: { perspective?: 'as' | 'to' } = {},
+  ) =>
     render(
       <SegmentCard
         seg={{
@@ -266,6 +276,7 @@ describe('segment retry and delete', () => {
           vibe: 'casual',
           tokenAlignment: [],
           createdAt: '2026-10-09T00:00:00Z',
+          ...seg,
         }}
         idx={1}
         isActive
@@ -273,6 +284,8 @@ describe('segment retry and delete', () => {
         sourceLanguage="en-US"
         targetLanguage="ja-JP"
         vibes={VIBES}
+        defaultPerspective="to"
+        defaultTemperature={0.4}
         onExpand={vi.fn()}
         onCopy={vi.fn()}
         onSpeak={vi.fn()}
@@ -285,7 +298,9 @@ describe('segment retry and delete', () => {
     const handlers = actions()
     renderCard(handlers)
     await user.click(screen.getByRole('button', { name: /retry/i }))
-    const dialog = screen.getByRole('dialog', { name: 'Pick a vibe stop' })
+    const dialog = screen.getByRole('dialog', {
+      name: 'Retry translation settings',
+    })
     const slider = within(dialog).getByRole('slider', { name: 'Vibe' })
     expect(slider.getAttribute('aria-valuetext')).toBe('Casual')
     expect(document.activeElement).toBe(slider)
@@ -294,25 +309,178 @@ describe('segment retry and delete', () => {
     await user.click(within(dialog).getByRole('button', { name: /confirm/i }))
     expect(handlers.onRetry).toHaveBeenCalledWith(
       expect.objectContaining({ id: 's1' }),
-      'keigo',
+      { vibe: 'keigo', perspective: 'to', temperature: 0.4 },
     )
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
   })
 
-  it('confirms the stored stop unchanged, and Cancel retries nothing', async () => {
+  it('retries at the temperature and perspective picked in the dialog', async () => {
     const user = userEvent.setup()
     const handlers = actions()
     renderCard(handlers)
     const retry = screen.getByRole('button', { name: /retry/i })
     await user.click(retry)
+    const dialog = screen.getByRole('dialog', {
+      name: 'Retry translation settings',
+    })
+    const temp = within(dialog).getByRole<HTMLInputElement>('slider', {
+      name: 'Temperature',
+    })
+    expect(temp.value).toBe('0.4')
+    fireEvent.change(temp, { target: { value: '0.8' } })
+    expect(within(dialog).getByText('0.80')).toBeTruthy()
+    const as = within(dialog).getByRole<HTMLInputElement>('radio', {
+      name: 'As the Character',
+    })
+    expect(
+      within(dialog).getByRole<HTMLInputElement>('radio', {
+        name: 'To the Character',
+      }).checked,
+    ).toBe(true)
+    await user.click(as)
+    await user.click(within(dialog).getByRole('button', { name: /confirm/i }))
+    expect(handlers.onRetry).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 's1' }),
+      { vibe: 'casual', perspective: 'as', temperature: 0.8 },
+    )
+
+    // The next open starts over from the Segment and Character values.
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    await user.click(retry)
+    const reopened = screen.getByRole('dialog', {
+      name: 'Retry translation settings',
+    })
+    expect(
+      within(reopened).getByRole<HTMLInputElement>('slider', {
+        name: 'Temperature',
+      }).value,
+    ).toBe('0.4')
+    expect(
+      within(reopened).getByRole<HTMLInputElement>('radio', {
+        name: 'To the Character',
+      }).checked,
+    ).toBe(true)
+  })
+
+  it('opens at the recorded perspective over the Character default', async () => {
+    const user = userEvent.setup()
+    const handlers = actions()
+    renderCard(handlers, { perspective: 'as' })
+    await user.click(screen.getByRole('button', { name: /retry/i }))
+    const dialog = screen.getByRole('dialog', {
+      name: 'Retry translation settings',
+    })
+    expect(
+      within(dialog).getByRole<HTMLInputElement>('radio', {
+        name: 'As the Character',
+      }).checked,
+    ).toBe(true)
+    await user.click(within(dialog).getByRole('button', { name: /confirm/i }))
+    expect(handlers.onRetry).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 's1' }),
+      { vibe: 'casual', perspective: 'as', temperature: 0.4 },
+    )
+  })
+
+  it('confirms the stored stop unchanged, and Cancel discards edits', async () => {
+    const user = userEvent.setup()
+    const handlers = actions()
+    renderCard(handlers)
+    const retry = screen.getByRole('button', { name: /retry/i })
+    await user.click(retry)
+    const dialog = screen.getByRole('dialog', {
+      name: 'Retry translation settings',
+    })
+    fireEvent.change(
+      within(dialog).getByRole('slider', { name: 'Temperature' }),
+      { target: { value: '0.9' } },
+    )
+    await user.click(
+      within(dialog).getByRole('radio', { name: 'As the Character' }),
+    )
     await user.click(screen.getByRole('button', { name: 'Cancel' }))
     expect(handlers.onRetry).not.toHaveBeenCalled()
     await user.click(retry)
+    const reopened = screen.getByRole('dialog', {
+      name: 'Retry translation settings',
+    })
+    expect(
+      within(reopened).getByRole<HTMLInputElement>('slider', {
+        name: 'Temperature',
+      }).value,
+    ).toBe('0.4')
+    expect(
+      within(reopened).getByRole<HTMLInputElement>('radio', {
+        name: 'To the Character',
+      }).checked,
+    ).toBe(true)
     await user.click(screen.getByRole('button', { name: /confirm/i }))
     expect(handlers.onRetry).toHaveBeenCalledWith(
       expect.objectContaining({ id: 's1' }),
-      'casual',
+      { vibe: 'casual', perspective: 'to', temperature: 0.4 },
     )
+  })
+
+  it('opens perspective help above Retry, and Back closes only the help', async () => {
+    const user = userEvent.setup()
+    const handlers = actions()
+    renderCard(handlers)
+    await user.click(screen.getByRole('button', { name: /retry/i }))
+    const dialog = screen.getByRole('dialog', {
+      name: 'Retry translation settings',
+    })
+    await user.click(
+      within(dialog).getByRole('radio', { name: 'As the Character' }),
+    )
+    const helpTrigger = within(dialog).getByRole('button', {
+      name: 'About perspective',
+    })
+    await user.click(helpTrigger)
+    const help = screen.getByRole('dialog', { name: 'Perspective' })
+    // Layered above Retry's 250/251 (app.css).
+    expect(help.classList.contains('cust-help--nested')).toBe(true)
+    expect(document.querySelector('.cust-help__overlay--nested')).not.toBeNull()
+
+    const popped = nextPopstate()
+    window.history.back()
+    await popped
+    await waitFor(() =>
+      expect(screen.queryByRole('dialog', { name: 'Perspective' })).toBeNull(),
+    )
+    const still = screen.getByRole('dialog', {
+      name: 'Retry translation settings',
+    })
+    expect(
+      within(still).getByRole<HTMLInputElement>('radio', {
+        name: 'As the Character',
+      }).checked,
+    ).toBe(true)
+    await waitFor(() => expect(document.activeElement).toBe(helpTrigger))
+
+    // The next Back closes Retry itself.
+    const poppedRetry = nextPopstate()
+    window.history.back()
+    await poppedRetry
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    expect(window.history.state).toEqual(SEEDED)
+    expect(handlers.onRetry).not.toHaveBeenCalled()
+  })
+
+  it('closing perspective help explicitly keeps Retry open', async () => {
+    const user = userEvent.setup()
+    renderCard(actions())
+    await user.click(screen.getByRole('button', { name: /retry/i }))
+    await user.click(screen.getByRole('button', { name: 'About perspective' }))
+    const popped = nextPopstate()
+    await user.click(screen.getByRole('button', { name: 'Got it' }))
+    await popped
+    expect(screen.queryByRole('dialog', { name: 'Perspective' })).toBeNull()
+    expect(
+      screen.getByRole('dialog', { name: 'Retry translation settings' }),
+    ).toBeTruthy()
+    expect(
+      (window.history.state as { vtOverlays?: unknown[] }).vtOverlays,
+    ).toHaveLength(1)
   })
 
   it('deletes the Segment from the number menu', async () => {
