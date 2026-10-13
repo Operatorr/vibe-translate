@@ -207,8 +207,11 @@ export function SegmentCard({
           </div>
         ) : (
           <div className="segment__src">
-            <div style={eyebrow}>SOURCE · {sourceLanguage}</div>
-            <div className="segment__src-text" onPointerLeave={clearHover}>
+            <div
+              className="segment__src-text"
+              lang={sourceLanguage}
+              onPointerLeave={clearHover}
+            >
               {seg.sourceText.split(/(\s+)/).map((w, i) => {
                 if (!w.trim()) return w
                 const word = normalizeWord(w)
@@ -244,8 +247,7 @@ export function SegmentCard({
             }}
           >
             <div style={eyebrow}>
-              TARGET · {targetLanguage}
-              <span style={{ color: vibe?.color, marginLeft: 8 }}>
+              <span style={{ color: vibe?.color }}>
                 {vibe?.label ?? 'Vibe not recorded'}
                 {perspective && ` · ${perspective}`}
               </span>
@@ -276,6 +278,9 @@ export function SegmentCard({
               <TranslationDisplay
                 text={seg.targetText}
                 language={targetLanguage}
+                reading={reading}
+                onSpeak={() => onSpeak(seg)}
+                speaking={speaking}
               />
               <button
                 type="button"
@@ -298,52 +303,8 @@ export function SegmentCard({
                   onConfirm={(choice) => onRetry(seg, choice)}
                 />
               )}
-              <button
-                type="button"
-                className={
-                  'segment__action segment__action--icon ' +
-                  (speaking ? 'is-open' : '')
-                }
-                onClick={() => onSpeak(seg)}
-                title={speaking ? 'Stop' : 'Read aloud'}
-                aria-label={speaking ? 'Stop' : 'Read aloud'}
-              >
-                <Icon name={speaking ? 'square' : 'volume-2'} />
-              </button>
-              {reading.script && (
-                <>
-                  <button
-                    type="button"
-                    className={
-                      'segment__action segment__action--icon ' +
-                      (reading.on ? 'is-open' : '')
-                    }
-                    onClick={reading.toggle}
-                    title={`${reading.on ? 'Hide' : 'Show'} ${reading.label}`}
-                    aria-label={reading.label}
-                    aria-pressed={reading.on}
-                    aria-busy={reading.loading}
-                  >
-                    {reading.loading ? (
-                      <Icon name="loader" className="vt-spin" />
-                    ) : (
-                      <span
-                        className="segment__action-glyph"
-                        aria-hidden="true"
-                      >
-                        {reading.script === 'kana' ? 'あ' : 'ā'}
-                      </span>
-                    )}
-                  </button>
-                  <span className="sr-only" role="status">
-                    {reading.loading
-                      ? `Loading ${reading.label}…`
-                      : reading.parts
-                        ? `${reading.label} shown`
-                        : ''}
-                  </span>
-                </>
-              )}
+              <SpeakButton onSpeak={() => onSpeak(seg)} speaking={speaking} />
+              <ReadingButton reading={reading} />
               {!readOnly && explain && (
                 <button
                   type="button"
@@ -422,6 +383,67 @@ function useReadings(tokens: SegmentToken[], language: string) {
     loading: active && !parts,
     toggle: () => setOn((curr) => !curr),
   }
+}
+
+function SpeakButton({
+  onSpeak,
+  speaking,
+}: {
+  onSpeak: () => void
+  speaking?: boolean
+}) {
+  return (
+    <button
+      type="button"
+      className={
+        'segment__action segment__action--icon ' + (speaking ? 'is-open' : '')
+      }
+      onClick={onSpeak}
+      title={speaking ? 'Stop' : 'Read aloud'}
+      aria-label={speaking ? 'Stop' : 'Read aloud'}
+    >
+      <Icon name={speaking ? 'square' : 'volume-2'} />
+    </button>
+  )
+}
+
+function ReadingButton({
+  reading,
+}: {
+  reading: ReturnType<typeof useReadings>
+}) {
+  if (!reading.script) return null
+  return (
+    <>
+      <button
+        type="button"
+        className={
+          'segment__action segment__action--icon ' +
+          (reading.on ? 'is-open' : '')
+        }
+        onClick={reading.toggle}
+        title={`${reading.on ? 'Hide' : 'Show'} ${reading.label}`}
+        aria-label={reading.label}
+        aria-pressed={reading.on}
+        aria-busy={reading.loading}
+      >
+        {reading.loading ? (
+          <Icon name="loader" className="vt-spin" />
+        ) : (
+          <span className="segment__action-glyph" aria-hidden="true">
+            {reading.script === 'kana' ? 'あ' : 'ā'}
+          </span>
+        )}
+      </button>
+      <span className="sr-only" role="status">
+        {reading.loading
+          ? `Loading ${reading.label}…`
+          : reading.parts
+            ? `${reading.label} shown`
+            : ''}
+      </span>
+    </>
+  )
 }
 
 function Ruby({ parts }: { parts: RubyPart[] }) {
@@ -610,9 +632,15 @@ function RetryDialog({
 function TranslationDisplay({
   text,
   language,
+  reading,
+  onSpeak,
+  speaking,
 }: {
   text: string
   language: string
+  reading: ReturnType<typeof useReadings>
+  onSpeak: () => void
+  speaking?: boolean
 }) {
   const [open, setOpen] = React.useState(false)
   useBackButtonClose(open, () => setOpen(false))
@@ -635,18 +663,30 @@ function TranslationDisplay({
           aria-describedby={undefined}
         >
           <Dialog.Title className="sr-only">Translation display</Dialog.Title>
-          <Dialog.Close asChild>
-            <button
-              type="button"
-              className="translation-display__close"
-              title="Close translation display"
-              aria-label="Close translation display"
-            >
-              <Icon name="x" />
-            </button>
-          </Dialog.Close>
-          <div className="translation-display__text" lang={language}>
-            {text}
+          <div className="translation-display__controls">
+            <ReadingButton reading={reading} />
+            <SpeakButton onSpeak={onSpeak} speaking={speaking} />
+            <Dialog.Close asChild>
+              <button
+                type="button"
+                className="translation-display__close"
+                title="Close translation display"
+                aria-label="Close translation display"
+              >
+                <Icon name="x" />
+              </button>
+            </Dialog.Close>
+          </div>
+          <div
+            className={
+              'translation-display__text ' +
+              (reading.parts ? 'translation-display__text--reading' : '')
+            }
+            lang={language}
+          >
+            {reading.parts
+              ? reading.parts.map((parts, i) => <Ruby key={i} parts={parts} />)
+              : text}
           </div>
         </Dialog.Content>
       </Dialog.Portal>
@@ -660,7 +700,6 @@ export function PendingSegmentCard({
   idx,
   sourceText,
   sourceLanguage,
-  targetLanguage,
   vibe,
   perspective,
 }: {
@@ -677,15 +716,15 @@ export function PendingSegmentCard({
       <div className="segment__row">
         <div className="segment__num">{String(idx).padStart(2, '0')}</div>
         <div className="segment__src">
-          <div style={eyebrow}>SOURCE · {sourceLanguage}</div>
-          <div className="segment__src-text">{sourceText}</div>
+          <div className="segment__src-text" lang={sourceLanguage}>
+            {sourceText}
+          </div>
         </div>
         <div className="segment__divider"></div>
         <div className="segment__tgt">
           <div style={eyebrow}>
-            TARGET · {targetLanguage}
             {vibe && (
-              <span style={{ color: vibe.color, marginLeft: 8 }}>
+              <span style={{ color: vibe.color }}>
                 {vibe.label}
                 {tag && ` · ${tag}`}
               </span>

@@ -32,7 +32,9 @@ const TARGET = 'こんばんは、また明日'
 // What AppExperience's pane stack and TanStack Router keep in history.state.
 const SEEDED = { vtPane: 'workspace', vtStack: 1, __TSR_index: 3 }
 
-const card = (props: { readOnly?: boolean; speaking?: boolean } = {}) => (
+const card = (
+  props: { readOnly?: boolean; speaking?: boolean; onSpeak?: () => void } = {},
+) => (
   <SegmentCard
     seg={{
       id: 's1',
@@ -112,6 +114,49 @@ afterEach(async () => {
 })
 
 describe('full-screen translation display', () => {
+  it('toggles Kana in the modal and keeps the card in sync on close', async () => {
+    readings.load.mockResolvedValueOnce([
+      [{ base: 'こんばんは、' }],
+      [{ base: 'また' }, { base: '明日', rt: 'あした' }],
+    ])
+    const { user, display } = await openDisplay()
+    const toggle = within(display).getByRole('button', { name: 'Kana' })
+    await user.click(toggle)
+    await waitFor(() =>
+      expect(display.querySelector('rt')?.textContent).toBe('あした'),
+    )
+    expect(toggle.getAttribute('aria-pressed')).toBe('true')
+    const popped = nextPopstate()
+    await user.click(
+      within(display).getByRole('button', {
+        name: 'Close translation display',
+      }),
+    )
+    await popped
+    expect(
+      screen.getByRole('button', { name: 'Kana' }).getAttribute('aria-pressed'),
+    ).toBe('true')
+    expect(document.querySelector('.segment__tgt-text rt')?.textContent).toBe(
+      'あした',
+    )
+  })
+
+  it('uses the segment speaker callback and playback state in the modal', async () => {
+    const onSpeak = vi.fn()
+    const { user, view, display } = await openDisplay({ onSpeak })
+    await user.click(
+      within(display).getByRole('button', { name: 'Read aloud' }),
+    )
+    expect(onSpeak).toHaveBeenCalledTimes(1)
+    view.rerender(card({ onSpeak, speaking: true }))
+    await user.click(within(display).getByRole('button', { name: 'Stop' }))
+    expect(onSpeak).toHaveBeenCalledTimes(2)
+    const buttons = [...display.querySelectorAll('button')].map((button) =>
+      button.getAttribute('aria-label'),
+    )
+    expect(buttons).toEqual(['Kana', 'Stop', 'Close translation display'])
+  })
+
   it('shows only the exact target text, marked with the target language', async () => {
     const { display } = await openDisplay()
     const text = within(display).getByText(TARGET)

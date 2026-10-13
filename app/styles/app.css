@@ -3049,7 +3049,8 @@ body,
 .segment__tgt-text--reading ruby {
   margin: 0 0.08em;
 }
-.segment__tgt-text rt {
+.segment__tgt-text rt,
+.translation-display__text rt {
   font: 400 0.55em/1 var(--font-sans);
   letter-spacing: 0;
   color: var(--fg-muted);
@@ -5443,10 +5444,24 @@ body,
     calc(40px + env(safe-area-inset-bottom))
     calc(24px + env(safe-area-inset-left));
 }
-.translation-display__close {
+.translation-display__controls {
   position: fixed;
   top: calc(12px + env(safe-area-inset-top));
   right: calc(12px + env(safe-area-inset-right));
+  display: flex;
+  gap: 8px;
+}
+.translation-display__controls > button {
+  width: 48px;
+  height: 48px;
+  justify-content: center;
+}
+.translation-display__controls .segment__action-glyph {
+  font-size: 22px;
+  line-height: 1;
+  width: auto;
+}
+.translation-display__close {
   display: grid;
   place-items: center;
   width: 48px;
@@ -5463,6 +5478,12 @@ body,
   text-align: center;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+}
+.translation-display__text--reading {
+  line-height: 2.3;
+}
+.translation-display__text--reading ruby {
+  margin: 0 0.08em;
 }
 @media (prefers-reduced-motion: reduce) {
   .composer__settings-drawer {
