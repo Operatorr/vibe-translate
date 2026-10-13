@@ -215,3 +215,83 @@ describe('full-screen translation display and the Back button', () => {
     }
   })
 })
+
+describe('segment retry and delete', () => {
+  const VIBES = [
+    { id: 'friend', label: 'Friend', hint: 'tomodachi', color: '#0f0' },
+    { id: 'casual', label: 'Casual', hint: 'teineigo', color: '#00f' },
+    { id: 'keigo', label: 'Keigo', hint: 'honorific', color: '#f00' },
+  ]
+  const actions = () => ({ onRetry: vi.fn(), onDelete: vi.fn() })
+  const renderCard = (handlers: ReturnType<typeof actions>) =>
+    render(
+      <SegmentCard
+        seg={{
+          id: 's1',
+          sourceText: SOURCE,
+          targetText: TARGET,
+          vibe: 'casual',
+          tokenAlignment: [],
+          createdAt: '2026-10-09T00:00:00Z',
+        }}
+        idx={1}
+        isActive
+        collapsed={false}
+        sourceLanguage="en-US"
+        targetLanguage="ja-JP"
+        vibes={VIBES}
+        onExpand={vi.fn()}
+        onCopy={vi.fn()}
+        onSpeak={vi.fn()}
+        {...handlers}
+      />,
+    )
+
+  it('opens Retry at the stored stop and re-translates at the picked one', async () => {
+    const user = userEvent.setup()
+    const handlers = actions()
+    renderCard(handlers)
+    await user.click(screen.getByRole('button', { name: /retry/i }))
+    const dialog = screen.getByRole('dialog', { name: 'Pick a vibe stop' })
+    const slider = within(dialog).getByRole('slider', { name: 'Vibe' })
+    expect(slider.getAttribute('aria-valuetext')).toBe('Casual')
+    expect(document.activeElement).toBe(slider)
+    await user.keyboard('{ArrowRight}')
+    expect(slider.getAttribute('aria-valuetext')).toBe('Keigo')
+    await user.click(within(dialog).getByRole('button', { name: /confirm/i }))
+    expect(handlers.onRetry).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 's1' }),
+      'keigo',
+    )
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+  })
+
+  it('confirms the stored stop unchanged, and Cancel retries nothing', async () => {
+    const user = userEvent.setup()
+    const handlers = actions()
+    renderCard(handlers)
+    const retry = screen.getByRole('button', { name: /retry/i })
+    await user.click(retry)
+    await user.click(screen.getByRole('button', { name: 'Cancel' }))
+    expect(handlers.onRetry).not.toHaveBeenCalled()
+    await user.click(retry)
+    await user.click(screen.getByRole('button', { name: /confirm/i }))
+    expect(handlers.onRetry).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 's1' }),
+      'casual',
+    )
+  })
+
+  it('deletes the Segment from the number menu', async () => {
+    const user = userEvent.setup()
+    const handlers = actions()
+    renderCard(handlers)
+    await user.click(screen.getByRole('button', { name: 'Segment 01 options' }))
+    await user.click(
+      await screen.findByRole('menuitem', { name: /delete segment/i }),
+    )
+    expect(handlers.onDelete).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 's1' }),
+    )
+  })
+})

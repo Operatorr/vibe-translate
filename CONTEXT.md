@@ -51,7 +51,7 @@ A read-only public URL (`/share/<token>`) for one **Thread**. The token is the c
 _Avoid_: public thread, export link (export is the Markdown download)
 
 **Retry**:
-Re-running the translation of an existing **Segment** at its stored **Vibe stop**, replacing the target in place. A fresh sample, not a new Segment — it skips dedupe and the **Translation cache**.
+Re-running the translation of an existing **Segment**, replacing the target in place. The user confirms a **Vibe stop** first: the stored one (a fresh sample) or a different one (the same row re-translated in another **Register**). Not a new Segment — it skips dedupe and the **Translation cache**.
 _Avoid_: regenerate, re-translate (in code)
 
 **Segment**:
@@ -133,7 +133,8 @@ _Avoid_: vibe (use **Vibe stop** when referring to the slider value), speaker, v
 
 - A **User** owns many **Characters**; a **Character** owns many **Threads**; a **Thread** holds many **Segments**.
 - A **Character** pins one source language, one target language, a default **Vibe**, a **Temperature**, and a **Persona**. A **Thread** inherits these but a **Segment** can override the **Vibe**.
-- A **Segment** is produced at exactly one **Vibe stop**; the same source text at a different stop is a new **Segment**.
+- A **Segment** is produced at exactly one **Vibe stop**. Sending the same source text at a different stop creates a new **Segment**; a **Retry** at a different stop rewrites that Segment's target and stop in place.
+- A **Segment** can be deleted on its own; the **Thread** and its other Segments stay.
 - A **Target segment** can be played back through any configured **Voice persona** and expanded into an **Explain** view.
 - A **Tier** gates which **Voice personas**, retention windows, custom **Vibe stops**, and AI features are available.
 
@@ -143,7 +144,7 @@ _Avoid_: vibe (use **Vibe stop** when referring to the slider value), speaker, v
 ## Example dialogue
 
 > **Dev:** "When a user moves the **Vibe** slider on a **Segment**, do we re-fetch or re-render?"
-> **Domain expert:** "Re-fetch. Changing the **Register** rewrites word choice, particles, and verb endings — it's a new **Segment**, not a styling tweak. The old one stays in history."
+> **Domain expert:** "Re-fetch. Changing the **Register** rewrites word choice, particles, and verb endings — it's a new translation, not a styling tweak. From the composer it's a new **Segment** and the old one stays in history; from **Retry** it replaces that Segment's target."
 
 > **Dev:** "Is the **Vibe** picked per-Character or per-Segment?"
 > **Domain expert:** "Per-Character is the default; per-Segment can override. The learner messages Oba-chan in casual but might draft one segment in keigo when she's mad at them."

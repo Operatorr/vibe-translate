@@ -25,6 +25,7 @@ import {
 import { scopedMutation } from '@/lib/scoped-mutation'
 import {
   historySegments,
+  removeHistory,
   replaceHistory,
   type SegmentCursor,
   type SegmentHistory,
@@ -331,8 +332,15 @@ export function useRetrySegment() {
   const { json } = useApi()
   const qc = useQueryClient()
   return useScopedMutation({
-    mutationFn: ({ id }: { id: string; threadId: string }) =>
-      json<Segment>(`/api/segments/${id}/retry`, 'POST'),
+    // Omitting `vibe` re-samples at the Segment's stored stop.
+    mutationFn: ({
+      id,
+      vibe,
+    }: {
+      id: string
+      threadId: string
+      vibe?: VibeStop
+    }) => json<Segment>(`/api/segments/${id}/retry`, 'POST', { vibe }),
     // A GET that started before the retry would land afterwards with the old
     // target and overwrite the fresh one.
     onMutate: async ({ threadId }) => {
@@ -351,6 +359,43 @@ export function useRetrySegment() {
       }
       qc.removeQueries({ queryKey: keys.explain(updated.id) })
       void qc.invalidateQueries({ queryKey: keys.me })
+    },
+  })
+}
+
+export function useDeleteSegment() {
+  const { json } = useApi()
+  const qc = useQueryClient()
+  return useScopedMutation({
+    mutationFn: ({
+      id,
+    }: {
+      id: string
+      threadId: string
+      characterId: string
+    }) => json<{ ok: true }>(`/api/segments/${id}`, 'DELETE'),
+    // A GET that started before the delete would land afterwards with the row.
+    onMutate: async ({ threadId }) => {
+      await qc.cancelQueries({ queryKey: keys.segments(threadId) })
+    },
+    onSuccess: async (_res, { id, threadId, characterId }) => {
+      const key = keys.segments(threadId)
+      if (!(await cancelOwnedQueries(qc, key))) return
+      if (qc.getQueryData<SegmentHistory>(key)) {
+        qc.setQueryData<SegmentHistory>(key, (history) =>
+          removeHistory(history, id),
+        )
+      } else {
+        void qc.invalidateQueries({ queryKey: key })
+      }
+      qc.removeQueries({ queryKey: keys.explain(id) })
+      qc.setQueryData<Thread[]>(keys.threads(characterId), (list) =>
+        list?.map((t) =>
+          t.id === threadId
+            ? { ...t, segmentCount: Math.max(0, t.segmentCount - 1) }
+            : t,
+        ),
+      )
     },
   })
 }

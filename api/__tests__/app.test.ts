@@ -492,6 +492,49 @@ describe('translate credit ordering', () => {
     },
   )
 
+  it('retry re-translates at a requested vibe stop', async () => {
+    answer = (sql, params) => {
+      if (sql.startsWith('select s.id, s.thread_id'))
+        return {
+          rows: [
+            {
+              ...segmentRow('old'),
+              vibe: 'friend',
+              user_id: 'user_1',
+              source_language: 'en-US',
+              target_language: 'ja-JP',
+              temperature: '0.4',
+              persona: { traits: [] },
+              instructions: null,
+              default_vibe: 'casual',
+            },
+          ],
+        }
+      if (sql.startsWith('with updated as'))
+        return { rows: [{ ...segmentRow(), vibe: params[5] }] }
+      return { rows: [] }
+    }
+    const res = await postJson(`/api/segments/${SEGMENT}/retry`, {
+      vibe: 'emperor',
+    })
+    expect(res.status).toBe(200)
+    expect(await res.json()).toMatchObject({ vibe: 'emperor' })
+    const ai = await import('../_lib/ai')
+    expect(vi.mocked(ai.translateSegment)).toHaveBeenLastCalledWith(
+      expect.objectContaining({ vibe: 'emperor' }),
+      expect.anything(),
+    )
+  })
+
+  it('retry rejects an unknown vibe stop before any model call', async () => {
+    const res = await postJson(`/api/segments/${SEGMENT}/retry`, {
+      vibe: 'shouty',
+    })
+    expect(res.status).toBe(400)
+    const ai = await import('../_lib/ai')
+    expect(vi.mocked(ai.translateSegment)).not.toHaveBeenCalled()
+  })
+
   it('logs and does not swallow a failed refund', async () => {
     const ai = await import('../_lib/ai')
     vi.mocked(ai.translateSegment).mockRejectedValueOnce(

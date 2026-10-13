@@ -140,6 +140,12 @@ export const segmentCreateSchema = z.object({
   vibe: vibeStopSchema.optional(),
 })
 
+// Retry re-translates in place. Omitting `vibe` keeps the Segment's stored
+// stop (or characters.default_vibe for a legacy null row).
+export const segmentRetrySchema = z.object({
+  vibe: vibeStopSchema.optional(),
+})
+
 // PATCH allows manual edits to history (a learner tweaking a stored
 // translation). The server still re-validates structure and bounds.
 export const segmentUpdateSchema = z

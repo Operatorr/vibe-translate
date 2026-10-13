@@ -43,6 +43,7 @@ import {
   onboardingDictateSchema,
   segmentCreateSchema,
   segmentPageSchema,
+  segmentRetrySchema,
   segmentUpdateSchema,
   textToSpeechSchema,
   threadCreateSchema,
@@ -1171,20 +1172,24 @@ app.post('/api/segments', zValidator('json', segmentCreateSchema), (c) => {
 })
 
 // Retry: re-run the translation for an existing Segment and overwrite its
-// target in place. Deliberately bypasses the in-thread dedupe and the shared
-// cache — the whole point is a fresh sample — and never seeds the cache. The
-// row keeps its id so open Explain panels/links stay valid; stale `explains`
+// target in place, optionally at a different Vibe stop. Deliberately bypasses
+// the in-thread dedupe and the shared cache — the whole point is a fresh
+// sample — and never seeds the cache. The row keeps its id so open Explain panels/links stay valid; stale `explains`
 // rows for the old target are dropped (they were keyed by the old text).
-app.post('/api/segments/:segmentId/retry', (c) => {
-  const userId = c.get('userId')
-  const segmentId = uuidParam(c.req.param('segmentId'), 'Segment')
-  return withDb(c.env, async (db) => {
-    await getOrCreateUser(db, userId, c.get('email'))
-    const segRes = await db.query<
-      SegmentDbRow &
-        TranslateCharacterRow & { user_id: string; default_vibe: VibeStop }
-    >(
-      `select s.id, s.thread_id, s.source_text, s.target_text, s.vibe, s.token_alignment,
+app.post(
+  '/api/segments/:segmentId/retry',
+  zValidator('json', segmentRetrySchema),
+  (c) => {
+    const userId = c.get('userId')
+    const segmentId = uuidParam(c.req.param('segmentId'), 'Segment')
+    const { vibe: requestedVibe } = c.req.valid('json')
+    return withDb(c.env, async (db) => {
+      await getOrCreateUser(db, userId, c.get('email'))
+      const segRes = await db.query<
+        SegmentDbRow &
+          TranslateCharacterRow & { user_id: string; default_vibe: VibeStop }
+      >(
+        `select s.id, s.thread_id, s.source_text, s.target_text, s.vibe, s.token_alignment,
               s.token_usage, s.created_at, s.updated_at, s.user_id,
               c.source_language, c.target_language, c.temperature, c.persona,
               c.instructions, c.default_vibe
@@ -1192,27 +1197,27 @@ app.post('/api/segments/:segmentId/retry', (c) => {
          join threads t on t.id = s.thread_id
          join characters c on c.id = t.character_id
         where s.id = $1`,
-      [segmentId],
-    )
-    const seg = segRes.rows[0]
-    if (!seg) throw new HTTPException(404, { message: 'Segment not found' })
-    assertUserOwnsResource(seg.user_id, userId)
+        [segmentId],
+      )
+      const seg = segRes.rows[0]
+      if (!seg) throw new HTTPException(404, { message: 'Segment not found' })
+      assertUserOwnsResource(seg.user_id, userId)
 
-    const vibe: VibeStop = seg.vibe ?? seg.default_vibe
-    const { result, target, settle, refund } = await translateWithCredits(
-      db,
-      c.env,
-      userId,
-      seg,
-      seg.source_text,
-      vibe,
-    )
-    let updated: SegmentDbRow | undefined
-    try {
-      // One owner-scoped statement overwrites the target and drops the Explains
-      // keyed by the old text. Zero rows = the Segment was deleted mid-flight.
-      const res = await db.query<SegmentDbRow>(
-        `with updated as (
+      const vibe: VibeStop = requestedVibe ?? seg.vibe ?? seg.default_vibe
+      const { result, target, settle, refund } = await translateWithCredits(
+        db,
+        c.env,
+        userId,
+        seg,
+        seg.source_text,
+        vibe,
+      )
+      let updated: SegmentDbRow | undefined
+      try {
+        // One owner-scoped statement overwrites the target and drops the Explains
+        // keyed by the old text. Zero rows = the Segment was deleted mid-flight.
+        const res = await db.query<SegmentDbRow>(
+          `with updated as (
            update segments
               set target_text = $2, token_alignment = $3, token_usage = $4, vibe = $6, updated_at = now()
             where id = $1 and user_id = $5
@@ -1221,44 +1226,45 @@ app.post('/api/segments/:segmentId/retry', (c) => {
            delete from explains where segment_id in (select id from updated)
          )
          select * from updated`,
-        [
-          segmentId,
-          result.targetText,
-          JSON.stringify(result.tokenAlignment),
-          JSON.stringify(result.tokenUsage),
-          userId,
-          vibe,
-        ],
-      )
-      updated = res.rows[0]
-    } catch (error) {
-      await refund().catch(() => undefined)
-      throw error
-    }
-    if (!updated) {
-      await refund().catch(() => undefined)
-      throw new HTTPException(404, { message: 'Segment not found' })
-    }
+          [
+            segmentId,
+            result.targetText,
+            JSON.stringify(result.tokenAlignment),
+            JSON.stringify(result.tokenUsage),
+            userId,
+            vibe,
+          ],
+        )
+        updated = res.rows[0]
+      } catch (error) {
+        await refund().catch(() => undefined)
+        throw error
+      }
+      if (!updated) {
+        await refund().catch(() => undefined)
+        throw new HTTPException(404, { message: 'Segment not found' })
+      }
 
-    // Stored → charge. Nothing after this point refunds.
-    await settle(segmentId)
-    await bestEffort(
-      'thread recency bump failed',
-      db.query(`update threads set updated_at = now() where id = $1`, [
-        seg.thread_id,
-      ]),
-    )
-    await bestEffort(
-      'segment activity log failed',
-      logActivity(db, userId, 'segment.retried', {
-        threadId: seg.thread_id,
-        vibe,
-        byok: target.isByok,
-      }),
-    )
-    return c.json(mapSegment(updated))
-  })
-})
+      // Stored → charge. Nothing after this point refunds.
+      await settle(segmentId)
+      await bestEffort(
+        'thread recency bump failed',
+        db.query(`update threads set updated_at = now() where id = $1`, [
+          seg.thread_id,
+        ]),
+      )
+      await bestEffort(
+        'segment activity log failed',
+        logActivity(db, userId, 'segment.retried', {
+          threadId: seg.thread_id,
+          vibe,
+          byok: target.isByok,
+        }),
+      )
+      return c.json(mapSegment(updated))
+    })
+  },
+)
 
 // Manual edit to stored history (a learner tweaking a past translation).
 app.patch(

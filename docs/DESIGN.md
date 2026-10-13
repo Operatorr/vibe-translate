@@ -36,6 +36,8 @@ The color is consistent across all languages; only the **labels** localize (`kei
 - **Commit-to-translate**, not translate-on-move: sliding previews the selection but does not fire a translation on every stop. The user commits one stop → one translation runs. This is a deliberate cost guard (see [PRODUCT.md](./PRODUCT.md#the-wedge) and [adr/0004](./adr/0004-shared-canonical-translation-cache.md)).
 - **Generated vs. ungenerated stops are visually distinct.** A stop already translated for this source text shows as a **filled dot** (tapping it is instant + free — served from history or the shared cache). An ungenerated stop shows as a **hollow dot** with a subtle "1 translation" cost hint; committing it spends credits (unless BYOK).
 
+- **Retry reuses the slider.** RETRY on a Segment opens a small dialog with the same slider, starting at the stop the Segment was translated at. Confirm unchanged for a fresh take, or move it first to re-translate that Segment in another register. Same commit-to-translate rule: one Confirm, one translation, replacing the card's target in place.
+
 ### Hover-to-align
 
 - Hovering a word on the **source** or **target** side highlights its counterpart on the other side, using the per-token `token_alignment` map (`{ t, src }` pairs).

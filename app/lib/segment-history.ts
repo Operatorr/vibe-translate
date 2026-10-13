@@ -81,6 +81,23 @@ export function replaceHistory(
   }
 }
 
+// Drop a deleted row. Pages keep their cursors (a cursor names a position,
+// not a live row), and pages without the row keep their identity.
+export function removeHistory(
+  history: SegmentHistory | undefined,
+  id: string,
+): SegmentHistory | undefined {
+  if (!history?.pages.some((page) => hasSegment(page, id))) return history
+  return {
+    ...history,
+    pages: history.pages.map((page) =>
+      hasSegment(page, id)
+        ? { ...page, segments: page.segments.filter((s) => s.id !== id) }
+        : page,
+    ),
+  }
+}
+
 function hasSegment(page: SegmentPage, id: string) {
   return page.segments.some((s) => s.id === id)
 }

@@ -20,6 +20,7 @@ import {
   useCharacters,
   useCreateCharacter,
   useCreateSegment,
+  useDeleteSegment,
   useCreateThread,
   useDeleteCharacter,
   useDeleteThread,
@@ -194,6 +195,7 @@ export function AppExperience() {
   const deleteThread = useDeleteThread()
   const createSegment = useCreateSegment()
   const retrySegment = useRetrySegment()
+  const deleteSegment = useDeleteSegment()
   const updateMe = useUpdateMe()
   const [shareOpen, setShareOpen] = useShareOpen(thread?.id ?? null)
   const share = useThreadShare(thread?.id ?? null, shareOpen)
@@ -481,10 +483,10 @@ export function AppExperience() {
     }
   }
 
-  const retry = (seg: SegmentView) => {
+  const retry = (seg: SegmentView, vibe: VibeStop) => {
     if (!thread) return
     retrySegment.mutate(
-      { id: seg.id, threadId: thread.id },
+      { id: seg.id, threadId: thread.id, vibe },
       {
         onSuccess: () => {
           if (explainOpenId === seg.id) setExplainOpenId(null)
@@ -494,6 +496,25 @@ export function AppExperience() {
           if (!(error instanceof ApiError && error.status === 402))
             toast.error(errorMessage(error, 'Retry failed.'))
         },
+      },
+    )
+  }
+
+  const removeSegment = (seg: SegmentView) => {
+    if (!thread || !char) return
+    if (!window.confirm('Delete this translation from the thread?')) return
+    deleteSegment.mutate(
+      { id: seg.id, threadId: thread.id, characterId: char.id },
+      {
+        onSuccess: () => {
+          if (explainOpenId === seg.id) setExplainOpenId(null)
+          if (speakingId === seg.id) {
+            stopSpeaking()
+            setSpeakingId(null)
+          }
+          toast.success('Translation deleted.')
+        },
+        onError: (error) => toast.error(errorMessage(error, 'Delete failed.')),
       },
     )
   }
@@ -756,6 +777,9 @@ export function AppExperience() {
   const pendingSend = pendingSends.get(composerContext)
   const pendingHere = !!pendingSend
   const retryingId = retrySegment.isPending ? retrySegment.variables?.id : null
+  const deletingId = deleteSegment.isPending
+    ? deleteSegment.variables?.id
+    : null
   const credits = me.data?.credits.balance
   const tier = me.data?.tier ?? 'free'
   // Character reads wait for bootstrap, and a disabled query isn't isLoading.
@@ -1160,6 +1184,7 @@ export function AppExperience() {
                     sourceLanguage={char.sourceLanguage}
                     targetLanguage={char.targetLanguage}
                     vibes={vibes}
+                    defaultVibe={char.defaultVibe}
                     onExpand={(id) =>
                       setExpanded((prev) => new Set(prev).add(id))
                     }
@@ -1178,6 +1203,8 @@ export function AppExperience() {
                     onCopy={(seg) => void copySegment(seg)}
                     onRetry={retry}
                     retrying={retryingId === s.id}
+                    onDelete={removeSegment}
+                    deleting={deletingId === s.id}
                     onSpeak={(seg) => void speakSegment(seg)}
                     speaking={speakingId === s.id}
                   />

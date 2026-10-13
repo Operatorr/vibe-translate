@@ -2876,6 +2876,25 @@ body,
   background: var(--bg);
   border-right: 1px solid var(--border);
 }
+.segment__num-btn {
+  margin-top: -6px;
+  padding: 6px 4px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.segment__num-btn:hover,
+.segment__num-btn[data-state='open'] {
+  color: var(--fg);
+  border-color: var(--border-strong);
+  background: var(--bg-elev-1);
+}
+.segment__num-btn:focus-visible {
+  outline: 2px solid var(--blue-400);
+  outline-offset: 1px;
+}
 .segment__src,
 .segment__tgt {
   padding: 16px 24px;
@@ -3237,25 +3256,28 @@ body,
 .composer {
   border-top: 1px solid var(--border);
   background: var(--bg);
-  padding: 16px 24px 20px;
+  padding: 0 0 env(safe-area-inset-bottom);
   position: sticky;
   bottom: 0;
 }
+/* Flush, borderless field; the buttons fill its full height, so the edges
+   and the field/button seam line up without any gaps to balance. */
 .composer__row {
   display: grid;
   grid-template-columns: 1fr auto;
-  gap: 12px;
-  align-items: end;
+  align-items: stretch;
 }
 .composer__field {
   display: flex;
   flex-direction: column;
-  border: 1px solid var(--border-strong);
-  background: var(--bg-elev-1);
+  background: var(--bg);
   min-height: 88px;
 }
-.composer__field:focus-within {
-  border-color: var(--blue-400);
+/* Settings toggle and Send split the field's height equally. */
+.composer__buttons {
+  display: grid;
+  grid-template-rows: 1fr 1fr;
+  width: 72px;
 }
 .composer__textarea {
   flex: 1;
@@ -3272,7 +3294,7 @@ body,
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 6px 12px 8px;
+  padding: 6px 12px 8px 16px;
   font: 400 11px/1 var(--font-mono);
   color: var(--fg-subtle);
 }
@@ -3307,8 +3329,6 @@ body,
   border: 0;
   padding: 0;
   cursor: pointer;
-  width: 88px;
-  height: 88px;
   display: grid;
   place-items: center;
   font: 500 13px/1 var(--font-sans);
@@ -3332,9 +3352,8 @@ body,
   display: grid;
   grid-template-columns: 1fr 200px;
   gap: 24px;
-  padding: 12px 0 16px;
+  padding: 12px 24px 16px;
   border-bottom: 1px dashed var(--border);
-  margin-bottom: 14px;
   align-items: center;
 }
 
@@ -4238,9 +4257,6 @@ body,
 }
 
 /* Composer extras --------------------------------------------------------- */
-.composer__field.is-recording {
-  border-color: var(--red-400);
-}
 .composer__rec {
   color: var(--red-400);
 }
@@ -4488,16 +4504,12 @@ body,
     padding: 5px 8px;
     gap: 5px;
   }
-  .composer {
-    padding: 10px 12px calc(12px + env(safe-area-inset-bottom));
-  }
   .composer__settings {
-    padding: 8px 0 12px;
+    padding: 8px 12px 12px;
     gap: 12px;
   }
-  .composer__send {
+  .composer__buttons {
     width: 56px;
-    height: 56px;
   }
   .composer__send i {
     width: 18px;
@@ -5177,29 +5189,19 @@ body,
 .composer__settings-clip {
   min-height: 0;
   overflow: hidden;
-  padding-inline: 8px;
-  margin-inline: -8px;
-}
-.composer__buttons {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
 }
 .composer__settings-toggle {
   position: relative;
   display: grid;
   place-items: center;
-  width: 100%;
-  min-height: 44px;
-  border: 1px solid var(--border);
-  background: var(--bg-elev-1);
+  border: 0;
+  background: var(--bg-elev-2);
   color: var(--fg-muted);
   cursor: pointer;
 }
 .composer__settings-toggle:hover,
 .composer__settings-toggle[aria-expanded='true'] {
   color: var(--blue-400);
-  border-color: var(--blue-400);
 }
 .composer__settings-toggle i {
   width: 18px;
@@ -5267,6 +5269,68 @@ body,
   .composer__settings-drawer {
     transition: none;
   }
+}
+
+/* Retry's Vibe stop picker. Above the full-screen display (200), below
+   credit recovery (300), which can open over it when the retry 402s. */
+.retry-modal__overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 250;
+  background: rgb(0 0 0 / 70%);
+  backdrop-filter: blur(6px);
+}
+.retry-modal {
+  position: fixed;
+  z-index: 251;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: min(520px, calc(100vw - 32px));
+  max-height: calc(100dvh - 32px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  background: var(--bg);
+  color: var(--fg);
+  border: 1px solid var(--border-strong);
+  padding: 28px;
+  box-shadow: var(--shadow-2);
+}
+.retry-modal > .vt-eyebrow {
+  padding: 0;
+}
+/* Narrow screens: the stop name drops under the label rather than squeezing it. */
+.retry-modal .vibe-mini__head {
+  flex-wrap: wrap;
+  gap: 8px 16px;
+}
+.retry-modal .vibe-mini__head-l {
+  white-space: nowrap;
+}
+.retry-modal .vibe-mini__head-r {
+  line-height: 1.4;
+}
+.retry-modal__title {
+  margin: 14px 0 8px;
+  font-size: 24px;
+  line-height: 1.2;
+  letter-spacing: -0.02em;
+}
+.retry-modal__description {
+  margin-bottom: 24px;
+  color: var(--fg-muted);
+  font-size: 14px;
+  line-height: 1.6;
+}
+.retry-modal__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 28px;
+}
+.retry-modal__actions .vt-btn svg {
+  width: 16px;
+  height: 16px;
 }
 
 /* Credit recovery and account billing */

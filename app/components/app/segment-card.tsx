@@ -1,4 +1,5 @@
 import * as Dialog from '@radix-ui/react-dialog'
+import * as DropdownMenu from '@radix-ui/react-dropdown-menu'
 import * as React from 'react'
 
 import { Icon } from '@/components/vibe-design/icon'
@@ -7,6 +8,7 @@ import { useBackButtonClose } from '@/hooks/use-back-button-close'
 import type { ExplainBody, SegmentToken, VibeStop } from '@/lib/types'
 import { normalizeWord, srcWordSet } from '@/lib/alignment'
 
+import { VibeMini } from './composer'
 import { ExplainPanel } from './explain-panel'
 import { SegmentUsage } from './segment-usage'
 
@@ -49,11 +51,14 @@ export function SegmentCard({
   sourceLanguage,
   targetLanguage,
   vibes,
+  defaultVibe,
   onExpand,
   explain,
   onCopy,
   onRetry,
   retrying,
+  onDelete,
+  deleting,
   onSpeak,
   speaking,
   readOnly,
@@ -65,11 +70,15 @@ export function SegmentCard({
   sourceLanguage: string
   targetLanguage: string
   vibes: VibePreset[]
+  // The Character's stop; preselected on Retry for a legacy null-vibe row.
+  defaultVibe?: VibeStop
   onExpand: (id: string) => void
   explain?: SegmentExplainState
   onCopy: (seg: SegmentView) => void
-  onRetry?: (seg: SegmentView) => void
+  onRetry?: (seg: SegmentView, vibe: VibeStop) => void
   retrying?: boolean
+  onDelete?: (seg: SegmentView) => void
+  deleting?: boolean
   onSpeak: (seg: SegmentView) => void
   speaking?: boolean
   readOnly?: boolean
@@ -139,7 +148,17 @@ export function SegmentCard({
       id={`segment-${seg.id}`}
     >
       <div className="segment__row" ref={rowRef}>
-        <div className="segment__num">{String(idx).padStart(2, '0')}</div>
+        <div className="segment__num">
+          {!readOnly && onDelete ? (
+            <SegmentNumberMenu
+              idx={idx}
+              disabled={retrying || deleting}
+              onDelete={() => onDelete(seg)}
+            />
+          ) : (
+            String(idx).padStart(2, '0')
+          )}
+        </div>
 
         {collapsed ? (
           <div className="segment__src is-collapsed">
@@ -233,19 +252,12 @@ export function SegmentCard({
                 <Icon name="copy" /> COPY
               </button>
               {!readOnly && onRetry && (
-                <button
-                  type="button"
-                  className={'segment__action ' + (retrying ? 'is-busy' : '')}
-                  onClick={() => onRetry(seg)}
-                  disabled={retrying}
-                  title="Re-translate this segment"
-                >
-                  <Icon
-                    name={retrying ? 'loader' : 'rotate-ccw'}
-                    className={retrying ? 'vt-spin' : ''}
-                  />{' '}
-                  {retrying ? 'RETRYING' : 'RETRY'}
-                </button>
+                <RetryDialog
+                  vibes={vibes}
+                  current={seg.vibe ?? defaultVibe}
+                  retrying={retrying}
+                  onConfirm={(next) => onRetry(seg, next)}
+                />
               )}
               <button
                 type="button"
@@ -284,6 +296,145 @@ export function SegmentCard({
         />
       )}
     </div>
+  )
+}
+
+// The segment number doubles as the trigger for per-Segment actions. Radix
+// DropdownMenu supplies menu semantics, roving focus, and focus return.
+function SegmentNumberMenu({
+  idx,
+  disabled,
+  onDelete,
+}: {
+  idx: number
+  disabled?: boolean
+  onDelete: () => void
+}) {
+  const label = String(idx).padStart(2, '0')
+  return (
+    <DropdownMenu.Root>
+      <DropdownMenu.Trigger asChild>
+        <button
+          type="button"
+          className="segment__num-btn"
+          title="Segment options"
+          aria-label={`Segment ${label} options`}
+        >
+          {label}
+        </button>
+      </DropdownMenu.Trigger>
+      <DropdownMenu.Portal>
+        <DropdownMenu.Content
+          className="vt-popover vt-menu"
+          align="start"
+          sideOffset={6}
+          collisionPadding={8}
+        >
+          <DropdownMenu.Item
+            className="vt-menu__item vt-menu__item--danger"
+            disabled={disabled}
+            onSelect={onDelete}
+          >
+            <Icon name="trash" /> Delete segment
+          </DropdownMenu.Item>
+        </DropdownMenu.Content>
+      </DropdownMenu.Portal>
+    </DropdownMenu.Root>
+  )
+}
+
+// Retry asks for the Vibe stop first, opened at the Segment's current stop:
+// confirming unchanged re-samples, moving the slider re-translates at the new
+// stop. Either way the Segment is overwritten in place. Back-aware like the
+// full-screen display.
+function RetryDialog({
+  vibes,
+  current,
+  retrying,
+  onConfirm,
+}: {
+  vibes: VibePreset[]
+  current: VibeStop | undefined
+  retrying?: boolean
+  onConfirm: (vibe: VibeStop) => void
+}) {
+  const [open, setOpen] = React.useState(false)
+  const [idx, setIdx] = React.useState(0)
+  useBackButtonClose(open, () => setOpen(false))
+  const onOpenChange = (next: boolean) => {
+    // Every open starts from the stop the Segment was translated at.
+    if (next)
+      setIdx(
+        Math.max(
+          0,
+          vibes.findIndex((v) => v.id === current),
+        ),
+      )
+    setOpen(next)
+  }
+  const picked = vibes[idx]
+  return (
+    <Dialog.Root open={open} onOpenChange={onOpenChange}>
+      <Dialog.Trigger asChild>
+        <button
+          type="button"
+          className={'segment__action ' + (retrying ? 'is-busy' : '')}
+          disabled={retrying || vibes.length === 0}
+          title="Re-translate this segment"
+        >
+          <Icon
+            name={retrying ? 'loader' : 'rotate-ccw'}
+            className={retrying ? 'vt-spin' : ''}
+          />{' '}
+          {retrying ? 'RETRYING' : 'RETRY'}
+        </button>
+      </Dialog.Trigger>
+      <Dialog.Portal>
+        <Dialog.Overlay className="retry-modal__overlay" />
+        <Dialog.Content
+          className="retry-modal"
+          onOpenAutoFocus={(event) => {
+            // Land on the slider so arrow keys move the stop straight away.
+            const slider = (
+              event.currentTarget as HTMLElement | null
+            )?.querySelector<HTMLElement>('[role="slider"]')
+            if (slider) {
+              event.preventDefault()
+              slider.focus()
+            }
+          }}
+        >
+          <span className="vt-eyebrow">RETRY TRANSLATION</span>
+          <Dialog.Title className="retry-modal__title">
+            Pick a vibe stop
+          </Dialog.Title>
+          <Dialog.Description className="retry-modal__description">
+            Keep the current stop for a fresh take, or move it to re-translate
+            in a different register. This replaces the current translation.
+          </Dialog.Description>
+          <VibeMini vibes={vibes} valueIdx={idx} onChange={setIdx} />
+          <div className="retry-modal__actions">
+            <Dialog.Close asChild>
+              <button type="button" className="vt-btn vt-btn--ghost">
+                Cancel
+              </button>
+            </Dialog.Close>
+            <button
+              type="button"
+              className="vt-btn vt-btn--primary"
+              disabled={!picked}
+              onClick={() => {
+                if (!picked) return
+                setOpen(false)
+                onConfirm(picked.id as VibeStop)
+              }}
+            >
+              <Icon name="rotate-ccw" /> Confirm
+            </button>
+          </div>
+        </Dialog.Content>
+      </Dialog.Portal>
+    </Dialog.Root>
   )
 }
 

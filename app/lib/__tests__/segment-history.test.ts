@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import {
   appendHistory,
   historySegments,
+  removeHistory,
   replaceHistory,
   type SegmentHistory,
 } from '../segment-history'
@@ -142,5 +143,25 @@ describe('replaceHistory', () => {
 
   it('leaves undefined history undefined', () => {
     expect(replaceHistory(undefined, created)).toBeUndefined()
+  })
+})
+
+describe('removeHistory', () => {
+  it('drops a row from an older page and keeps cursors and other pages', () => {
+    const history = twoPages()
+    const next = removeHistory(history, 'oldest')!
+    expect(ids(next)).toEqual(['old', 'boundary', 'recent'])
+    expect(next.pages[1].nextCursor).toEqual(cursorOf(oldest))
+    expect(next.pages[0]).toBe(history.pages[0])
+    expect(next.pageParams).toEqual(history.pageParams)
+  })
+
+  it('returns the same history when the id is not loaded', () => {
+    const history = twoPages()
+    expect(removeHistory(history, 'created')).toBe(history)
+  })
+
+  it('leaves undefined history undefined', () => {
+    expect(removeHistory(undefined, 'oldest')).toBeUndefined()
   })
 })
