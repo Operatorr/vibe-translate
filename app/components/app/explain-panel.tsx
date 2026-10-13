@@ -1,4 +1,5 @@
 import { Link } from '@tanstack/react-router'
+import * as React from 'react'
 
 import { Icon } from '@/components/vibe-design/icon'
 import { ApiError } from '@/lib/api'
@@ -185,6 +186,36 @@ function ExplainBodyView({ body }: { body: ExplainBody }) {
   )
 }
 
+const REVEAL_GAP = 16
+
+function scrollParent(el: HTMLElement): HTMLElement | null {
+  for (let p = el.parentElement; p; p = p.parentElement) {
+    const { overflowY } = getComputedStyle(p)
+    if (/(auto|scroll)/.test(overflowY) && p.scrollHeight > p.clientHeight)
+      return p
+  }
+  return null
+}
+
+// Slide the thread up until the panel clears the composer, but never so far
+// that the Segment card it explains scrolls off the top — the translation
+// stays visible above its breakdown. If the card already starts above the
+// fold, the panel's own top is the limit instead.
+function revealPanel(panel: HTMLElement) {
+  const scroller = scrollParent(panel)
+  if (!scroller) return
+  const view = scroller.getBoundingClientRect()
+  const rect = panel.getBoundingClientRect()
+  const overflow = rect.bottom + REVEAL_GAP - view.bottom
+  if (overflow <= 0) return
+  const cardTop = panel.parentElement?.getBoundingClientRect().top ?? rect.top
+  const limit = (cardTop > view.top ? cardTop : rect.top) - view.top
+  const shift = Math.min(overflow, Math.max(limit, 0))
+  if (shift <= 0) return
+  const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  scroller.scrollBy({ top: shift, behavior: reduced ? 'auto' : 'smooth' })
+}
+
 export function ExplainPanel({
   body,
   isLoading,
@@ -199,8 +230,21 @@ export function ExplainPanel({
   onRetry: () => void
 }) {
   const gated = error instanceof ApiError && error.status === 403
+  const ref = React.useRef<HTMLDivElement>(null)
+  // Re-reveal when the content swaps (loader → breakdown / gate / error):
+  // the panel grows, and its new bottom may land behind the composer again.
+  const phase = isLoading
+    ? 'loading'
+    : error != null
+      ? 'error'
+      : body
+        ? 'body'
+        : 'empty'
+  React.useEffect(() => {
+    if (ref.current) revealPanel(ref.current)
+  }, [phase])
   return (
-    <div className="explain">
+    <div className="explain" ref={ref}>
       <div className="explain__head">
         <div className="explain__title">
           <Icon name="book-open" /> EXPLAIN · WORD-BY-WORD
