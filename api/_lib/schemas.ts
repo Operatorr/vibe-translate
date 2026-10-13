@@ -154,9 +154,14 @@ export const segmentCreateSchema = z.object({
 })
 
 // Retry re-translates in place. Omitting `vibe` keeps the Segment's stored
-// stop (or characters.default_vibe for a legacy null row).
+// stop (or characters.default_vibe for a legacy null row); omitting
+// `perspective` keeps its recorded perspective (or characters.perspective);
+// omitting `temperature` uses characters.temperature. The overrides apply to
+// this retry only and never change the Character.
 export const segmentRetrySchema = z.object({
   vibe: vibeStopSchema.optional(),
+  perspective: perspectiveSchema.optional(),
+  temperature: z.number().min(0).max(1).optional(),
 })
 
 // PATCH allows manual edits to history (a learner tweaking a stored

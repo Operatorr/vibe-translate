@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import {
   cleanup,
+  fireEvent,
   render,
   screen,
   waitFor,
@@ -273,6 +274,8 @@ describe('segment retry and delete', () => {
         sourceLanguage="en-US"
         targetLanguage="ja-JP"
         vibes={VIBES}
+        defaultPerspective="to"
+        defaultTemperature={0.4}
         onExpand={vi.fn()}
         onCopy={vi.fn()}
         onSpeak={vi.fn()}
@@ -294,9 +297,53 @@ describe('segment retry and delete', () => {
     await user.click(within(dialog).getByRole('button', { name: /confirm/i }))
     expect(handlers.onRetry).toHaveBeenCalledWith(
       expect.objectContaining({ id: 's1' }),
-      'keigo',
+      { vibe: 'keigo', perspective: 'to', temperature: 0.4 },
     )
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+  })
+
+  it('retries at the temperature and perspective picked in the dialog', async () => {
+    const user = userEvent.setup()
+    const handlers = actions()
+    renderCard(handlers)
+    const retry = screen.getByRole('button', { name: /retry/i })
+    await user.click(retry)
+    const dialog = screen.getByRole('dialog', { name: 'Pick a vibe stop' })
+    const temp = within(dialog).getByRole<HTMLInputElement>('slider', {
+      name: 'Temperature',
+    })
+    expect(temp.value).toBe('0.4')
+    fireEvent.change(temp, { target: { value: '0.8' } })
+    expect(within(dialog).getByText('0.80')).toBeTruthy()
+    const as = within(dialog).getByRole<HTMLInputElement>('radio', {
+      name: 'As the Character',
+    })
+    expect(
+      within(dialog).getByRole<HTMLInputElement>('radio', {
+        name: 'To the Character',
+      }).checked,
+    ).toBe(true)
+    await user.click(as)
+    await user.click(within(dialog).getByRole('button', { name: /confirm/i }))
+    expect(handlers.onRetry).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 's1' }),
+      { vibe: 'casual', perspective: 'as', temperature: 0.8 },
+    )
+
+    // The next open starts over from the Segment and Character values.
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    await user.click(retry)
+    const reopened = screen.getByRole('dialog', { name: 'Pick a vibe stop' })
+    expect(
+      within(reopened).getByRole<HTMLInputElement>('slider', {
+        name: 'Temperature',
+      }).value,
+    ).toBe('0.4')
+    expect(
+      within(reopened).getByRole<HTMLInputElement>('radio', {
+        name: 'To the Character',
+      }).checked,
+    ).toBe(true)
   })
 
   it('confirms the stored stop unchanged, and Cancel retries nothing', async () => {
@@ -311,7 +358,7 @@ describe('segment retry and delete', () => {
     await user.click(screen.getByRole('button', { name: /confirm/i }))
     expect(handlers.onRetry).toHaveBeenCalledWith(
       expect.objectContaining({ id: 's1' }),
-      'casual',
+      { vibe: 'casual', perspective: 'to', temperature: 0.4 },
     )
   })
 

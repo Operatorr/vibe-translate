@@ -41,8 +41,8 @@ describe('threadToMarkdown', () => {
   })
 
   it.each([
-    ['as' as const, '## 01 · Casual · as speaker'],
-    ['to' as const, '## 01 · Casual · to speaker'],
+    ['as' as const, '## 01 · Casual · as Character'],
+    ['to' as const, '## 01 · Casual · to Character'],
     [null, '## 01 · Casual'],
   ])(
     'tags a %s perspective snapshot in its heading',
@@ -63,9 +63,9 @@ describe('threadToMarkdown', () => {
       segments: [segment('as', 1), segment(null, 2), segment('to', 3)],
     })
     expect(sectionHeadings(md)).toEqual([
-      '## 01 · Casual · as speaker',
+      '## 01 · Casual · as Character',
       '## 02 · Casual',
-      '## 03 · Casual · to speaker',
+      '## 03 · Casual · to Character',
     ])
   })
 

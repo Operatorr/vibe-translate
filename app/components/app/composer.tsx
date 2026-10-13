@@ -124,7 +124,8 @@ export const TempSlider = ({
 }: {
   value: number
   onChange: (value: number) => void
-  onCommit: (value: number) => void
+  // Fires on release; the composer saves the Character's temperature here.
+  onCommit?: (value: number) => void
 }) => (
   <div className="temp">
     <div className="temp__head">
@@ -143,12 +144,12 @@ export const TempSlider = ({
         aria-label="Temperature"
         onChange={(e) => onChange(parseFloat(e.target.value))}
         onPointerUp={(e) =>
-          onCommit(parseFloat((e.target as HTMLInputElement).value))
+          onCommit?.(parseFloat((e.target as HTMLInputElement).value))
         }
         onKeyUp={(e) =>
-          onCommit(parseFloat((e.target as HTMLInputElement).value))
+          onCommit?.(parseFloat((e.target as HTMLInputElement).value))
         }
-        onBlur={(e) => onCommit(parseFloat(e.target.value))}
+        onBlur={(e) => onCommit?.(parseFloat(e.target.value))}
       />
     </div>
   </div>

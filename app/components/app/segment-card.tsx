@@ -21,7 +21,7 @@ import {
   type RubyPart,
 } from '@/lib/readings'
 
-import { VibeMini } from './composer'
+import { PerspectiveRadios, TempSlider, VibeMini } from './composer'
 import { ExplainPanel } from './explain-panel'
 import { SegmentUsage } from './segment-usage'
 
@@ -34,6 +34,13 @@ export type SegmentView = {
   tokenAlignment: SegmentToken[]
   tokenUsage?: Record<string, unknown>
   createdAt: string
+}
+
+// What Retry re-translates at: the values the dialog shows at Confirm.
+export type RetryChoice = {
+  vibe: VibeStop
+  perspective: Perspective
+  temperature: number
 }
 
 export type SegmentExplainState = {
@@ -66,6 +73,8 @@ export function SegmentCard({
   targetLanguage,
   vibes,
   defaultVibe,
+  defaultPerspective,
+  defaultTemperature,
   onExpand,
   explain,
   onCopy,
@@ -86,10 +95,15 @@ export function SegmentCard({
   vibes: VibePreset[]
   // The Character's stop; preselected on Retry for a legacy null-vibe row.
   defaultVibe?: VibeStop
+  // The Character's perspective; preselected on Retry for a legacy row.
+  defaultPerspective?: Perspective
+  // The Character's temperature; Segments don't record one, so Retry opens
+  // here.
+  defaultTemperature?: number
   onExpand: (id: string) => void
   explain?: SegmentExplainState
   onCopy: (seg: SegmentView) => void
-  onRetry?: (seg: SegmentView, vibe: VibeStop) => void
+  onRetry?: (seg: SegmentView, choice: RetryChoice) => void
   retrying?: boolean
   onDelete?: (seg: SegmentView) => void
   deleting?: boolean
@@ -275,9 +289,13 @@ export function SegmentCard({
               {!readOnly && onRetry && (
                 <RetryDialog
                   vibes={vibes}
-                  current={seg.vibe ?? defaultVibe}
+                  currentVibe={seg.vibe ?? defaultVibe}
+                  currentPerspective={
+                    seg.perspective ?? defaultPerspective ?? 'to'
+                  }
+                  currentTemperature={defaultTemperature ?? 0.4}
                   retrying={retrying}
-                  onConfirm={(next) => onRetry(seg, next)}
+                  onConfirm={(choice) => onRetry(seg, choice)}
                 />
               )}
               <button
@@ -463,33 +481,44 @@ function SegmentNumberMenu({
   )
 }
 
-// Retry asks for the Vibe stop first, opened at the Segment's current stop:
-// confirming unchanged re-samples, moving the slider re-translates at the new
-// stop. Either way the Segment is overwritten in place. Back-aware like the
-// full-screen display.
+// Retry asks for the Vibe stop, temperature and Perspective first, opened at
+// the Segment's stop and perspective and the Character's temperature:
+// confirming unchanged re-samples, changing any of them re-translates with
+// the new values. Either way the Segment is overwritten in place, and the
+// Character's own settings are untouched. Back-aware like the full-screen
+// display.
 function RetryDialog({
   vibes,
-  current,
+  currentVibe,
+  currentPerspective,
+  currentTemperature,
   retrying,
   onConfirm,
 }: {
   vibes: VibePreset[]
-  current: VibeStop | undefined
+  currentVibe: VibeStop | undefined
+  currentPerspective: Perspective
+  currentTemperature: number
   retrying?: boolean
-  onConfirm: (vibe: VibeStop) => void
+  onConfirm: (choice: RetryChoice) => void
 }) {
   const [open, setOpen] = React.useState(false)
   const [idx, setIdx] = React.useState(0)
+  const [perspective, setPerspective] = React.useState(currentPerspective)
+  const [temperature, setTemperature] = React.useState(currentTemperature)
   useBackButtonClose(open, () => setOpen(false))
   const onOpenChange = (next: boolean) => {
-    // Every open starts from the stop the Segment was translated at.
-    if (next)
+    // Every open starts from the values the Segment was translated at.
+    if (next) {
       setIdx(
         Math.max(
           0,
-          vibes.findIndex((v) => v.id === current),
+          vibes.findIndex((v) => v.id === currentVibe),
         ),
       )
+      setPerspective(currentPerspective)
+      setTemperature(currentTemperature)
+    }
     setOpen(next)
   }
   const picked = vibes[idx]
@@ -532,10 +561,15 @@ function RetryDialog({
             Pick a vibe stop
           </Dialog.Title>
           <Dialog.Description className="retry-modal__description">
-            Keep the current stop for a fresh take, or move it to re-translate
-            in a different register. This replaces the current translation.
+            Keep the current settings for a fresh take, or change them to
+            re-translate in a different register. This replaces the current
+            translation.
           </Dialog.Description>
-          <VibeMini vibes={vibes} valueIdx={idx} onChange={setIdx} />
+          <div className="retry-modal__settings">
+            <VibeMini vibes={vibes} valueIdx={idx} onChange={setIdx} />
+            <TempSlider value={temperature} onChange={setTemperature} />
+            <PerspectiveRadios value={perspective} onChange={setPerspective} />
+          </div>
           <div className="retry-modal__actions">
             <Dialog.Close asChild>
               <button type="button" className="vt-btn vt-btn--ghost">
@@ -549,7 +583,11 @@ function RetryDialog({
               onClick={() => {
                 if (!picked) return
                 setOpen(false)
-                onConfirm(picked.id as VibeStop)
+                onConfirm({
+                  vibe: picked.id as VibeStop,
+                  perspective,
+                  temperature: Math.round(temperature * 100) / 100,
+                })
               }}
             >
               <Icon name="rotate-ccw" /> Confirm

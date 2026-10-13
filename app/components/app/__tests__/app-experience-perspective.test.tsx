@@ -141,12 +141,12 @@ function renderApp(roster: Character[]) {
   return { qc, cached }
 }
 
-const radio = (name: 'As the speaker' | 'To the speaker') =>
+const radio = (name: 'As the Character' | 'To the Character') =>
   screen.getByRole('radio', { name }) as HTMLInputElement
 
 function expectRadio(value: 'as' | 'to') {
-  expect(radio('As the speaker').checked).toBe(value === 'as')
-  expect(radio('To the speaker').checked).toBe(value === 'to')
+  expect(radio('As the Character').checked).toBe(value === 'as')
+  expect(radio('To the Character').checked).toBe(value === 'to')
 }
 
 // The radios live in the composer's settings drawer, hidden until opened.
@@ -154,7 +154,7 @@ async function openSettings(user: ReturnType<typeof userEvent.setup>) {
   await user.click(
     await screen.findByRole('button', { name: /^Translation settings/ }),
   )
-  return radio('To the speaker')
+  return radio('To the Character')
 }
 
 const selectCharacter = (
@@ -207,7 +207,7 @@ describe('AppExperience perspective radio', () => {
     await openSettings(user)
     expectRadio('to')
 
-    await user.click(radio('As the speaker'))
+    await user.click(radio('As the Character'))
     await waitFor(() => expect(patches()).toHaveLength(1))
     expect(patches()[0].body).toEqual({ perspective: 'as' })
 
@@ -219,7 +219,7 @@ describe('AppExperience perspective radio', () => {
       sourceText: 'Thank you for dinner',
       perspective: 'as',
     })
-    expect(pendingCard()?.textContent).toContain('as speaker')
+    expect(pendingCard()?.textContent).toContain('as Character')
 
     // The save lands while the translation is still running.
     await act(async () =>
@@ -227,13 +227,13 @@ describe('AppExperience perspective radio', () => {
     )
     await settle()
     expectRadio('as')
-    expect(pendingCard()?.textContent).toContain('as speaker')
+    expect(pendingCard()?.textContent).toContain('as Character')
 
     // Flipping the radio now changes the next send, not this one.
-    await user.click(radio('To the speaker'))
+    await user.click(radio('To the Character'))
     await waitFor(() => expect(patches()).toHaveLength(2))
-    expect(pendingCard()?.textContent).toContain('as speaker')
-    expect(pendingCard()?.textContent).not.toContain('to speaker')
+    expect(pendingCard()?.textContent).toContain('as Character')
+    expect(pendingCard()?.textContent).not.toContain('to Character')
     expect(posts()).toHaveLength(1)
 
     await act(async () => {
@@ -249,7 +249,7 @@ describe('AppExperience perspective radio', () => {
       posts()[0].reply(Response.json(created))
     })
     await waitFor(() => expect(pendingCard()).toBeNull())
-    expect(screen.getByText(/as speaker/)).toBeTruthy()
+    expect(screen.getByText(/as Character/)).toBeTruthy()
     expectRadio('to')
     expect(unexpected).toEqual([])
   })
@@ -258,7 +258,7 @@ describe('AppExperience perspective radio', () => {
     const { user, patches, cached, unexpected } = setup([aiko])
     await openSettings(user)
 
-    await user.click(radio('As the speaker'))
+    await user.click(radio('As the Character'))
     expectRadio('as')
     await waitFor(() => expect(patches()).toHaveLength(1))
     expect(cached('a')?.perspective).toBe('as')
@@ -274,11 +274,11 @@ describe('AppExperience perspective radio', () => {
     const { user, patches, cached, unexpected } = setup([aiko, botan])
     await openSettings(user)
 
-    await user.click(radio('As the speaker'))
+    await user.click(radio('As the Character'))
     await waitFor(() => expect(patches()).toHaveLength(1))
     await selectCharacter(user, 'Botan')
     await waitFor(() => expectRadio('to'))
-    await user.click(radio('As the speaker'))
+    await user.click(radio('As the Character'))
     expectRadio('as')
 
     await act(async () => patches()[0].reply(failure()))
@@ -307,7 +307,7 @@ describe('AppExperience perspective radio', () => {
     await openSettings(user)
     expectRadio('to')
 
-    await user.click(radio('As the speaker'))
+    await user.click(radio('As the Character'))
     await waitFor(() => expect(patches()).toHaveLength(1))
 
     // Switch while Aiko's save is still in flight.
@@ -332,8 +332,8 @@ describe('AppExperience perspective radio', () => {
     const { user, patches, cached, unexpected } = setup([aiko])
     await openSettings(user)
 
-    await user.click(radio('As the speaker'))
-    await user.click(radio('To the speaker'))
+    await user.click(radio('As the Character'))
+    await user.click(radio('To the Character'))
     expectRadio('to')
     await settle()
     // Queued, not raced: the second save waits for the first.
@@ -363,7 +363,7 @@ describe('AppExperience perspective radio', () => {
     const { user, patches, unexpected } = setup([aiko, legacy])
     await openSettings(user)
 
-    await user.click(radio('As the speaker'))
+    await user.click(radio('As the Character'))
     await waitFor(() => expect(patches()).toHaveLength(1))
     await act(async () =>
       patches()[0].reply(Response.json({ ...aiko, perspective: 'as' })),

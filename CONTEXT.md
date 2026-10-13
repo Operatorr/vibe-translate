@@ -27,7 +27,7 @@ A persistent persona the user translates _toward_ — name, source/target langua
 _Avoid_: contact, profile, persona (the inner attribute), recipient
 
 **Perspective**:
-Whether the user speaks **as** the **Character** (the translation is the Character's own words, in their voice) or **to** them (the user's own words, addressed to the Character). It flips how the **Vibe stop** and **Persona** are read. Speaking as an emperor talks down with imperial self-reference; speaking to one uses the most exalted honorifics. Stored as the Character's default (`to` unless changed), chosen per translation in the composer, and recorded on each **Segment**. UI labels: "As the speaker" / "To the speaker". See [adr/0009](./docs/adr/0009-perspective-as-or-to-character.md).
+Whether the user speaks **as** the **Character** (the translation is the Character's own words, in their voice) or **to** them (the user's own words, addressed to the Character). It flips how the **Vibe stop** and **Persona** are read. Speaking as an emperor talks down with imperial self-reference; speaking to one uses the most exalted honorifics. Stored as the Character's default (`to` unless changed), chosen per translation in the composer, and recorded on each **Segment**. UI labels: "As the Character" / "To the Character". See [adr/0009](./docs/adr/0009-perspective-as-or-to-character.md).
 _Avoid_: direction, mode, role, voice (that is the **Voice persona**)
 
 **Persona**:
@@ -55,7 +55,7 @@ A read-only public URL (`/share/<token>`) for one **Thread**. The token is the c
 _Avoid_: public thread, export link (export is the Markdown download)
 
 **Retry**:
-Re-running the translation of an existing **Segment**, replacing the target in place. The user confirms a **Vibe stop** first: the stored one (a fresh sample) or a different one (the same row re-translated in another **Register**). A recorded **Perspective** is kept; a legacy Segment with none resolves the Character's current Perspective and records it. Not a new Segment — it skips dedupe and the **Translation cache**.
+Re-running the translation of an existing **Segment**, replacing the target in place. The user confirms a **Vibe stop**, temperature and **Perspective** first: unchanged (a fresh sample) or changed (the same row re-translated in another **Register** or voice). The dialog opens at the Segment's stop and recorded Perspective (a legacy Segment with none starts from the Character's current Perspective) and the Character's temperature, since Segments don't record one. The Perspective used is recorded on the Segment. Retry's picks apply to that Segment only and never change the Character. Not a new Segment — it skips dedupe and the **Translation cache**.
 _Avoid_: regenerate, re-translate (in code)
 
 **Segment**:
@@ -166,6 +166,6 @@ _Avoid_: vibe (use **Vibe stop** when referring to the slider value), speaker, v
 ## Flagged ambiguities
 
 - **"vibe"** is one concept with two surfaces: it drives both translation register _and_ TTS voice selection. The slider value (a **Vibe stop**) is the single input; **Voice persona** is downstream and never independently chosen. The two terms are kept distinct in this glossary because they describe different _effects_ (text vs audio), not different _inputs_.
-- **"speaker"** in the UI labels ("As the speaker" / "To the speaker") means the **Character**, not the user. Under `to` the Character is really the listener; the labels name the Character's role in the user's mind, and the prompt says "the character" throughout.
+- The UI labels ("As the Character" / "To the Character") name the **Character** directly. They used to say "speaker", which read as the user under `to`, where the Character is really the listener. The model-facing prompt still uses "the speaker" for whoever is talking.
 - **"memory"** is overloaded between **Translation memory** (cross-Segment retrieval over source_embedding) and **Explain memory** (per-target-text Explain reuse). They share a name because both are user-data-as-corpus, but the access patterns differ — TM is embedding similarity, Explain memory is hash equality on `target_text`.
 - **"cache"** is _not_ used for Explain memory. Both Translation memory and Explain memory are first-class persistent stores; "cache" would imply they are disposable, which they are not.

@@ -3544,7 +3544,7 @@ body,
   min-width: 0;
 }
 
-/* Perspective radios (as / to the speaker) */
+/* Perspective radios (as / to the Character) */
 .persp {
   display: flex;
   flex-direction: column;
@@ -5501,6 +5501,12 @@ body,
 }
 .retry-modal .vibe-mini__head-r {
   line-height: 1.4;
+}
+/* Vibe, then temperature, then perspective, as in the composer drawer. */
+.retry-modal__settings {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
 }
 .retry-modal__title {
   margin: 14px 0 8px;

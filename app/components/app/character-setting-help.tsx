@@ -47,28 +47,28 @@ const HELP = {
     summary: 'Who is talking in the translation: the character, or you.',
     sections: [
       {
-        heading: 'As the speaker',
+        heading: 'As the Character',
         body: 'You put words in the character’s mouth. The translation is what they would say, in their own voice: how they refer to themselves, their attitude, their dialect. The vibe describes how the character talks. Pick this to practise sounding like someone, or to write their lines.',
       },
       {
-        heading: 'To the speaker',
+        heading: 'To the Character',
         body: 'You talk to the character, in your own voice. The translation is your message to them. The vibe describes who you are addressing and how to speak to someone like that, so you never borrow their way of talking. Their age and region still shape the wording, so the message reads naturally to them.',
       },
       {
         heading: 'Which one?',
-        body: 'Messaging a real person, like a friend, your boss or your grandmother: To the speaker. Role-play, writing dialogue, or learning how a type of person talks: As the speaker. Friend, Casual and Keigo come out much the same either way; Yakuza, Keigo+ and Emperor change the most.',
+        body: 'Messaging a real person, like a friend, your boss or your grandmother: To the Character. Role-play, writing dialogue, or learning how a type of person talks: As the Character. Friend, Casual and Keigo come out much the same either way; Yakuza, Keigo+ and Emperor change the most.',
       },
     ],
     example: 'Example meaning: “Come here.”',
     exampleLang: 'ja-JP',
     examples: [
-      ['Emperor · as the speaker', '朕のもとへ参れ。'],
+      ['Emperor · as the Character', '朕のもとへ参れ。'],
       [
-        'Emperor · to the speaker',
+        'Emperor · to the Character',
         '陛下、どうぞこちらへお出ましくださいませ。',
       ],
-      ['Yakuza · as the speaker', 'おい、こっち来いや。'],
-      ['Yakuza · to the speaker', '兄貴、ちょっとこっちに来てもらえますか。'],
+      ['Yakuza · as the Character', 'おい、こっち来いや。'],
+      ['Yakuza · to the Character', '兄貴、ちょっとこっちに来てもらえますか。'],
     ],
     note: 'Examples are in Japanese and illustrative, not guaranteed outputs. Perspective is saved on the character, and each translation records the one it used.',
   },

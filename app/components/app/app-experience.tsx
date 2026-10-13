@@ -54,6 +54,7 @@ import { Composer, type ComposerHandle } from './composer'
 import {
   PendingSegmentCard,
   SegmentCard,
+  type RetryChoice,
   type SegmentView,
 } from './segment-card'
 import { historySegments, type SegmentHistory } from '@/lib/segment-history'
@@ -515,10 +516,12 @@ export function AppExperience() {
     }
   }
 
-  const retry = (seg: SegmentView, vibe: VibeStop) => {
+  // The dialog's temperature and perspective are for this retry only; unlike
+  // the composer drawer, Retry never saves them to the Character.
+  const retry = (seg: SegmentView, choice: RetryChoice) => {
     if (!thread) return
     retrySegment.mutate(
-      { id: seg.id, threadId: thread.id, vibe },
+      { id: seg.id, threadId: thread.id, ...choice },
       {
         onSuccess: () => {
           if (explainOpenId === seg.id) setExplainOpenId(null)
@@ -1218,6 +1221,8 @@ export function AppExperience() {
                     targetLanguage={char.targetLanguage}
                     vibes={vibes}
                     defaultVibe={char.defaultVibe}
+                    defaultPerspective={char.perspective ?? 'to'}
+                    defaultTemperature={char.temperature}
                     onExpand={(id) =>
                       setExpanded((prev) => new Set(prev).add(id))
                     }

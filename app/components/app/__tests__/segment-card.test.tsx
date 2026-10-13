@@ -8,7 +8,7 @@ import { getVibesForLang } from '@/components/vibe-design/design-data'
 import type { Perspective } from '@/lib/types'
 
 const VIBES = getVibesForLang('ja-JP')
-const TAG = /\b(as|to) speaker\b/
+const TAG = /\b(as|to) Character\b/
 
 // Each card sits in a labelled region so a tag can only satisfy the
 // assertion for the card it belongs to. Cards get no Character perspective:
@@ -44,8 +44,8 @@ afterEach(cleanup)
 
 describe('perspective tag on a segment card', () => {
   it.each([
-    ['as' as const, 'Casual · as speaker'],
-    ['to' as const, 'Casual · to speaker'],
+    ['as' as const, 'Casual · as Character'],
+    ['to' as const, 'Casual · to Character'],
   ])('shows a recorded %s snapshot next to the Vibe', (perspective, label) => {
     render(card('s1', perspective))
     expect(region('s1').getByText(label)).toBeTruthy()
@@ -59,8 +59,8 @@ describe('perspective tag on a segment card', () => {
 
   it('tags each card with its own snapshot in a mixed history', () => {
     render(<>{[card('s1', 'as'), card('s2', null), card('s3', 'to')]}</>)
-    expect(region('s1').getByText('Casual · as speaker')).toBeTruthy()
+    expect(region('s1').getByText('Casual · as Character')).toBeTruthy()
     expect(region('s2').queryByText(TAG)).toBeNull()
-    expect(region('s3').getByText('Casual · to speaker')).toBeTruthy()
+    expect(region('s3').getByText('Casual · to Character')).toBeTruthy()
   })
 })

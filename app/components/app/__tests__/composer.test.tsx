@@ -98,7 +98,7 @@ function renderComposer(props: Partial<ComposerProps> = {}) {
   }
 }
 
-const toggle = (vibe = 'Casual', perspective = 'To the speaker') =>
+const toggle = (vibe = 'Casual', perspective = 'To the Character') =>
   screen.getByRole('button', {
     name: `Translation settings · ${vibe} · ${perspective}`,
   })
@@ -164,17 +164,17 @@ describe('composer settings disclosure', () => {
 
     const perspective = screen.getByRole('radiogroup', { name: 'PERSPECTIVE' })
     expect(perspective).not.toBeNull()
-    const as = screen.getByRole('radio', { name: 'As the speaker' })
-    const to = screen.getByRole('radio', { name: 'To the speaker' })
+    const as = screen.getByRole('radio', { name: 'As the Character' })
+    const to = screen.getByRole('radio', { name: 'To the Character' })
     expect((to as HTMLInputElement).checked).toBe(true)
     await user.click(as)
     expect(onPerspectiveChange).toHaveBeenLastCalledWith('as')
     expect((as as HTMLInputElement).checked).toBe(true)
     expect((to as HTMLInputElement).checked).toBe(false)
 
-    await user.click(toggle('Polite', 'As the speaker'))
+    await user.click(toggle('Polite', 'As the Character'))
     expect(
-      toggle('Polite', 'As the speaker').getAttribute('aria-expanded'),
+      toggle('Polite', 'As the Character').getAttribute('aria-expanded'),
     ).toBe('false')
     expect(drawer.hasAttribute('inert')).toBe(true)
     expect(screen.queryByRole('slider')).toBeNull()
@@ -207,19 +207,19 @@ describe('composer settings disclosure', () => {
   it('moves the perspective choice from a seeded "As" to "To"', async () => {
     const user = userEvent.setup()
     const { onPerspectiveChange } = renderComposer({ perspective: 'as' })
-    await user.click(toggle('Casual', 'As the speaker'))
+    await user.click(toggle('Casual', 'As the Character'))
     const as = screen.getByRole<HTMLInputElement>('radio', {
-      name: 'As the speaker',
+      name: 'As the Character',
     })
     const to = screen.getByRole<HTMLInputElement>('radio', {
-      name: 'To the speaker',
+      name: 'To the Character',
     })
     expect(as.checked).toBe(true)
     await user.click(to)
     expect(onPerspectiveChange).toHaveBeenLastCalledWith('to')
     expect(to.checked).toBe(true)
     expect(as.checked).toBe(false)
-    expect(toggle('Casual', 'To the speaker')).toBeTruthy()
+    expect(toggle('Casual', 'To the Character')).toBeTruthy()
   })
 
   it('makes the perspective radios one tab stop that arrow keys move through', async () => {
@@ -230,10 +230,10 @@ describe('composer settings disclosure', () => {
     const { onPerspectiveChange } = renderComposer()
     await user.click(toggle())
     const as = screen.getByRole<HTMLInputElement>('radio', {
-      name: 'As the speaker',
+      name: 'As the Character',
     })
     const to = screen.getByRole<HTMLInputElement>('radio', {
-      name: 'To the speaker',
+      name: 'To the Character',
     })
     expect(as.name).not.toBe('')
     expect(as.name).toBe(to.name)
@@ -274,7 +274,7 @@ describe('composer settings disclosure', () => {
     const trigger = screen.getByRole('button', { name: 'About perspective' })
     await user.click(trigger)
     const dialog = screen.getByRole('dialog', { name: 'Perspective' })
-    for (const heading of ['As the speaker', 'To the speaker'])
+    for (const heading of ['As the Character', 'To the Character'])
       expect(
         within(dialog).getByRole('heading', { name: heading }),
       ).toBeTruthy()
@@ -285,7 +285,7 @@ describe('composer settings disclosure', () => {
     await waitFor(() => expect(document.activeElement).toBe(trigger))
     // The radios are untouched by opening the help.
     expect(
-      screen.getByRole<HTMLInputElement>('radio', { name: 'To the speaker' })
+      screen.getByRole<HTMLInputElement>('radio', { name: 'To the Character' })
         .checked,
     ).toBe(true)
   })
@@ -294,7 +294,7 @@ describe('composer settings disclosure', () => {
     renderComposer({ vibeIdx: 2 })
     const button = toggle('Keigo')
     expect(button.getAttribute('title')).toBe(
-      'Translation settings · Keigo · To the speaker',
+      'Translation settings · Keigo · To the Character',
     )
     const dot = button.querySelector<HTMLElement>('.composer__settings-vibe')
     expect(dot?.style.background).toBe('rgb(7, 8, 9)')
