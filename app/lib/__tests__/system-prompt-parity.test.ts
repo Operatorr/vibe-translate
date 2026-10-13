@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest'
 // the worker's prompt, and this test is what keeps the two in step.
 import * as server from '@api/_lib/prompts'
 import { CHARACTER_LANGUAGES } from '../character-options'
+import { PERSPECTIVES, VIBE_STOPS } from '../schemas'
 import * as client from '../system-prompt'
 
 const REGIONS = [
@@ -47,27 +48,33 @@ describe('client prompt preview matches the worker prompt', () => {
     expect(client.formatPersona(persona)).toBe(server.formatPersona(persona))
   })
 
-  it('carries the same register, persona and priority sections', () => {
-    const input = {
-      sourceLanguage: 'en-US',
-      targetLanguage: 'zh-TW',
-      vibe: 'keigo' as const,
-      temperature: 0.4,
-      persona: { region: 'Hong Kong (Cantonese)', tone: 'warm', traits: [] },
-      instructions: 'Keep it short.',
-    }
-    const preview = client.compileSystemPrompt({ name: 'Lin', ...input })
-    const [system] = server.buildTranslateMessages({
-      sourceText: 'Hi',
-      ...input,
-    })
-    // Everything from the language line through the voice rules is shared;
-    // only the output contract below it is abbreviated in the preview.
-    const shared = (text: string) =>
-      text.slice(text.indexOf('Translate from'), text.indexOf('VOICE RULES'))
-    expect(shared(preview)).toBe(shared(system.content))
-    const voiceRules = (text: string) =>
-      text.split('\n').find((line) => line.startsWith('VOICE RULES'))
-    expect(voiceRules(preview)).toBe(voiceRules(system.content))
-  })
+  it.each(
+    VIBE_STOPS.flatMap((vibe) => PERSPECTIVES.map((p) => [vibe, p] as const)),
+  )(
+    'carries the same perspective, register, persona and priority sections for %s / %s',
+    (vibe, perspective) => {
+      const input = {
+        sourceLanguage: 'en-US',
+        targetLanguage: 'zh-TW',
+        vibe,
+        perspective,
+        temperature: 0.4,
+        persona: { region: 'Hong Kong (Cantonese)', tone: 'warm', traits: [] },
+        instructions: 'Keep it short.',
+      }
+      const preview = client.compileSystemPrompt({ name: 'Lin', ...input })
+      const [system] = server.buildTranslateMessages({
+        sourceText: 'Hi',
+        ...input,
+      })
+      // Everything from the language line through the voice rules is shared;
+      // only the output contract below it is abbreviated in the preview.
+      const shared = (text: string) =>
+        text.slice(text.indexOf('Translate from'), text.indexOf('VOICE RULES'))
+      expect(shared(preview)).toBe(shared(system.content))
+      const voiceRules = (text: string) =>
+        text.split('\n').find((line) => line.startsWith('VOICE RULES'))
+      expect(voiceRules(preview)).toBe(voiceRules(system.content))
+    },
+  )
 })

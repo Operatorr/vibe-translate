@@ -36,6 +36,7 @@ const TRANSLATE_INPUT: TranslateSegmentInput = {
   sourceLanguage: 'en-US',
   targetLanguage: 'ja-JP',
   vibe: 'friend',
+  perspective: 'to',
   temperature: 0.4,
   persona: { traits: [] },
 }

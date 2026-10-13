@@ -21,6 +21,7 @@ const input = (
   sourceLanguage: 'en-US',
   targetLanguage: 'ja-JP',
   vibe: 'casual',
+  perspective: 'to',
   temperature: 0.4,
   persona: { traits: [] },
   ...overrides,
@@ -136,6 +137,7 @@ describe('draftCharacterFromDictation', () => {
         sourceLanguage: 'en-US',
         targetLanguage: 'not a locale',
         defaultVibe: 'friend',
+        perspective: 'to',
         temperature: 0.6,
         persona: {
           age: '20s',
@@ -158,6 +160,7 @@ describe('draftCharacterFromDictation', () => {
       name: 'Tomoko',
       sourceLanguage: 'en-US',
       defaultVibe: 'friend',
+      perspective: 'to',
       temperature: 0.6,
       instructions: 'friend in Tokyo',
     })

@@ -23,11 +23,15 @@ The per-target-language mapping from **Vibe stop** ID to localized label, hint, 
 _Avoid_: vibe map, presets
 
 **Character**:
-A persistent persona the user translates _toward_ — name, source/target language pair, default **Vibe**, temperature, and **Persona** attributes (age, region, formality, traits). Functions like a contact. Examples: "Oba-chan" (Osaka grandma, casual, kansai-ben), "Buchou-san" (Tokyo manager, keigo+).
+A persistent persona the user translates _toward_ — name, source/target language pair, default **Vibe**, **Perspective**, temperature, and **Persona** attributes (age, region, formality, traits). Functions like a contact. Examples: "Oba-chan" (Osaka grandma, casual, kansai-ben), "Buchou-san" (Tokyo manager, keigo+). With **Perspective** `as`, the user speaks in the Character's voice instead of to them.
 _Avoid_: contact, profile, persona (the inner attribute), recipient
 
+**Perspective**:
+Whether the user speaks **as** the **Character** (the translation is the Character's own words, in their voice) or **to** them (the user's own words, addressed to the Character). It flips how the **Vibe stop** and **Persona** are read. Speaking as an emperor talks down with imperial self-reference; speaking to one uses the most exalted honorifics. Stored as the Character's default (`to` unless changed), chosen per translation in the composer, and recorded on each **Segment**. UI labels: "As the speaker" / "To the speaker". See [adr/0009](./docs/adr/0009-perspective-as-or-to-character.md).
+_Avoid_: direction, mode, role, voice (that is the **Voice persona**)
+
 **Persona**:
-The _structured_ attribute block on a **Character** — age, region, formality, tone, verbosity (0–1), free-form trait list. Drives the UI chips and the deterministic onboarding form.
+The _structured_ attribute block on a **Character** — age, region, formality, tone, verbosity (0–1), free-form trait list. Drives the UI chips and the deterministic onboarding form. Describes the speaker under **Perspective** `as` and the person being addressed under `to`. Region selects the variety written in either way.
 _Avoid_: traits, profile
 
 **Instructions**:
@@ -51,11 +55,11 @@ A read-only public URL (`/share/<token>`) for one **Thread**. The token is the c
 _Avoid_: public thread, export link (export is the Markdown download)
 
 **Retry**:
-Re-running the translation of an existing **Segment**, replacing the target in place. The user confirms a **Vibe stop** first: the stored one (a fresh sample) or a different one (the same row re-translated in another **Register**). Not a new Segment — it skips dedupe and the **Translation cache**.
+Re-running the translation of an existing **Segment**, replacing the target in place. The user confirms a **Vibe stop** first: the stored one (a fresh sample) or a different one (the same row re-translated in another **Register**). The stored **Perspective** is always kept. Not a new Segment — it skips dedupe and the **Translation cache**.
 _Avoid_: regenerate, re-translate (in code)
 
 **Segment**:
-A single source-text → target-text translation inside a **Thread**, produced at one **Vibe**. Carries word-aligned tokens (each target token mapped to its source span) and a token-cost count.
+A single source-text → target-text translation inside a **Thread**, produced at one **Vibe** and one **Perspective**. Carries word-aligned tokens (each target token mapped to its source span) and a token-cost count.
 _Avoid_: translation (the DB table name today), message, turn
 
 **Source segment / Target segment**:
@@ -103,7 +107,7 @@ A single result row from a **Translation memory** search — a past Segment with
 _Avoid_: match, result
 
 **Translation cache**:
-A _shared, cross-user_ store of **canonical** translations (no persona — tone and verbosity included — no instructions, default temperature), keyed by an exact fingerprint of `(source_text, source_lang, target_lang, vibe, model_id, prompt_revision)`. A cache hit returns instantly and costs **0 credits**. Distinct from **Translation memory**: the cache is exact-match and global; memory is semantic and per-user. Privacy-safe — you only hit on inputs you supplied yourself.
+A _shared, cross-user_ store of **canonical** translations (no persona — tone and verbosity included — no instructions, default temperature), keyed by an exact fingerprint of `(source_text, source_lang, target_lang, vibe, perspective, model_id, prompt_revision)`. A cache hit returns instantly and costs **0 credits**. Distinct from **Translation memory**: the cache is exact-match and global; memory is semantic and per-user. Privacy-safe — you only hit on inputs you supplied yourself.
 _Avoid_: translation memory (different mechanism), shared memory
 
 **Canonical translation**:
@@ -132,8 +136,8 @@ _Avoid_: vibe (use **Vibe stop** when referring to the slider value), speaker, v
 ## Relationships
 
 - A **User** owns many **Characters**; a **Character** owns many **Threads**; a **Thread** holds many **Segments**.
-- A **Character** pins one source language, one target language, a default **Vibe**, a **Temperature**, and a **Persona**. A **Thread** inherits these but a **Segment** can override the **Vibe**.
-- A **Segment** is produced at exactly one **Vibe stop**. Sending the same source text at a different stop creates a new **Segment**; a **Retry** at a different stop rewrites that Segment's target and stop in place.
+- A **Character** pins one source language, one target language, a default **Vibe**, a **Perspective**, a **Temperature**, and a **Persona**. A **Thread** inherits these but a **Segment** can override the **Vibe** and the **Perspective**.
+- A **Segment** is produced at exactly one **Vibe stop** and one **Perspective**. Sending the same source text at a different stop or perspective creates a new **Segment**; a **Retry** at a different stop rewrites that Segment's target and stop in place.
 - A **Segment** can be deleted on its own; the **Thread** and its other Segments stay.
 - A **Target segment** can be played back through any configured **Voice persona** and expanded into an **Explain** view.
 - A **Tier** gates which **Voice personas**, retention windows, custom **Vibe stops**, and AI features are available.
@@ -149,11 +153,15 @@ _Avoid_: vibe (use **Vibe stop** when referring to the slider value), speaker, v
 > **Dev:** "Is the **Vibe** picked per-Character or per-Segment?"
 > **Domain expert:** "Per-Character is the default; per-Segment can override. The learner messages Oba-chan in casual but might draft one segment in keigo when she's mad at them."
 
+> **Dev:** "The learner picked Emperor. Do we make them sound like an emperor?"
+> **Domain expert:** "Check the **Perspective**. _As_ the emperor, they talk down with imperial self-reference. _To_ the emperor, they bow with the most exalted honorifics. Same stop, opposite Japanese, so we never guess. The radio sets it and the **Segment** records it."
+
 > **Dev:** "Are the six **Vibe stop** IDs the same across languages?"
 > **Domain expert:** "Yes, IDs are universal — only the labels and hints are localized. `keigoplus` in Japanese is keigo with sonkeigo; in French it's `Formel`. Same slot, different surface."
 
 ## Flagged ambiguities
 
 - **"vibe"** is one concept with two surfaces: it drives both translation register _and_ TTS voice selection. The slider value (a **Vibe stop**) is the single input; **Voice persona** is downstream and never independently chosen. The two terms are kept distinct in this glossary because they describe different _effects_ (text vs audio), not different _inputs_.
+- **"speaker"** in the UI labels ("As the speaker" / "To the speaker") means the **Character**, not the user. Under `to` the Character is really the listener; the labels name the Character's role in the user's mind, and the prompt says "the character" throughout.
 - **"memory"** is overloaded between **Translation memory** (cross-Segment retrieval over source_embedding) and **Explain memory** (per-target-text Explain reuse). They share a name because both are user-data-as-corpus, but the access patterns differ — TM is embedding similarity, Explain memory is hash equality on `target_text`.
 - **"cache"** is _not_ used for Explain memory. Both Translation memory and Explain memory are first-class persistent stores; "cache" would imply they are disposable, which they are not.

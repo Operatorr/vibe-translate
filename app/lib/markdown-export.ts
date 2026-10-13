@@ -1,4 +1,5 @@
-import type { Character, Segment, VibeStop } from '@/lib/types'
+import { perspectiveTag } from '@/lib/character-options'
+import type { Character, Perspective, Segment, VibeStop } from '@/lib/types'
 
 import {
   LANG_NAME,
@@ -16,6 +17,7 @@ type ExportInput = {
   segments: Array<
     Pick<Segment, 'sourceText' | 'targetText' | 'createdAt'> & {
       vibe: VibeStop | null
+      perspective?: Perspective | null
     }
   >
   // Optional public share URL to embed in the footer.
@@ -53,7 +55,8 @@ export function safeLinkUrl(url: string | null | undefined): string | null {
 }
 
 // Render a Thread as a Markdown document: one section per Segment, oldest
-// first, with the Vibe stop label localized for the target language.
+// first, with the Vibe stop label localized for the target language and the
+// perspective tag when one was recorded.
 export function threadToMarkdown(input: ExportInput): string {
   const { character, segments, title } = input
   const vibes = getVibesForLang(character.targetLanguage)
@@ -74,7 +77,10 @@ export function threadToMarkdown(input: ExportInput): string {
   ]
 
   segments.forEach((seg, i) => {
-    lines.push(`## ${String(i + 1).padStart(2, '0')} · ${vibeLabel(seg.vibe)}`)
+    const tag = perspectiveTag(seg.perspective)
+    lines.push(
+      `## ${String(i + 1).padStart(2, '0')} · ${vibeLabel(seg.vibe)}${tag ? ` · ${tag}` : ''}`,
+    )
     lines.push(``)
     lines.push(`**${langName(character.sourceLanguage)}**`)
     lines.push(``)

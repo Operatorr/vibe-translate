@@ -3350,7 +3350,7 @@ body,
 /* Vibe & temp inline strip above composer */
 .composer__settings {
   display: grid;
-  grid-template-columns: 1fr 200px;
+  grid-template-columns: 1fr 240px;
   gap: 24px;
   padding: 12px 24px 16px;
   border-bottom: 1px dashed var(--border);
@@ -3496,6 +3496,82 @@ body,
   background: transparent;
   cursor: pointer;
   opacity: 0;
+}
+
+/* Temperature over the perspective radios: the drawer's second column on
+   desktop, stacked under the Vibe slider on narrow screens. */
+.composer__settings-side {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+}
+
+/* Perspective radios (as / to the speaker) */
+.persp {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.persp__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+.persp__head-l {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.persp__h-l {
+  font: 500 10px/1 var(--font-mono);
+  letter-spacing: var(--ls-eyebrow);
+  text-transform: uppercase;
+  color: var(--fg-subtle);
+}
+.persp__h-r {
+  font: 400 12px/1 var(--font-mono);
+  color: var(--fg-muted);
+}
+.persp__options {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+.persp__option {
+  position: relative;
+  display: grid;
+  place-items: center;
+  min-height: 40px;
+  padding: 6px 8px;
+  border: 1px solid var(--border-strong);
+  background: var(--bg-elev-1);
+  color: var(--fg-muted);
+  font: 500 11px/1.2 var(--font-mono);
+  text-align: center;
+  cursor: pointer;
+  transition:
+    color var(--dur-fast) var(--ease-productive),
+    border-color var(--dur-fast) var(--ease-productive);
+}
+.persp__option:hover {
+  color: var(--fg);
+}
+.persp__option:has(input:checked) {
+  border-color: var(--blue-400);
+  color: var(--blue-400);
+}
+.persp__option:has(input:focus-visible) {
+  outline: 2px solid var(--blue-400);
+  outline-offset: 2px;
+}
+.persp__option input {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
 }
 
 /* Welcome / empty state for workspace */
@@ -3716,10 +3792,37 @@ body,
   color: var(--fg);
   border-color: var(--fg-muted);
 }
+/* Fits a 10px eyebrow row; the ::after keeps a 44px touch target. */
+.cust__help-button--compact {
+  position: relative;
+  width: 22px;
+  height: 22px;
+  font-size: 12px;
+}
+.cust__help-button--compact::after {
+  content: '';
+  position: absolute;
+  inset: -11px;
+}
 .cust__help-button:focus-visible,
-.cust__chip:focus-visible {
+.cust__chip:focus-visible,
+.cust__radio:has(input:focus-visible) {
   outline: 2px solid var(--blue-400);
   outline-offset: 3px;
+}
+/* A chip-styled native radio: the input stays focusable and clickable. */
+.cust__radio {
+  position: relative;
+  min-height: 36px;
+  display: inline-flex;
+  align-items: center;
+}
+.cust__radio input {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
 }
 .cust-help__overlay {
   position: fixed;
@@ -3755,6 +3858,16 @@ body,
 }
 .cust-help__summary {
   color: var(--fg-muted);
+}
+.cust-help__section-h {
+  margin: 16px 0 0;
+  font: 600 14px/1.4 var(--font-sans);
+}
+.cust-help__section p {
+  margin: 4px 0 0;
+}
+.cust-help__section + .cust-help__example-label {
+  margin-top: 20px;
 }
 .cust-help__example-label {
   margin-bottom: 8px;
@@ -4507,6 +4620,13 @@ body,
   .composer__settings {
     padding: 8px 12px 12px;
     gap: 12px;
+  }
+  .composer__settings-side {
+    gap: 12px;
+  }
+  /* Full-width thumb targets on phones. */
+  .persp__option {
+    min-height: 44px;
   }
   .composer__buttons {
     width: 56px;

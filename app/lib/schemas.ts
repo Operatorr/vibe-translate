@@ -12,6 +12,10 @@ export const VIBE_STOPS = [
 
 export const vibeStopSchema = z.enum(VIBE_STOPS)
 
+export const PERSPECTIVES = ['as', 'to'] as const
+
+export const perspectiveSchema = z.enum(PERSPECTIVES)
+
 const SOURCE_LANGUAGE_ERROR =
   'Choose English or one of the four supported source languages'
 const TARGET_LANGUAGE_ERROR =
@@ -22,6 +26,7 @@ export const characterFormSchema = z.object({
   sourceLanguage: z.enum(SOURCE_LANGUAGES, { error: SOURCE_LANGUAGE_ERROR }),
   targetLanguage: z.enum(CHARACTER_LANGUAGES, { error: TARGET_LANGUAGE_ERROR }),
   defaultVibe: vibeStopSchema,
+  perspective: perspectiveSchema,
   temperature: z.number().min(0).max(1),
   persona: z
     .object({
@@ -100,6 +105,7 @@ export const sharedThreadSchema = z.object({
       sourceText: z.string(),
       targetText: z.string(),
       vibe: vibeStopSchema.nullable(),
+      perspective: perspectiveSchema.nullable(),
       tokenAlignment: z.array(segmentTokenSchema).catch([]),
       createdAt: z.string(),
     }),

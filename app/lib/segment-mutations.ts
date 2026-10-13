@@ -3,12 +3,13 @@ import type { QueryClient } from '@tanstack/react-query'
 import { keys } from './query-keys'
 import { touchThread } from './query-updaters'
 import { appendHistory, type SegmentHistory } from './segment-history'
-import type { CreatedSegment, Thread, VibeStop } from './types'
+import type { CreatedSegment, Perspective, Thread, VibeStop } from './types'
 
 export type CreateSegmentInput = {
   threadId: string
   sourceText: string
   vibe?: VibeStop
+  perspective?: Perspective
 }
 
 // Shared by the hook and regression tests so they exercise the same cache flow.

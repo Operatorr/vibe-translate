@@ -3,6 +3,7 @@ import { toast } from 'sonner'
 
 import { Icon } from '@/components/vibe-design/icon'
 import type { VibePreset } from '@/components/vibe-design/design-data'
+import { PERSPECTIVE_OPTIONS } from '@/lib/character-options'
 import { cssVars } from '@/lib/css-vars'
 import { readDrafts, writeDrafts, type Drafts } from '@/lib/draft-store'
 import {
@@ -11,6 +12,9 @@ import {
   type Recognizer,
 } from '@/lib/speech-recognition'
 import { estimateTokens } from '@/lib/tokens'
+import type { Perspective } from '@/lib/types'
+
+import { CharacterSettingHelp } from './character-setting-help'
 
 const MAX_CHARS = 20_000
 
@@ -147,6 +151,50 @@ export const TempSlider = ({
   </div>
 )
 
+// Native radios: one tab stop, arrow keys move the choice. The "?" opens the
+// as / to explanation shared with the Character panel.
+export const PerspectiveRadios = ({
+  value,
+  onChange,
+}: {
+  value: Perspective
+  onChange: (value: Perspective) => void
+}) => {
+  const id = React.useId()
+  const active = PERSPECTIVE_OPTIONS.find((o) => o.id === value)
+  return (
+    <div className="persp">
+      <div className="persp__head">
+        <span className="persp__head-l">
+          <span id={`${id}-label`} className="persp__h-l">
+            PERSPECTIVE
+          </span>
+          <CharacterSettingHelp setting="perspective" compact />
+        </span>
+        <span className="persp__h-r">{active?.hint}</span>
+      </div>
+      <div
+        className="persp__options"
+        role="radiogroup"
+        aria-labelledby={`${id}-label`}
+      >
+        {PERSPECTIVE_OPTIONS.map((o) => (
+          <label key={o.id} className="persp__option">
+            <input
+              type="radio"
+              name={id}
+              value={o.id}
+              checked={value === o.id}
+              onChange={() => onChange(o.id)}
+            />
+            <span>{o.label}</span>
+          </label>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 export type ComposerHandle = { focus: () => void }
 
 export const Composer = React.forwardRef<
@@ -161,6 +209,8 @@ export const Composer = React.forwardRef<
     temperature: number
     onTemperatureChange: (value: number) => void
     onTemperatureCommit: (value: number) => void
+    perspective: Perspective
+    onPerspectiveChange: (value: Perspective) => void
     // Resolves true once the translation landed; the draft is cleared only then.
     onSend: (text: string) => Promise<boolean>
     sending: boolean
@@ -180,6 +230,8 @@ export const Composer = React.forwardRef<
     temperature,
     onTemperatureChange,
     onTemperatureCommit,
+    perspective,
+    onPerspectiveChange,
     onSend,
     sending,
     disabled,
@@ -383,9 +435,16 @@ export const Composer = React.forwardRef<
   const chars = shown.length
   const canSend = shown.trim().length > 0 && !sending && !disabled
   const activeVibe = vibes[vibeIdx] ?? vibes[0]
-  const settingsLabel = activeVibe
-    ? `Vibe and temperature · ${activeVibe.label}`
-    : 'Vibe and temperature'
+  const perspectiveLabel = PERSPECTIVE_OPTIONS.find(
+    (o) => o.id === perspective,
+  )?.label
+  const settingsLabel = [
+    'Translation settings',
+    activeVibe?.label,
+    perspectiveLabel,
+  ]
+    .filter(Boolean)
+    .join(' · ')
 
   return (
     <div className="composer">
@@ -404,11 +463,17 @@ export const Composer = React.forwardRef<
               valueIdx={vibeIdx}
               onChange={onVibeChange}
             />
-            <TempSlider
-              value={temperature}
-              onChange={onTemperatureChange}
-              onCommit={onTemperatureCommit}
-            />
+            <div className="composer__settings-side">
+              <TempSlider
+                value={temperature}
+                onChange={onTemperatureChange}
+                onCommit={onTemperatureCommit}
+              />
+              <PerspectiveRadios
+                value={perspective}
+                onChange={onPerspectiveChange}
+              />
+            </div>
           </div>
         </div>
       </div>

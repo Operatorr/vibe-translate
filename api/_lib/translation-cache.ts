@@ -2,7 +2,7 @@ import type { Client } from 'pg'
 
 import { sha256Hex } from './embeddings'
 import { TRANSLATE_PROMPT_REVISION } from './prompts'
-import type { Persona, SegmentToken, VibeStop } from './schemas'
+import type { Perspective, Persona, SegmentToken, VibeStop } from './schemas'
 
 // Only canonical requests are eligible for the shared cache: empty persona,
 // empty instructions, default temperature. See adr/0004.
@@ -39,6 +39,7 @@ export type FingerprintInput = {
   sourceLanguage: string
   targetLanguage: string
   vibe: VibeStop
+  perspective: Perspective
   modelId: string
 }
 
@@ -56,6 +57,7 @@ export function fingerprint(
       input.sourceLanguage,
       input.targetLanguage,
       input.vibe,
+      input.perspective,
       input.modelId,
       `prompt-r${promptRevision}`,
     ].join('\n'),
@@ -105,15 +107,16 @@ export async function upsertCache(
 ): Promise<void> {
   await db.query(
     `insert into translation_cache
-       (fingerprint, source_language, target_language, vibe, model_id,
-        source_text, target_text, token_alignment, source_embedding)
-     values ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+       (fingerprint, source_language, target_language, vibe, perspective,
+        model_id, source_text, target_text, token_alignment, source_embedding)
+     values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
      on conflict (fingerprint) do nothing`,
     [
       fp,
       input.sourceLanguage,
       input.targetLanguage,
       input.vibe,
+      input.perspective,
       input.modelId,
       input.sourceText,
       input.targetText,

@@ -47,12 +47,20 @@ describe('fingerprint', () => {
     sourceLanguage: 'en-US',
     targetLanguage: 'zh-TW',
     vibe: 'casual' as const,
+    perspective: 'to' as const,
     modelId: 'openai/gpt-5-mini',
   }
 
   it('is stable for the same input and revision', async () => {
     expect(await fingerprint(input)).toBe(
       await fingerprint(input, TRANSLATE_PROMPT_REVISION),
+    )
+  })
+
+  // Speaking as and to the same stop are different translations (adr/0009).
+  it('changes with the perspective', async () => {
+    expect(await fingerprint(input)).not.toBe(
+      await fingerprint({ ...input, perspective: 'as' }),
     )
   })
 

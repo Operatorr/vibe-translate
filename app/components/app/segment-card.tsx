@@ -5,8 +5,14 @@ import * as React from 'react'
 import { Icon } from '@/components/vibe-design/icon'
 import type { VibePreset } from '@/components/vibe-design/design-data'
 import { useBackButtonClose } from '@/hooks/use-back-button-close'
-import type { ExplainBody, SegmentToken, VibeStop } from '@/lib/types'
+import type {
+  ExplainBody,
+  Perspective,
+  SegmentToken,
+  VibeStop,
+} from '@/lib/types'
 import { normalizeWord, srcWordSet } from '@/lib/alignment'
+import { perspectiveTag } from '@/lib/character-options'
 
 import { VibeMini } from './composer'
 import { ExplainPanel } from './explain-panel'
@@ -17,6 +23,7 @@ export type SegmentView = {
   sourceText: string
   targetText: string
   vibe: VibeStop | null
+  perspective?: Perspective | null
   tokenAlignment: SegmentToken[]
   tokenUsage?: Record<string, unknown>
   createdAt: string
@@ -88,6 +95,7 @@ export function SegmentCard({
   const [selection, setSelection] = React.useState<Selection>(null)
   const rowRef = React.useRef<HTMLDivElement>(null)
   const vibe = vibes.find((v) => v.id === seg.vibe)
+  const perspective = perspectiveTag(seg.perspective)
   const isJa = /^ja([-_]|$)/i.test(targetLanguage)
   // Memoized so the no-alignment fallback keeps a stable identity across renders.
   const tokens = React.useMemo(
@@ -216,6 +224,7 @@ export function SegmentCard({
               TARGET · {targetLanguage}
               <span style={{ color: vibe?.color, marginLeft: 8 }}>
                 {vibe?.label ?? 'Vibe not recorded'}
+                {perspective && ` · ${perspective}`}
               </span>
             </div>
             {!readOnly && <SegmentUsage usage={seg.tokenUsage} />}
@@ -496,13 +505,16 @@ export function PendingSegmentCard({
   sourceLanguage,
   targetLanguage,
   vibe,
+  perspective,
 }: {
   idx: number
   sourceText: string
   sourceLanguage: string
   targetLanguage: string
   vibe?: VibePreset
+  perspective?: Perspective
 }) {
+  const tag = perspectiveTag(perspective)
   return (
     <div className="segment segment--active segment--pending">
       <div className="segment__row">
@@ -518,6 +530,7 @@ export function PendingSegmentCard({
             {vibe && (
               <span style={{ color: vibe.color, marginLeft: 8 }}>
                 {vibe.label}
+                {tag && ` · ${tag}`}
               </span>
             )}
           </div>

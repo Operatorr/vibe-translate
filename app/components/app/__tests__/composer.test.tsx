@@ -6,6 +6,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import * as React from 'react'
@@ -27,11 +28,15 @@ function renderComposer(props: Partial<ComposerProps> = {}) {
   const onVibeChange = vi.fn()
   const onTemperatureChange = vi.fn()
   const onTemperatureCommit = vi.fn()
+  const onPerspectiveChange = vi.fn()
   const onSend = vi.fn(async () => true)
   // Stateful like AppExperience, so controlled sliders actually move.
   function Harness(over: Partial<ComposerProps>) {
     const [vibeIdx, setVibeIdx] = React.useState(over.vibeIdx ?? 0)
     const [temperature, setTemperature] = React.useState(0.4)
+    const [perspective, setPerspective] = React.useState(
+      over.perspective ?? ('to' as const),
+    )
     return (
       <Composer
         contextId="t1"
@@ -49,6 +54,11 @@ function renderComposer(props: Partial<ComposerProps> = {}) {
           setTemperature(value)
         }}
         onTemperatureCommit={onTemperatureCommit}
+        perspective={perspective}
+        onPerspectiveChange={(value) => {
+          onPerspectiveChange(value)
+          setPerspective(value)
+        }}
         onSend={onSend}
         sending={false}
         {...over}
@@ -63,12 +73,15 @@ function renderComposer(props: Partial<ComposerProps> = {}) {
     onVibeChange,
     onTemperatureChange,
     onTemperatureCommit,
+    onPerspectiveChange,
     onSend,
   }
 }
 
-const toggle = (vibe = 'Casual') =>
-  screen.getByRole('button', { name: `Vibe and temperature · ${vibe}` })
+const toggle = (vibe = 'Casual', perspective = 'To the speaker') =>
+  screen.getByRole('button', {
+    name: `Translation settings · ${vibe} · ${perspective}`,
+  })
 const drawerOf = (button: HTMLElement) => {
   const drawer = document.getElementById(button.getAttribute('aria-controls')!)
   expect(drawer).not.toBeNull()
@@ -101,8 +114,12 @@ describe('composer settings disclosure', () => {
 
   it('opens and closes with a click, exposing working Vibe and Temperature controls', async () => {
     const user = userEvent.setup()
-    const { onVibeChange, onTemperatureChange, onTemperatureCommit } =
-      renderComposer()
+    const {
+      onVibeChange,
+      onTemperatureChange,
+      onTemperatureCommit,
+      onPerspectiveChange,
+    } = renderComposer()
     const button = toggle()
     await user.click(button)
     const drawer = drawerOf(button)
@@ -125,8 +142,20 @@ describe('composer settings disclosure', () => {
     fireEvent.keyUp(temperature, { key: 'ArrowRight' })
     expect(onTemperatureCommit).toHaveBeenLastCalledWith(0.7)
 
-    await user.click(toggle('Polite'))
-    expect(toggle('Polite').getAttribute('aria-expanded')).toBe('false')
+    const perspective = screen.getByRole('radiogroup', { name: 'PERSPECTIVE' })
+    expect(perspective).not.toBeNull()
+    const as = screen.getByRole('radio', { name: 'As the speaker' })
+    const to = screen.getByRole('radio', { name: 'To the speaker' })
+    expect((to as HTMLInputElement).checked).toBe(true)
+    await user.click(as)
+    expect(onPerspectiveChange).toHaveBeenLastCalledWith('as')
+    expect((as as HTMLInputElement).checked).toBe(true)
+    expect((to as HTMLInputElement).checked).toBe(false)
+
+    await user.click(toggle('Polite', 'As the speaker'))
+    expect(
+      toggle('Polite', 'As the speaker').getAttribute('aria-expanded'),
+    ).toBe('false')
     expect(drawer.hasAttribute('inert')).toBe(true)
     expect(screen.queryByRole('slider')).toBeNull()
   })
@@ -155,10 +184,35 @@ describe('composer settings disclosure', () => {
     expect(document.activeElement).toBe(button)
   })
 
+  it('explains both perspectives from the "?" next to Perspective', async () => {
+    const user = userEvent.setup()
+    renderComposer()
+    await user.click(toggle())
+    const trigger = screen.getByRole('button', { name: 'About perspective' })
+    await user.click(trigger)
+    const dialog = screen.getByRole('dialog', { name: 'Perspective' })
+    for (const heading of ['As the speaker', 'To the speaker'])
+      expect(
+        within(dialog).getByRole('heading', { name: heading }),
+      ).toBeTruthy()
+    await user.click(within(dialog).getByRole('button', { name: 'Got it' }))
+    await waitFor(() =>
+      expect(screen.queryByRole('dialog', { name: 'Perspective' })).toBeNull(),
+    )
+    await waitFor(() => expect(document.activeElement).toBe(trigger))
+    // The radios are untouched by opening the help.
+    expect(
+      screen.getByRole<HTMLInputElement>('radio', { name: 'To the speaker' })
+        .checked,
+    ).toBe(true)
+  })
+
   it('shows the selected Vibe on the collapsed toggle', () => {
     renderComposer({ vibeIdx: 2 })
     const button = toggle('Keigo')
-    expect(button.getAttribute('title')).toBe('Vibe and temperature · Keigo')
+    expect(button.getAttribute('title')).toBe(
+      'Translation settings · Keigo · To the speaker',
+    )
     const dot = button.querySelector<HTMLElement>('.composer__settings-vibe')
     expect(dot?.style.background).toBe('rgb(7, 8, 9)')
     expect(dot?.getAttribute('aria-hidden')).toBe('true')

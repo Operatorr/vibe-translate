@@ -1,42 +1,89 @@
 import type { TranslateSegmentInput } from './ai'
 import type { ExplainGenerateInput } from './explain'
-import { VIBE_STOPS, SOURCE_LANGUAGES, TARGET_LANGUAGES } from './schemas'
-import type { Persona, VibeStop } from './schemas'
+import {
+  PERSPECTIVES,
+  VIBE_STOPS,
+  SOURCE_LANGUAGES,
+  TARGET_LANGUAGES,
+} from './schemas'
+import type { Perspective, Persona, VibeStop } from './schemas'
 
 // Prompt construction for the translate flow. Pure and network-free so it can
 // be unit-tested in isolation; `api/_lib/ai.ts` owns the OpenRouter call and
 // consumes the messages built here. See docs/BACKEND.md.
 
-// Model-facing register guidance, one line per Vibe stop. Deliberately English
-// (the model is multilingual and renders the register in whatever target
-// language is requested) and deliberately generic — the per-language labels and
-// marketing hints live in the frontend `VIBE_PRESETS_PER_LANG`, not here.
+// Model-facing register guidance, one line per Vibe stop and Perspective.
+// Deliberately English (the model is multilingual and renders the register in
+// whatever target language is requested) and deliberately generic — the
+// per-language labels and marketing hints live in the frontend
+// `VIBE_PRESETS_PER_LANG`, not here.
 //
-// Typed `Record<VibeStop, string>` so adding a stop to VIBE_STOPS without a
-// description here is a compile error. Keeps the six-stop contract in lockstep
-// with api/_lib/schemas.ts → VIBE_STOPS and the DB `vibe_stop` enum.
-const VIBE_REGISTER: Record<VibeStop, string> = {
-  yakuza:
-    'Rough, aggressive, hyper-masculine street register; blunt slang, dropped politeness, intimidating.',
-  friend:
-    'Warm casual register between close friends; relaxed contractions, familiar particles, easy banter.',
-  casual:
-    'Everyday neutral-casual register; plain form, conversational but not slangy.',
-  keigo:
-    'Standard polite / business register; teineigo (です・ます equivalents), respectful but not deferential.',
-  keigoplus:
-    'Elevated honorific register; humble + exalted forms (sonkeigo + kenjougo equivalents), deferential toward a superior.',
-  emperor:
-    'Maximally grandiose, archaic, ceremonial register; ornate, lofty, imperial phrasing.',
+// The same stop means different speech by Perspective: speaking AS a yakuza is
+// rough street talk, speaking TO one is careful respect; AS an emperor is
+// imperial condescension, TO one is the most exalted honorifics. The middle
+// stops mostly converge. "The speaker" is the Character for `as` and the user
+// for `to`. See adr/0009.
+//
+// Typed `Record<VibeStop, Record<Perspective, string>>` so adding a stop to
+// VIBE_STOPS (or a perspective) without guidance here is a compile error. Keeps
+// the six-stop contract in lockstep with api/_lib/schemas.ts → VIBE_STOPS and
+// the DB `vibe_stop` enum.
+const VIBE_REGISTER: Record<VibeStop, Record<Perspective, string>> = {
+  yakuza: {
+    as: 'Rough, aggressive, hyper-masculine street register; blunt slang, rough self-reference, dropped politeness, intimidating.',
+    to: 'Addressing a dangerous street tough; careful, respectful and never provocative, with polite forms or a junior’s deference to a senior. Do not mirror their slang or aggression.',
+  },
+  friend: {
+    as: 'Warm casual register of a close friend; relaxed contractions, familiar particles, easy banter.',
+    to: 'Addressing a close friend; warm casual register, relaxed contractions, familiar particles, easy banter.',
+  },
+  casual: {
+    as: 'Everyday neutral-casual register; plain form, conversational but not slangy.',
+    to: 'Addressing a peer or acquaintance; everyday neutral-casual register, plain form, conversational but not slangy.',
+  },
+  keigo: {
+    as: 'Polite professional register, as staff or a business person speaks; teineigo (です・ます equivalents), courteous but not deferential.',
+    to: 'Addressing a colleague, customer or stranger; standard polite register, teineigo (です・ます equivalents), respectful but not deferential.',
+  },
+  keigoplus: {
+    as: 'Refined, elevated register of someone versed in etiquette; exalted forms for others and humble forms for themselves (sonkeigo + kenjougo equivalents), gracious and composed.',
+    to: 'Addressing a superior (boss, client, elder); elevated honorific register, exalted forms for their actions and humble forms for the speaker’s own (sonkeigo + kenjougo equivalents), deferential.',
+  },
+  emperor: {
+    as: 'A sovereign speaking; maximally grandiose, archaic, ceremonial register, imperial self-reference, speaks down to the listener, commands rather than requests, never humble.',
+    to: 'Addressing royalty; the most exalted honorifics available (court-level, beyond business keigo), formal titles of address, extreme humility for the speaker, ceremonial and reverent.',
+  },
 }
 
 // Belt-and-suspenders runtime guard for the lockstep invariant above; cheap and
 // catches an out-of-sync map even if the type check is somehow bypassed.
-const MISSING_REGISTER = VIBE_STOPS.filter((stop) => !(stop in VIBE_REGISTER))
+const MISSING_REGISTER = VIBE_STOPS.flatMap((stop) =>
+  PERSPECTIVES.filter((p) => !VIBE_REGISTER[stop]?.[p]).map(
+    (p) => `${stop}/${p}`,
+  ),
+)
 if (MISSING_REGISTER.length > 0) {
   throw new Error(
     `VIBE_REGISTER is missing guidance for: ${MISSING_REGISTER.join(', ')}`,
   )
+}
+
+// Who is talking in the translation. Always emitted (persona or not): it flips
+// the register above, so canonical translations depend on it too.
+const PERSPECTIVE_GUIDANCE: Record<Perspective, string> = {
+  as: 'speaking AS the character. The source text is the character’s own words; translate it as the character would say it, in their voice, with their self-reference and way of talking. The register below is the character’s own.',
+  to: 'speaking TO the character. The source text is the user’s own words, addressed to the character; translate it as the user would say it to them. The register below is how to address someone like the character. Never speak as the character: do not borrow their self-reference, attitude or status.',
+}
+
+const PERSONA_HEADING: Record<Perspective, string> = {
+  as: 'CHARACTER PERSONA (the speaker; write in their voice):',
+  to: 'CHARACTER PERSONA (the person being addressed, not the speaker):',
+}
+
+// How the persona applies, prefixed to VOICE_PRIORITY in the voice rules.
+const PERSONA_ROLE: Record<Perspective, string> = {
+  as: 'The persona describes the speaker: their age, region, personality, tone and traits shape the wording.',
+  to: 'The persona describes the person being addressed: pitch the message to suit their age and personality, and write in their regional variety so it reads naturally to them. Tone, verbosity and style traits shape the user’s wording.',
 }
 
 const CANTONESE = /cantonese|廣東話|广东话|粵語|粤语/i
@@ -103,11 +150,12 @@ export type ChatMessage = { role: 'system' | 'user'; content: string }
 // changes what the model is told. It is part of the shared translation-cache
 // fingerprint, so a bump stops serving results produced under the old prompt.
 // 2: script and variety guidance for zh-CN, zh-TW and th-TH targets.
-export const TRANSLATE_PROMPT_REVISION = 2
+// 3: perspective (as / to the Character) and per-perspective register lines.
+export const TRANSLATE_PROMPT_REVISION = 3
 
 // Build the two-message prompt for one translation. The system message is the
-// stable instruction surface (register, persona, output contract, alignment
-// rules); the user message is just the raw source text.
+// stable instruction surface (perspective, register, persona, output contract,
+// alignment rules); the user message is just the raw source text.
 export function buildTranslateMessages(
   input: TranslateSegmentInput,
 ): ChatMessage[] {
@@ -119,12 +167,13 @@ export function buildTranslateMessages(
     `Translate from ${input.sourceLanguage} to ${input.targetLanguage}.`,
     targetLanguageGuidance(input.targetLanguage, input.persona),
     ``,
-    `REGISTER (vibe = "${input.vibe}"): ${VIBE_REGISTER[input.vibe]}`,
-    persona
-      ? `\nSPEAKER PERSONA (who is speaking / being addressed):\n${persona}`
-      : null,
+    `PERSPECTIVE: ${PERSPECTIVE_GUIDANCE[input.perspective]}`,
+    `REGISTER (vibe = "${input.vibe}"): ${VIBE_REGISTER[input.vibe][input.perspective]}`,
+    persona ? `\n${PERSONA_HEADING[input.perspective]}\n${persona}` : null,
     instructions ? `\nADDITIONAL INSTRUCTIONS:\n${instructions}` : null,
-    persona || instructions ? `\nVOICE RULES: ${VOICE_PRIORITY}` : null,
+    persona || instructions
+      ? `\nVOICE RULES: ${PERSONA_ROLE[input.perspective]} ${VOICE_PRIORITY}`
+      : null,
     ``,
     `Respond with JSON containing exactly two fields: "targetText" and "tokens".`,
     `- "targetText": the full translation, written entirely in the chosen register.`,
@@ -235,6 +284,8 @@ export function buildDictationMessages(prompt: string): ChatMessage[] {
     `  The source is the user's own language; the target is who they are writing to.`,
     `- "defaultVibe": one of ${VIBE_STOPS.join(', ')} — the social register that best fits the`,
     `  relationship (e.g. a close friend -> "friend"; a boss or business contact -> "keigo").`,
+    `- "perspective": "as" when the user wants to speak in this person's own voice (as them),`,
+    `  "to" when the user is writing to this person; null if unclear.`,
     `- "temperature": 0.0-1.0 wording variation (lower = more predictable; does not set formality), or null if unsure.`,
     `- "persona": { "age", "region", "formality", "tone", "verbosity", "traits" (array) }; null`,
     `  fields where unknown, "traits" is [] when none. "tone" is one word for how they sound`,

@@ -4,7 +4,7 @@ status: accepted
 
 # Shared canonical translation cache
 
-A global `translation_cache` table lets identical translation requests across users reuse a prior result — instant and **free** (zero credits, zero model call). It is keyed by a SHA-256 **fingerprint** of `(source_text, source_language, target_language, vibe, model_id, prompt_revision)` and stores only `target_text`, `token_alignment`, and `source_embedding`. It carries **no `user_id`, no persona, no instructions**.
+A global `translation_cache` table lets identical translation requests across users reuse a prior result — instant and **free** (zero credits, zero model call). It is keyed by a SHA-256 **fingerprint** of `(source_text, source_language, target_language, vibe, perspective, model_id, prompt_revision)` (perspective since [ADR 0009](./0009-perspective-as-or-to-character.md)) and stores only `target_text`, `token_alignment`, and `source_embedding`. It carries **no `user_id`, no persona, no instructions**.
 
 Only **canonical** translations are cached globally: those produced with an empty persona, empty instructions, and the default temperature. Personalized translations (any persona, any instructions, non-default temperature) are saved as per-user **Segments** but are never written to the shared cache.
 

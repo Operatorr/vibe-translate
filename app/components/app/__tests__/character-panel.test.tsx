@@ -13,6 +13,7 @@ const character = (persona: Character['persona']): Character => ({
   sourceLanguage: 'en-US',
   targetLanguage: 'zh-TW',
   defaultVibe: 'casual',
+  perspective: 'to',
   temperature: 0.4,
   persona,
   sortOrder: 0,
@@ -38,7 +39,7 @@ const renderPanel = (persona: Character['persona'] = { traits: [] }) => {
 afterEach(cleanup)
 
 describe('setting help dialogs inside the Character editor', () => {
-  it.each(['verbosity', 'temperature'])(
+  it.each(['verbosity', 'temperature', 'perspective'])(
     'Escape closes the %s help without closing the editor or losing edits',
     async (setting) => {
       const { onClose, user } = renderPanel()

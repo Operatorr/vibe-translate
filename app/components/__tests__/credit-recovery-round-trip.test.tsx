@@ -52,6 +52,8 @@ function Workspace() {
       temperature={0.4}
       onTemperatureChange={() => {}}
       onTemperatureCommit={() => {}}
+      perspective="to"
+      onPerspectiveChange={() => {}}
       onSend={send}
       sending={false}
       draftOwner="u1"

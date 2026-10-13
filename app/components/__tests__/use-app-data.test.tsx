@@ -67,6 +67,7 @@ const input: CharacterInput = {
   sourceLanguage: 'en-US',
   targetLanguage: 'ja-JP',
   defaultVibe: 'casual',
+  perspective: 'to',
   temperature: 0.4,
   persona: { traits: [] },
 }

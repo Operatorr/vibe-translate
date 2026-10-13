@@ -17,6 +17,7 @@ const character = (overrides: Partial<Character> = {}): Character => ({
   sourceLanguage: 'en-US',
   targetLanguage: 'zh-TW',
   defaultVibe: 'casual',
+  perspective: 'to',
   temperature: 0.4,
   persona: { traits: [] },
   sortOrder: 0,

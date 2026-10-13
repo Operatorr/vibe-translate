@@ -41,6 +41,7 @@ const seg = (n: number): Segment => ({
   sourceText: `source ${n}`,
   targetText: `target ${n}`,
   vibe: 'casual',
+  perspective: 'to',
   tokenAlignment: [],
   tokenUsage: {},
   createdAt: `2026-01-0${n}T00:00:00Z`,

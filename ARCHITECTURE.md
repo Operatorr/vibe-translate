@@ -52,13 +52,14 @@ Postgres + pgvector  (via Hyperdrive)
 - [adr/0004](./docs/adr/0004-shared-canonical-translation-cache.md) — shared canonical translation cache.
 - [adr/0007](./docs/adr/0007-segment-vibe-snapshot.md) — generation-time Vibe snapshots and legacy null rows.
 - [adr/0008](./docs/adr/0008-better-auth-replaces-clerk.md) — self-hosted Better Auth replaces Clerk (30-day sliding sessions).
+- [adr/0009](./docs/adr/0009-perspective-as-or-to-character.md) — Perspective: speaking as the Character or to them.
 
 ## Boundaries (load-bearing rules)
 
 - **The SPA never imports from `api/_lib/`; the worker never imports from `app/`.** The only browser↔worker channel is `app/lib/api.ts` → `/api/*`.
 - **Every API input is validated with Zod** at the boundary (`api/_lib/schemas.ts`).
 - **Every per-user row is scoped by `users.auth_user_id`** (the Better Auth user id). See [docs/SECURITY.md](./docs/SECURITY.md#per-user-scoping).
-- **The six Vibe stop IDs are a contract** shared by the DB enum, `api/_lib/schemas.ts → VIBE_STOPS`, and the client preset table. Keep all three in lockstep.
+- **The six Vibe stop IDs are a contract** shared by the DB enum, `api/_lib/schemas.ts → VIBE_STOPS`, and the client preset table. Keep all three in lockstep. The two **Perspective** values (`as`, `to`) are the same kind of contract: DB enum, `PERSPECTIVES` in both schema files, and the per-perspective register lines in `prompts.ts` and its client mirror.
 - **Embeddings are platform-owned** (never BYOK) so the corpus stays cosine-comparable.
 
 ## Tech choices worth knowing

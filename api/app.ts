@@ -55,7 +55,12 @@ import { EXPLAIN_PAYLOAD_VERSION, generateExplain } from './_lib/explain'
 import { resolveCallTarget } from './_lib/openrouter'
 import { assertUserOwnsResource, canUseFeature } from './_lib/permissions'
 import { encryptSecret, lastFour } from './_lib/secrets'
-import type { Persona, SegmentToken, VibeStop } from './_lib/schemas'
+import type {
+  Perspective,
+  Persona,
+  SegmentToken,
+  VibeStop,
+} from './_lib/schemas'
 import {
   fingerprint,
   isCanonical,
@@ -386,8 +391,8 @@ app.post('/api/characters', zValidator('json', characterCreateSchema), (c) => {
       const res = await db.query<CharacterDbRow>(
         `insert into characters
            (user_id, name, initials, color, source_language, target_language,
-            default_vibe, temperature, persona, instructions)
-         values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+            default_vibe, perspective, temperature, persona, instructions)
+         values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
          returning ${CHARACTER_COLUMNS}`,
         [
           userId,
@@ -397,6 +402,7 @@ app.post('/api/characters', zValidator('json', characterCreateSchema), (c) => {
           payload.sourceLanguage,
           payload.targetLanguage,
           payload.defaultVibe,
+          payload.perspective,
           payload.temperature,
           JSON.stringify(payload.persona),
           payload.instructions ?? null,
@@ -435,6 +441,7 @@ app.patch(
         sourceLanguage: 'source_language',
         targetLanguage: 'target_language',
         defaultVibe: 'default_vibe',
+        perspective: 'perspective',
         temperature: 'temperature',
         persona: 'persona',
         instructions: 'instructions',
@@ -804,10 +811,11 @@ app.get('/api/share/:token', (c) => {
       source_text: string
       target_text: string
       vibe: VibeStop | null
+      perspective: Perspective | null
       token_alignment: SegmentToken[]
       created_at: string | Date
     }>(
-      `select id, source_text, target_text, vibe, token_alignment, created_at
+      `select id, source_text, target_text, vibe, perspective, token_alignment, created_at
          from segments where thread_id = $1 order by created_at asc limit $2`,
       [row.thread_id, SHARE_SEGMENT_LIMIT],
     )
@@ -831,6 +839,8 @@ app.get('/api/share/:token', (c) => {
         targetText: s.target_text,
         // Null is a legacy row whose generation-time stop was not recorded.
         vibe: s.vibe,
+        // Null is a legacy row from before Perspective existed (adr/0009).
+        perspective: s.perspective,
         tokenAlignment: s.token_alignment,
         createdAt: new Date(s.created_at).toISOString(),
       })),
@@ -861,6 +871,7 @@ async function translateWithCredits(
   character: TranslateCharacterRow,
   sourceText: string,
   vibe: VibeStop,
+  perspective: Perspective,
   // Create already resolved the target for the cache fingerprint; reuse it
   // rather than decrypting a BYOK key twice.
   resolvedTarget?: Awaited<ReturnType<typeof resolveCallTarget>>,
@@ -901,6 +912,7 @@ async function translateWithCredits(
         sourceLanguage: character.source_language,
         targetLanguage: character.target_language,
         vibe,
+        perspective,
         temperature: Number(character.temperature),
         persona: character.persona,
         instructions: character.instructions ?? undefined,
@@ -974,9 +986,10 @@ app.get('/api/segments', (c) => {
   })
 })
 
-// Sync translate-and-return. Client supplies `{ threadId, sourceText, vibe? }`;
-// the worker resolves the Character (default_vibe, temperature, persona,
-// source/target language), de-dupes / checks the shared canonical cache, calls
+// Sync translate-and-return. Client supplies
+// `{ threadId, sourceText, vibe?, perspective? }`; the worker resolves the
+// Character (default_vibe, perspective, temperature, persona, source/target
+// language), de-dupes / checks the shared canonical cache, calls
 // the translation provider, embeds the source, writes the Segment, and (on the
 // platform key path) records the credit spend. See docs/BACKEND.md, adr/0004.
 // `reused` tells the client whether a row was inserted (201) or an existing
@@ -992,12 +1005,13 @@ app.post('/api/segments', zValidator('json', segmentCreateSchema), (c) => {
       source_language: string
       target_language: string
       default_vibe: VibeStop
+      perspective: Perspective
       temperature: string
       persona: Persona
       instructions: string | null
     }>(
       `select t.user_id, c.source_language, c.target_language, c.default_vibe,
-              c.temperature, c.persona, c.instructions
+              c.perspective, c.temperature, c.persona, c.instructions
          from threads t join characters c on c.id = t.character_id
         where t.id = $1`,
       [payload.threadId],
@@ -1009,6 +1023,8 @@ app.post('/api/segments', zValidator('json', segmentCreateSchema), (c) => {
 
     const temperature = Number(character.temperature)
     const resolvedVibe: VibeStop = payload.vibe ?? character.default_vibe
+    const resolvedPerspective: Perspective =
+      payload.perspective ?? character.perspective
 
     const insertSeg = (
       targetText: string,
@@ -1019,14 +1035,16 @@ app.post('/api/segments', zValidator('json', segmentCreateSchema), (c) => {
       db
         .query<SegmentDbRow>(
           `insert into segments
-             (thread_id, user_id, source_text, target_text, vibe, token_alignment, token_usage, source_embedding)
-           values ($1,$2,$3,$4,$5,$6,$7,$8::vector) returning ${SEGMENT_COLUMNS}`,
+             (thread_id, user_id, source_text, target_text, vibe, perspective,
+              token_alignment, token_usage, source_embedding)
+           values ($1,$2,$3,$4,$5,$6,$7,$8,$9::vector) returning ${SEGMENT_COLUMNS}`,
           [
             payload.threadId,
             userId,
             payload.sourceText,
             targetText,
             resolvedVibe,
+            resolvedPerspective,
             JSON.stringify(tokenAlignment),
             JSON.stringify(tokenUsage),
             embedding ? formatVector(embedding) : null,
@@ -1034,13 +1052,15 @@ app.post('/api/segments', zValidator('json', segmentCreateSchema), (c) => {
         )
         .then((r) => r.rows[0])
 
-    // Pre-check 1: same text and generation-time vibe → reuse, 0 credits.
-    // A changed Character default must not reuse a translation at an old stop.
+    // Pre-check 1: same text, generation-time vibe and perspective → reuse,
+    // 0 credits. A changed Character default must not reuse a translation at an
+    // old stop, and "as" output must never answer a "to" request (adr/0009).
     const dedup = await db.query<SegmentDbRow>(
       `select ${SEGMENT_COLUMNS} from segments
         where thread_id = $1 and source_text = $2 and vibe is not distinct from $3
+          and perspective is not distinct from $4
         order by created_at desc limit 1`,
-      [payload.threadId, payload.sourceText, resolvedVibe],
+      [payload.threadId, payload.sourceText, resolvedVibe, resolvedPerspective],
     )
     if (dedup.rows[0])
       return c.json({ ...mapSegment(dedup.rows[0]), reused: true }, 200)
@@ -1066,6 +1086,7 @@ app.post('/api/segments', zValidator('json', segmentCreateSchema), (c) => {
         sourceLanguage: character.source_language,
         targetLanguage: character.target_language,
         vibe: resolvedVibe,
+        perspective: resolvedPerspective,
         modelId: target.modelId,
       })
       const hit = await lookupCache(db, fp)
@@ -1093,6 +1114,7 @@ app.post('/api/segments', zValidator('json', segmentCreateSchema), (c) => {
       character,
       payload.sourceText,
       resolvedVibe,
+      resolvedPerspective,
       target,
     )
 
@@ -1146,6 +1168,7 @@ app.post('/api/segments', zValidator('json', segmentCreateSchema), (c) => {
           sourceLanguage: character.source_language,
           targetLanguage: character.target_language,
           vibe: resolvedVibe,
+          perspective: resolvedPerspective,
           modelId: result.tokenUsage.modelId,
           targetText: result.targetText,
           tokenAlignment: result.tokenAlignment,
@@ -1164,6 +1187,7 @@ app.post('/api/segments', zValidator('json', segmentCreateSchema), (c) => {
       logActivity(db, userId, 'segment.created', {
         threadId: payload.threadId,
         vibe: resolvedVibe,
+        perspective: resolvedPerspective,
         byok: target.isByok,
       }),
     )
@@ -1187,12 +1211,16 @@ app.post(
       await getOrCreateUser(db, userId, c.get('email'))
       const segRes = await db.query<
         SegmentDbRow &
-          TranslateCharacterRow & { user_id: string; default_vibe: VibeStop }
+          TranslateCharacterRow & {
+            user_id: string
+            default_vibe: VibeStop
+            default_perspective: Perspective
+          }
       >(
-        `select s.id, s.thread_id, s.source_text, s.target_text, s.vibe, s.token_alignment,
-              s.token_usage, s.created_at, s.updated_at, s.user_id,
+        `select s.id, s.thread_id, s.source_text, s.target_text, s.vibe, s.perspective,
+              s.token_alignment, s.token_usage, s.created_at, s.updated_at, s.user_id,
               c.source_language, c.target_language, c.temperature, c.persona,
-              c.instructions, c.default_vibe
+              c.instructions, c.default_vibe, c.perspective as default_perspective
          from segments s
          join threads t on t.id = s.thread_id
          join characters c on c.id = t.character_id
@@ -1204,6 +1232,11 @@ app.post(
       assertUserOwnsResource(seg.user_id, userId)
 
       const vibe: VibeStop = requestedVibe ?? seg.vibe ?? seg.default_vibe
+      // Retry may change the stop but always keeps the recorded perspective. A
+      // legacy row without one resolves the Character's current perspective
+      // and records it with the new target (adr/0009).
+      const perspective: Perspective =
+        seg.perspective ?? seg.default_perspective
       const { result, target, settle, refund } = await translateWithCredits(
         db,
         c.env,
@@ -1211,6 +1244,7 @@ app.post(
         seg,
         seg.source_text,
         vibe,
+        perspective,
       )
       let updated: SegmentDbRow | undefined
       try {
@@ -1219,7 +1253,8 @@ app.post(
         const res = await db.query<SegmentDbRow>(
           `with updated as (
            update segments
-              set target_text = $2, token_alignment = $3, token_usage = $4, vibe = $6, updated_at = now()
+              set target_text = $2, token_alignment = $3, token_usage = $4, vibe = $6,
+                  perspective = $7, updated_at = now()
             where id = $1 and user_id = $5
            returning ${SEGMENT_COLUMNS}
          ), dropped as (
@@ -1233,6 +1268,7 @@ app.post(
             JSON.stringify(result.tokenUsage),
             userId,
             vibe,
+            perspective,
           ],
         )
         updated = res.rows[0]
@@ -1258,6 +1294,7 @@ app.post(
         logActivity(db, userId, 'segment.retried', {
           threadId: seg.thread_id,
           vibe,
+          perspective,
           byok: target.isByok,
         }),
       )

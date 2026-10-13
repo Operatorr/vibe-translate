@@ -1,3 +1,34 @@
+import type { Perspective } from './types'
+
+// Perspective radios, in display order (composer drawer and Character panel).
+// `as`: the translation is in the Character's own voice. `to`: the user's own
+// voice, addressed to the Character. See CONTEXT.md → Perspective.
+// `short` tags a Segment's generation-time perspective on cards and exports.
+export const PERSPECTIVE_OPTIONS: ReadonlyArray<{
+  id: Perspective
+  label: string
+  short: string
+  hint: string
+}> = [
+  {
+    id: 'as',
+    label: 'As the speaker',
+    short: 'as speaker',
+    hint: 'in their voice',
+  },
+  {
+    id: 'to',
+    label: 'To the speaker',
+    short: 'to speaker',
+    hint: 'addressed to them',
+  },
+]
+
+// Legacy Segments (generated before Perspective existed) carry null: no tag.
+export function perspectiveTag(perspective: Perspective | null | undefined) {
+  return PERSPECTIVE_OPTIONS.find((o) => o.id === perspective)?.short
+}
+
 // The four languages offered for new Characters. Legacy language names remain
 // in design-data so existing Characters and shared threads still display well.
 export const CHARACTER_LANGUAGES = ['zh-CN', 'zh-TW', 'th-TH', 'ja-JP'] as const

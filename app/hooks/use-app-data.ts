@@ -38,6 +38,7 @@ import type {
   ExplainPayload,
   Me,
   Persona,
+  Perspective,
   Segment,
   Thread,
   ThreadShare,
@@ -165,6 +166,7 @@ export type CharacterInput = {
   sourceLanguage: string
   targetLanguage: string
   defaultVibe: VibeStop
+  perspective: Perspective
   temperature: number
   persona: Persona
   instructions?: string
