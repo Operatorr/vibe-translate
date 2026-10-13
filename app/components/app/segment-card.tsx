@@ -508,7 +508,8 @@ function RetryDialog({
   const [temperature, setTemperature] = React.useState(currentTemperature)
   useBackButtonClose(open, () => setOpen(false))
   const onOpenChange = (next: boolean) => {
-    // Every open starts from the values the Segment was translated at.
+    // Every open starts from the Segment's stop and perspective and the
+    // Character's temperature.
     if (next) {
       setIdx(
         Math.max(
@@ -558,7 +559,7 @@ function RetryDialog({
         >
           <span className="vt-eyebrow">RETRY TRANSLATION</span>
           <Dialog.Title className="retry-modal__title">
-            Pick a vibe stop
+            Retry translation settings
           </Dialog.Title>
           <Dialog.Description className="retry-modal__description">
             Keep the current settings for a fresh take, or change them to
@@ -568,7 +569,11 @@ function RetryDialog({
           <div className="retry-modal__settings">
             <VibeMini vibes={vibes} valueIdx={idx} onChange={setIdx} />
             <TempSlider value={temperature} onChange={setTemperature} />
-            <PerspectiveRadios value={perspective} onChange={setPerspective} />
+            <PerspectiveRadios
+              value={perspective}
+              onChange={setPerspective}
+              nestedHelp
+            />
           </div>
           <div className="retry-modal__actions">
             <Dialog.Close asChild>

@@ -124,7 +124,8 @@ export const TempSlider = ({
 }: {
   value: number
   onChange: (value: number) => void
-  // Fires on release; the composer saves the Character's temperature here.
+  // Fires on pointer/key release and on blur (even when unchanged); the
+  // composer saves the Character's temperature here.
   onCommit?: (value: number) => void
 }) => (
   <div className="temp">
@@ -160,9 +161,12 @@ export const TempSlider = ({
 export const PerspectiveRadios = ({
   value,
   onChange,
+  nestedHelp,
 }: {
   value: Perspective
   onChange: (value: Perspective) => void
+  // Set inside a modal (Retry) so the help opens above it.
+  nestedHelp?: boolean
 }) => {
   const id = React.useId()
   const active = PERSPECTIVE_OPTIONS.find((o) => o.id === value)
@@ -173,7 +177,11 @@ export const PerspectiveRadios = ({
           <span id={`${id}-label`} className="persp__h-l">
             PERSPECTIVE
           </span>
-          <CharacterSettingHelp setting="perspective" compact />
+          <CharacterSettingHelp
+            setting="perspective"
+            compact
+            nested={nestedHelp}
+          />
         </span>
         <span className="persp__h-r">{active?.hint}</span>
       </div>

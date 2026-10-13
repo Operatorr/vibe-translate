@@ -1,6 +1,8 @@
 import * as Dialog from '@radix-ui/react-dialog'
+import * as React from 'react'
 
 import { Icon } from '@/components/vibe-design/icon'
+import { useBackButtonClose } from '@/hooks/use-back-button-close'
 
 type Help = {
   title: string
@@ -70,7 +72,7 @@ const HELP = {
       ['Yakuza · as the Character', 'おい、こっち来いや。'],
       ['Yakuza · to the Character', '兄貴、ちょっとこっちに来てもらえますか。'],
     ],
-    note: 'Examples are in Japanese and illustrative, not guaranteed outputs. Perspective is saved on the character, and each translation records the one it used.',
+    note: 'Examples are in Japanese and illustrative, not guaranteed outputs. Characters store the default perspective; each translation records its own. Changing perspective during Retry affects only that translation.',
   },
 } satisfies Record<string, Help>
 
@@ -78,16 +80,26 @@ export function CharacterSettingHelp({
   setting,
   onOpenChange,
   compact,
+  nested,
 }: {
   setting: keyof typeof HELP
   // The Character panel listens so Escape closes the help, not the panel.
   onOpenChange?: (open: boolean) => void
   // A smaller trigger for dense rows such as the composer's settings drawer.
   compact?: boolean
+  // Opened from inside another modal (Retry): layered above it, and Back
+  // closes the help first, keeping the parent dialog and its picks.
+  nested?: boolean
 }) {
   const help: Help = HELP[setting]
+  const [open, setOpen] = React.useState(false)
+  const change = (next: boolean) => {
+    setOpen(next)
+    onOpenChange?.(next)
+  }
+  useBackButtonClose(Boolean(nested) && open, () => change(false))
   return (
-    <Dialog.Root onOpenChange={onOpenChange}>
+    <Dialog.Root open={open} onOpenChange={change}>
       <Dialog.Trigger asChild>
         <button
           type="button"
@@ -100,9 +112,13 @@ export function CharacterSettingHelp({
         </button>
       </Dialog.Trigger>
       <Dialog.Portal>
-        <Dialog.Overlay className="cust-help__overlay" />
+        <Dialog.Overlay
+          className={
+            'cust-help__overlay' + (nested ? ' cust-help__overlay--nested' : '')
+          }
+        />
         <Dialog.Content
-          className="cust-help"
+          className={'cust-help' + (nested ? ' cust-help--nested' : '')}
           onEscapeKeyDown={(event) => event.stopPropagation()}
         >
           <div className="cust-help__head">

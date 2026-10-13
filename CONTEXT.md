@@ -55,7 +55,7 @@ A read-only public URL (`/share/<token>`) for one **Thread**. The token is the c
 _Avoid_: public thread, export link (export is the Markdown download)
 
 **Retry**:
-Re-running the translation of an existing **Segment**, replacing the target in place. The user confirms a **Vibe stop**, temperature and **Perspective** first: unchanged (a fresh sample) or changed (the same row re-translated in another **Register** or voice). The dialog opens at the Segment's stop and recorded Perspective (a legacy Segment with none starts from the Character's current Perspective) and the Character's temperature, since Segments don't record one. The Perspective used is recorded on the Segment. Retry's picks apply to that Segment only and never change the Character. Not a new Segment — it skips dedupe and the **Translation cache**.
+Re-running the translation of an existing **Segment**, replacing the target in place. The user confirms a **Vibe stop**, temperature and **Perspective** first: unchanged (a fresh sample) or changed (the same row re-translated in another **Register** or voice). The dialog opens at the Segment's stop and recorded Perspective (a legacy Segment with a null stop or Perspective starts from the Character's default Vibe or current Perspective) and the Character's temperature, since Segments don't record one. The Perspective used is recorded on the Segment. Retry's picks apply to that Segment only and never change the Character. Not a new Segment — it skips dedupe and the **Translation cache**.
 _Avoid_: regenerate, re-translate (in code)
 
 **Segment**:
