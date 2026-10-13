@@ -295,3 +295,65 @@ describe('segment retry and delete', () => {
     )
   })
 })
+
+describe('Segment card reading toggle', () => {
+  const renderChinese = (targetLanguage = 'zh-TW') =>
+    render(
+      <SegmentCard
+        seg={{
+          id: 's1',
+          sourceText: 'When will the train arrive?',
+          targetText: '火車什麼時候會到?',
+          vibe: 'casual',
+          tokenAlignment: [
+            { t: '火車', src: 'train' },
+            { t: '什麼時候', src: 'When' },
+            { t: '會到', src: 'will arrive' },
+            { t: '?', src: '?' },
+          ],
+          createdAt: '2026-10-09T00:00:00Z',
+        }}
+        idx={1}
+        isActive
+        collapsed={false}
+        sourceLanguage="en-US"
+        targetLanguage={targetLanguage}
+        vibes={[]}
+        onExpand={vi.fn()}
+        onCopy={vi.fn()}
+        onSpeak={vi.fn()}
+      />,
+    )
+
+  it('shows Pinyin over the characters, keeping alignment tokens intact', async () => {
+    const user = userEvent.setup()
+    const { container } = renderChinese()
+    const toggle = screen.getByRole('button', { name: 'Pinyin' })
+    expect(toggle.getAttribute('aria-pressed')).toBe('false')
+    expect(container.querySelector('rt')).toBeNull()
+    await user.click(toggle)
+    await waitFor(() =>
+      expect(
+        [...container.querySelectorAll('rt')].map((rt) => rt.textContent),
+      ).toEqual(['huǒ', 'chē', 'shén', 'me', 'shí', 'hòu', 'huì', 'dào']),
+    )
+    expect(toggle.getAttribute('aria-pressed')).toBe('true')
+    expect(container.querySelectorAll('.segment__tgt-text .tok')).toHaveLength(
+      4,
+    )
+    await user.click(toggle)
+    expect(container.querySelector('rt')).toBeNull()
+  })
+
+  it('offers no reading toggle for languages without one', () => {
+    renderChinese('th-TH')
+    expect(screen.queryByRole('button', { name: 'Pinyin' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Kana' })).toBeNull()
+  })
+
+  it('renders Copy and Speak as icon-only buttons', () => {
+    renderChinese()
+    for (const name of ['Copy translation', 'Read aloud'])
+      expect(screen.getByRole('button', { name }).textContent).toBe('')
+  })
+})

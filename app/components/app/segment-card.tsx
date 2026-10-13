@@ -1,12 +1,19 @@
 import * as Dialog from '@radix-ui/react-dialog'
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu'
 import * as React from 'react'
+import { toast } from 'sonner'
 
 import { Icon } from '@/components/vibe-design/icon'
 import type { VibePreset } from '@/components/vibe-design/design-data'
 import { useBackButtonClose } from '@/hooks/use-back-button-close'
 import type { ExplainBody, SegmentToken, VibeStop } from '@/lib/types'
 import { normalizeWord, srcWordSet } from '@/lib/alignment'
+import {
+  READING_LABEL,
+  loadReadings,
+  readingScriptFor,
+  type RubyPart,
+} from '@/lib/readings'
 
 import { VibeMini } from './composer'
 import { ExplainPanel } from './explain-panel'
@@ -102,6 +109,8 @@ export function SegmentCard({
     [tokens],
   )
   const selectedSrc = selection ? srcSets[selection.index] : undefined
+
+  const reading = useReadings(tokens, targetLanguage)
 
   // A retry replaces the alignment; drop a selection that now points elsewhere.
   React.useEffect(() => setSelection(null), [tokens])
@@ -222,7 +231,9 @@ export function SegmentCard({
           </div>
           <div
             className={
-              'segment__tgt-text ' + (isJa ? 'segment__tgt-text--ja' : '')
+              'segment__tgt-text ' +
+              (isJa ? 'segment__tgt-text--ja ' : '') +
+              (reading.parts ? 'segment__tgt-text--reading' : '')
             }
             onPointerLeave={clearHover}
           >
@@ -233,7 +244,7 @@ export function SegmentCard({
                 title={p.src ? `↔ ${p.src}` : ''}
                 {...alignProps(i)}
               >
-                {p.t}
+                {reading.parts ? <Ruby parts={reading.parts[i]} /> : p.t}
               </span>
             ))}
           </div>
@@ -245,11 +256,12 @@ export function SegmentCard({
               />
               <button
                 type="button"
-                className="segment__action"
+                className="segment__action segment__action--icon"
                 onClick={() => onCopy(seg)}
                 title="Copy translation"
+                aria-label="Copy translation"
               >
-                <Icon name="copy" /> COPY
+                <Icon name="copy" />
               </button>
               {!readOnly && onRetry && (
                 <RetryDialog
@@ -261,13 +273,37 @@ export function SegmentCard({
               )}
               <button
                 type="button"
-                className={'segment__action ' + (speaking ? 'is-open' : '')}
+                className={
+                  'segment__action segment__action--icon ' +
+                  (speaking ? 'is-open' : '')
+                }
                 onClick={() => onSpeak(seg)}
                 title={speaking ? 'Stop' : 'Read aloud'}
+                aria-label={speaking ? 'Stop' : 'Read aloud'}
               >
-                <Icon name={speaking ? 'square' : 'volume-2'} />{' '}
-                {speaking ? 'STOP' : 'SPEAK'}
+                <Icon name={speaking ? 'square' : 'volume-2'} />
               </button>
+              {reading.script && (
+                <button
+                  type="button"
+                  className={
+                    'segment__action segment__action--icon ' +
+                    (reading.on ? 'is-open' : '')
+                  }
+                  onClick={reading.toggle}
+                  title={`${reading.on ? 'Hide' : 'Show'} ${reading.label}`}
+                  aria-label={reading.label}
+                  aria-pressed={reading.on}
+                >
+                  {reading.loading ? (
+                    <Icon name="loader" className="vt-spin" />
+                  ) : (
+                    <span className="segment__action-glyph" aria-hidden="true">
+                      {reading.script === 'kana' ? 'あ' : 'ā'}
+                    </span>
+                  )}
+                </button>
+              )}
               {!readOnly && explain && (
                 <button
                   type="button"
@@ -296,6 +332,64 @@ export function SegmentCard({
         />
       )}
     </div>
+  )
+}
+
+// Pinyin/Kana over the target text, off by default so the learner tries to
+// read it first. Readings are generated client-side on the first toggle and
+// recomputed when a retry replaces the tokens.
+function useReadings(tokens: SegmentToken[], language: string) {
+  const script = readingScriptFor(language)
+  const label = script ? READING_LABEL[script] : ''
+  const [on, setOn] = React.useState(false)
+  const [loaded, setLoaded] = React.useState<{
+    tokens: SegmentToken[]
+    parts: RubyPart[][]
+  } | null>(null)
+  const parts = on && loaded?.tokens === tokens ? loaded.parts : null
+
+  React.useEffect(() => {
+    if (!on || loaded?.tokens === tokens) return
+    let live = true
+    loadReadings(
+      tokens.map((tok) => tok.t),
+      language,
+    ).then(
+      (next) => {
+        if (live) setLoaded({ tokens, parts: next })
+      },
+      (error: unknown) => {
+        if (!live) return
+        console.error(error)
+        setOn(false)
+        toast.error(`Could not load ${label}.`)
+      },
+    )
+    return () => {
+      live = false
+    }
+  }, [on, tokens, loaded, language, label])
+
+  return {
+    script,
+    label,
+    on,
+    parts,
+    loading: on && !parts,
+    toggle: () => setOn((curr) => !curr),
+  }
+}
+
+function Ruby({ parts }: { parts: RubyPart[] }) {
+  return parts.map((part, i) =>
+    part.rt ? (
+      <ruby key={i}>
+        {part.base}
+        <rt>{part.rt}</rt>
+      </ruby>
+    ) : (
+      <React.Fragment key={i}>{part.base}</React.Fragment>
+    ),
   )
 }
 
@@ -378,15 +472,18 @@ function RetryDialog({
       <Dialog.Trigger asChild>
         <button
           type="button"
-          className={'segment__action ' + (retrying ? 'is-busy' : '')}
+          className={
+            'segment__action segment__action--icon ' +
+            (retrying ? 'is-busy' : '')
+          }
           disabled={retrying || vibes.length === 0}
           title="Re-translate this segment"
+          aria-label={retrying ? 'Retrying translation' : 'Retry translation'}
         >
           <Icon
             name={retrying ? 'loader' : 'rotate-ccw'}
             className={retrying ? 'vt-spin' : ''}
-          />{' '}
-          {retrying ? 'RETRYING' : 'RETRY'}
+          />
         </button>
       </Dialog.Trigger>
       <Dialog.Portal>
@@ -455,7 +552,7 @@ function TranslationDisplay({
       <Dialog.Trigger asChild>
         <button
           type="button"
-          className="segment__action segment__action--display"
+          className="segment__action segment__action--icon"
           title="Show translation full screen"
           aria-label="Show translation full screen"
         >

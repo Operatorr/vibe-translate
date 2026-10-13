@@ -99,6 +99,10 @@ function worker(failingUrl?: string) {
         entries.set(key(request), response)
       },
     ),
+    keys: vi.fn(async () => [...entries.keys()].map((url) => ({ url }))),
+    delete: vi.fn(async (request: string | { url: string }) =>
+      entries.delete(key(request)),
+    ),
   }
   const cacheStorage = {
     open: vi.fn(async () => cache),
@@ -327,6 +331,39 @@ describe('production offline worker', () => {
     const w = worker()
     expect(w.dispatch('fetch', path).response).toBeUndefined()
     expect(w.fetcher).not.toHaveBeenCalled()
+  })
+
+  it('caches the reading dictionary on first use, never on install', async () => {
+    const w = worker()
+    await w.dispatch('install').done()
+    expect([...w.entries.keys()].some((url) => url.includes('/dict/'))).toBe(
+      false,
+    )
+    const stale = `${origin}/dict/kuromoji-1.0.0/base.dat.gz`
+    w.entries.set(stale, new Response('old dictionary'))
+    const path = '/dict/kuromoji-1.0.4/base.dat.gz'
+    const response = new Response('dictionary')
+    Object.defineProperty(response, 'type', { value: 'basic' })
+    w.fetcher.mockResolvedValueOnce(response)
+    expect(await (await w.dispatch('fetch', path).done())?.text()).toBe(
+      'dictionary',
+    )
+    expect(w.entries.has(stale)).toBe(false)
+    w.fetcher.mockRejectedValue(new Error('Offline'))
+    expect(await (await w.dispatch('fetch', path).done())?.text()).toBe(
+      'dictionary',
+    )
+  })
+
+  it('does not cache SPA fallback HTML as a dictionary file', async () => {
+    const w = worker()
+    const fallback = new Response('<html></html>', {
+      headers: { 'Content-Type': 'text/html' },
+    })
+    Object.defineProperty(fallback, 'type', { value: 'basic' })
+    w.fetcher.mockResolvedValueOnce(fallback)
+    await w.dispatch('fetch', '/dict/kuromoji-1.0.4/missing.dat.gz').done()
+    expect(w.cache.put).not.toHaveBeenCalled()
   })
 
   it('does not intercept writes and handles runtime storage failure', async () => {

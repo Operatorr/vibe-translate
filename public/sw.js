@@ -7,6 +7,11 @@ const BUILD_ASSETS = /* __BUILD_ASSETS__ */ []
 const SHELL_URL = '/'
 const BUILD_SHELL = /* __BUILD_SHELL__ */ ''
 const OPTIONAL_ASSETS = /* __OPTIONAL_ASSETS__ */ []
+// The Japanese reading dictionary (~17 MB) is fetched on first use, not on
+// install, and outlives releases: its path is versioned by the package, so a
+// new release only re-downloads it when the dictionary itself changed.
+const DICT_CACHE = 'vibe-translate-dict'
+const DICT_PREFIX = '/dict/'
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
@@ -65,6 +70,11 @@ self.addEventListener('fetch', (event) => {
     return
   }
 
+  if (url.pathname.startsWith(DICT_PREFIX)) {
+    event.respondWith(dictResponse(event, request, url))
+    return
+  }
+
   if (
     !url.pathname.startsWith('/assets/') &&
     !OPTIONAL_ASSETS.includes(url.pathname)
@@ -88,3 +98,30 @@ self.addEventListener('fetch', (event) => {
     }),
   )
 })
+
+async function dictResponse(event, request, url) {
+  const cache = await caches.open(DICT_CACHE)
+  const cached = await cache.match(request, { ignoreVary: true })
+  if (cached) return cached
+  const response = await fetch(request)
+  const html = response.headers.get('Content-Type')?.includes('text/html')
+  if (response.ok && response.type === 'basic' && !html) {
+    // Drop files from other dictionary versions as this one arrives.
+    const dir = url.pathname.slice(0, url.pathname.lastIndexOf('/') + 1)
+    const copy = response.clone()
+    event.waitUntil(
+      cache
+        .keys()
+        .then((keys) =>
+          Promise.all(
+            keys
+              .filter((key) => !new URL(key.url).pathname.startsWith(dir))
+              .map((key) => cache.delete(key)),
+          ),
+        )
+        .then(() => cache.put(request, copy))
+        .catch(() => undefined),
+    )
+  }
+  return response
+}
