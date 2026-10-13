@@ -48,8 +48,9 @@ async function pinyinReadings(
   ])
   const text = tokens.join('')
   // pinyin-pro's polyphone data is keyed on Simplified characters (車 reads
-  // jū, 车 reads chē), so convert first. Conversion is per character here;
-  // keep the original if a phrase rule ever changes the length.
+  // jū, 车 reads chē), so convert first. OpenCC converts the whole sentence
+  // with phrase context; keep the original if that changes its code-point
+  // length, since readings are mapped back by position.
   const from = /-(hk|mo)$/i.test(language) ? 'hk' : 'tw'
   const simplified = OpenCC.Converter({ from, to: 'cn' })(text)
   const source =
@@ -94,9 +95,9 @@ export function splitByTokens(
 // ---------------------------------------------------------------------------
 // Japanese
 
-type KanaTokenizer = {
-  tokenize(text: string): { surface_form: string; reading?: string }[]
-}
+type Morpheme = { surface_form: string; reading?: string }
+
+type KanaTokenizer = { tokenize(text: string): Morpheme[] }
 
 let tokenizerPromise: Promise<KanaTokenizer> | null = null
 
@@ -133,14 +134,72 @@ async function loadDictFile(file: string): Promise<ArrayBuffer> {
 
 async function kanaReadings(tokens: string[]): Promise<RubyPart[][]> {
   const tokenizer = await kanaTokenizer()
-  // Analysed per alignment token so a reading never straddles two tokens.
-  return tokens.map((token) =>
-    mergePlain(
-      tokenizer
-        .tokenize(token)
-        .flatMap((m) => furigana(m.surface_form, m.reading)),
-    ),
-  )
+  // Analysed as one sentence: a reading depends on its neighbours (御飯 is
+  // ごはん, not お + めし), and alignment boundaries may fall mid-word.
+  const text = tokens.join('')
+  return spansToTokens(tokens, kanaSpans(text, tokenizer.tokenize(text)))
+}
+
+// A reading over text[start, end), in UTF-16 offsets.
+export type RubySpan = { start: number; end: number; rt: string }
+
+// Furigana spans over `text`. Only the readings come from the tokenizer; the
+// text under them is always sliced from the original, because kuromoji can
+// drop characters (it reads 💖💖あ as just 💖💖). A morpheme whose surface
+// isn't where expected resynchronises on its next occurrence, and any
+// characters skipped that way stay unannotated.
+export function kanaSpans(text: string, morphemes: Morpheme[]): RubySpan[] {
+  const spans: RubySpan[] = []
+  let cursor = 0
+  for (const { surface_form: surface, reading } of morphemes) {
+    if (!surface) continue
+    const at = text.startsWith(surface, cursor)
+      ? cursor
+      : text.indexOf(surface, cursor)
+    if (at < 0) continue
+    let offset = at
+    for (const part of furigana(surface, reading)) {
+      const end = offset + part.base.length
+      if (part.rt) spans.push({ start: offset, end, rt: part.rt })
+      offset = end
+    }
+    cursor = offset
+  }
+  return spans
+}
+
+// Cut sentence-level spans along the alignment tokens. A reading that
+// straddles a boundary can't be divided reliably (御|飯 share ごはん), so
+// those characters stay unannotated rather than show a wrong split.
+export function spansToTokens(
+  tokens: string[],
+  spans: RubySpan[],
+): RubyPart[][] {
+  let start = 0
+  let next = 0
+  return tokens.map((token) => {
+    const end = start + token.length
+    const parts: RubyPart[] = []
+    let pos = start
+    while (next < spans.length && spans[next].start < end) {
+      const span = spans[next]
+      if (span.start >= start && span.end <= end) {
+        if (span.start > pos) {
+          parts.push({ base: token.slice(pos - start, span.start - start) })
+        }
+        parts.push({
+          base: token.slice(span.start - start, span.end - start),
+          rt: span.rt,
+        })
+        pos = span.end
+      }
+      if (span.end > end) break
+      next++
+    }
+    if (pos < end) parts.push({ base: token.slice(pos - start) })
+    start = end
+    return parts
+  })
 }
 
 const KANJI = /[㐀-䶿一-鿿豈-﫿\u{20000}-\u{2fa1f}々〆ヵヶ]/u
@@ -179,14 +238,4 @@ export function furigana(surface: string, reading?: string): RubyPart[] {
   return runs.map((run) =>
     run.kanji ? { base: run.text, rt: match[group++] } : { base: run.text },
   )
-}
-
-function mergePlain(parts: RubyPart[]): RubyPart[] {
-  const out: RubyPart[] = []
-  for (const part of parts) {
-    const last = out[out.length - 1]
-    if (!part.rt && last && !last.rt) last.base += part.base
-    else out.push({ ...part })
-  }
-  return out
 }

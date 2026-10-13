@@ -12,6 +12,8 @@ const OPTIONAL_ASSETS = /* __OPTIONAL_ASSETS__ */ []
 // new release only re-downloads it when the dictionary itself changed.
 const DICT_CACHE = 'vibe-translate-dict'
 const DICT_PREFIX = '/dict/'
+// This build's dictionary directory, e.g. /dict/kuromoji-1.0.4/.
+const DICT_DIR = /* __DICT_DIR__ */ ''
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
@@ -46,6 +48,7 @@ self.addEventListener('activate', (event) => {
           .filter((key) => key.startsWith(CACHE_PREFIX) && key !== CACHE_NAME)
           .map((key) => caches.delete(key)),
       )
+      await pruneDictionaries()
       await self.clients.claim()
     }),
   )
@@ -71,7 +74,7 @@ self.addEventListener('fetch', (event) => {
   }
 
   if (url.pathname.startsWith(DICT_PREFIX)) {
-    event.respondWith(dictResponse(event, request, url))
+    event.respondWith(dictResponse(event, request))
     return
   }
 
@@ -99,29 +102,36 @@ self.addEventListener('fetch', (event) => {
   )
 })
 
-async function dictResponse(event, request, url) {
-  const cache = await caches.open(DICT_CACHE)
-  const cached = await cache.match(request, { ignoreVary: true })
+async function dictResponse(event, request) {
+  // Storage trouble is a cache miss: Kana still works online.
+  const cache = await caches.open(DICT_CACHE).catch(() => undefined)
+  const cached = await cache
+    ?.match(request, { ignoreVary: true })
+    .catch(() => undefined)
   if (cached) return cached
   const response = await fetch(request)
   const html = response.headers.get('Content-Type')?.includes('text/html')
-  if (response.ok && response.type === 'basic' && !html) {
-    // Drop files from other dictionary versions as this one arrives.
-    const dir = url.pathname.slice(0, url.pathname.lastIndexOf('/') + 1)
-    const copy = response.clone()
-    event.waitUntil(
-      cache
-        .keys()
-        .then((keys) =>
-          Promise.all(
-            keys
-              .filter((key) => !new URL(key.url).pathname.startsWith(dir))
-              .map((key) => cache.delete(key)),
-          ),
-        )
-        .then(() => cache.put(request, copy))
-        .catch(() => undefined),
-    )
+  if (cache && response.ok && response.type === 'basic' && !html) {
+    // Other versions stay: until this release activates, an older tab or the
+    // active offline shell may still read them.
+    event.waitUntil(cache.put(request, response.clone()).catch(() => undefined))
   }
   return response
+}
+
+// Activation waits for older tabs to close, so from here on only this
+// build's dictionary can be requested; drop every other version.
+async function pruneDictionaries() {
+  if (!DICT_DIR) return
+  try {
+    const cache = await caches.open(DICT_CACHE)
+    const keys = await cache.keys()
+    await Promise.all(
+      keys
+        .filter((key) => !new URL(key.url).pathname.startsWith(DICT_DIR))
+        .map((key) => cache.delete(key)),
+    )
+  } catch {
+    // Pruning is housekeeping; never block activation on it.
+  }
 }

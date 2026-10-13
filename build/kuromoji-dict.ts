@@ -9,15 +9,9 @@ import type { Plugin } from 'vite'
 // who toggle Kana should download ~17 MB. The versioned path keeps the
 // worker's long-lived dictionary cache correct across package upgrades.
 export function kuromojiDict(): Plugin {
-  const pkgRoot = resolve(
-    dirname(createRequire(import.meta.url).resolve('@patdx/kuromoji')),
-    '..',
-  )
+  const pkgRoot = kuromojiRoot()
   const dictDir = join(pkgRoot, 'dict')
-  const { version } = JSON.parse(
-    readFileSync(join(pkgRoot, 'package.json'), 'utf8'),
-  ) as { version: string }
-  const base = `/dict/kuromoji-${version}/`
+  const base = kuromojiDictBase()
   const files = readdirSync(dictDir).filter((file) => file.endsWith('.dat.gz'))
 
   return {
@@ -44,4 +38,20 @@ export function kuromojiDict(): Plugin {
       }
     },
   }
+}
+
+function kuromojiRoot(): string {
+  return resolve(
+    dirname(createRequire(import.meta.url).resolve('@patdx/kuromoji')),
+    '..',
+  )
+}
+
+// The versioned URL directory the dictionary is served from. The service
+// worker gets it too (build/pwa-precache.ts) to prune older versions.
+export function kuromojiDictBase(): string {
+  const { version } = JSON.parse(
+    readFileSync(join(kuromojiRoot(), 'package.json'), 'utf8'),
+  ) as { version: string }
+  return `/dict/kuromoji-${version}/`
 }

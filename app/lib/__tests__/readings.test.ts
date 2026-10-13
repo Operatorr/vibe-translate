@@ -1,12 +1,39 @@
-import { describe, expect, it } from 'vitest'
+import { gzipSync } from 'node:zlib'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
   furigana,
+  kanaSpans,
   loadReadings,
   readingScriptFor,
+  spansToTokens,
   splitByTokens,
   toHiragana,
 } from '../readings'
+
+// A stand-in tokenizer builder that drives the real dictionary loader. The
+// real dictionary is exercised in readings-kana.test.ts.
+const kuromoji = vi.hoisted(() => ({
+  built: 0,
+  files: ['base.dat.gz', 'cc.dat.gz'],
+  buffers: [] as ArrayBuffer[],
+}))
+vi.mock('@patdx/kuromoji', () => ({
+  TokenizerBuilder: class {
+    constructor(
+      private options: {
+        loader: { loadArrayBuffer(file: string): Promise<ArrayBuffer> }
+      },
+    ) {}
+    async build() {
+      kuromoji.built++
+      kuromoji.buffers = await Promise.all(
+        kuromoji.files.map((file) => this.options.loader.loadArrayBuffer(file)),
+      )
+      return { tokenize: () => [] }
+    }
+  },
+}))
 
 describe('readingScriptFor', () => {
   it('maps Chinese to Pinyin and Japanese to Kana', () => {
@@ -101,5 +128,116 @@ describe('loadReadings (Pinyin)', () => {
       '了',
     ])
     expect(parts[1]).toEqual([{ base: ' iPhone 15 ' }])
+  })
+})
+
+describe('kanaSpans and spansToTokens', () => {
+  it('keeps the original text when the tokenizer drops characters', () => {
+    const text = '💖💖あ日本'
+    const spans = kanaSpans(text, [
+      { surface_form: '💖💖' },
+      { surface_form: '日本', reading: 'ニホン' },
+    ])
+    expect(spansToTokens([text], spans)).toEqual([
+      [{ base: '💖💖あ' }, { base: '日本', rt: 'にほん' }],
+    ])
+  })
+
+  it('places sentence-level readings on alignment tokens', () => {
+    const text = 'お金がない'
+    const spans = kanaSpans(text, [
+      { surface_form: 'お金', reading: 'オカネ' },
+      { surface_form: 'が', reading: 'ガ' },
+      { surface_form: 'ない', reading: 'ナイ' },
+    ])
+    expect(spansToTokens(['お', '金が', 'ない'], spans)).toEqual([
+      [{ base: 'お' }],
+      [{ base: '金', rt: 'かね' }, { base: 'が' }],
+      [{ base: 'ない' }],
+    ])
+  })
+
+  it('leaves a reading that straddles two tokens unannotated', () => {
+    const spans = kanaSpans('御飯', [
+      { surface_form: '御飯', reading: 'ゴハン' },
+    ])
+    expect(spansToTokens(['御', '飯'], spans)).toEqual([
+      [{ base: '御' }],
+      [{ base: '飯' }],
+    ])
+    expect(spansToTokens(['御飯'], spans)).toEqual([
+      [{ base: '御飯', rt: 'ごはん' }],
+    ])
+  })
+})
+
+describe('loadReadings (Kana dictionary loading)', () => {
+  const ok = (body: BodyInit, type = 'application/octet-stream') =>
+    new Response(body, { headers: { 'Content-Type': type } })
+  let fetcher: ReturnType<typeof vi.fn<(url: string) => Promise<Response>>>
+  let load: typeof loadReadings
+
+  beforeEach(async () => {
+    kuromoji.built = 0
+    kuromoji.buffers = []
+    fetcher = vi.fn(async () => ok(new Uint8Array([1, 2, 3])))
+    vi.stubGlobal('fetch', fetcher)
+    vi.stubGlobal('__KUROMOJI_DICT_URL__', '/dict/kuromoji-test/')
+    // A fresh module per test: the tokenizer is a module-level singleton.
+    vi.resetModules()
+    ;({ loadReadings: load } = await import('../readings'))
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  const bytes = () => kuromoji.buffers.map((b) => [...new Uint8Array(b)])
+
+  it('inflates raw gzip files from the versioned dictionary URL', async () => {
+    fetcher.mockImplementation(async () =>
+      ok(gzipSync(new Uint8Array([1, 2, 3]))),
+    )
+    await load(['日本'], 'ja-JP')
+    expect(fetcher.mock.calls.map(([url]) => url)).toEqual([
+      '/dict/kuromoji-test/base.dat.gz',
+      '/dict/kuromoji-test/cc.dat.gz',
+    ])
+    expect(bytes()).toEqual([
+      [1, 2, 3],
+      [1, 2, 3],
+    ])
+  })
+
+  it('accepts files a server already decompressed', async () => {
+    await load(['日本'], 'ja-JP')
+    expect(bytes()).toEqual([
+      [1, 2, 3],
+      [1, 2, 3],
+    ])
+  })
+
+  it.each([
+    ['SPA fallback HTML', () => ok('<html></html>', 'text/html')],
+    ['an HTTP error', () => new Response('Missing', { status: 404 })],
+  ])('rejects %s', async (_name, response) => {
+    fetcher.mockImplementation(async () => response())
+    await expect(load(['日本'], 'ja-JP')).rejects.toThrow(
+      'Could not load the Japanese dictionary',
+    )
+  })
+
+  it('shares one build between concurrent calls', async () => {
+    await Promise.all([load(['日本'], 'ja-JP'), load(['語'], 'ja-JP')])
+    expect(kuromoji.built).toBe(1)
+    await load(['日本語'], 'ja-JP')
+    expect(kuromoji.built).toBe(1)
+  })
+
+  it('builds again after a failed download', async () => {
+    fetcher.mockRejectedValueOnce(new TypeError('Failed to fetch'))
+    await expect(load(['日本'], 'ja-JP')).rejects.toThrow('Failed to fetch')
+    await expect(load(['日本'], 'ja-JP')).resolves.toEqual([[{ base: '日本' }]])
+    expect(kuromoji.built).toBe(2)
   })
 })

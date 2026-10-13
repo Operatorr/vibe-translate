@@ -284,25 +284,38 @@ export function SegmentCard({
                 <Icon name={speaking ? 'square' : 'volume-2'} />
               </button>
               {reading.script && (
-                <button
-                  type="button"
-                  className={
-                    'segment__action segment__action--icon ' +
-                    (reading.on ? 'is-open' : '')
-                  }
-                  onClick={reading.toggle}
-                  title={`${reading.on ? 'Hide' : 'Show'} ${reading.label}`}
-                  aria-label={reading.label}
-                  aria-pressed={reading.on}
-                >
-                  {reading.loading ? (
-                    <Icon name="loader" className="vt-spin" />
-                  ) : (
-                    <span className="segment__action-glyph" aria-hidden="true">
-                      {reading.script === 'kana' ? 'あ' : 'ā'}
-                    </span>
-                  )}
-                </button>
+                <>
+                  <button
+                    type="button"
+                    className={
+                      'segment__action segment__action--icon ' +
+                      (reading.on ? 'is-open' : '')
+                    }
+                    onClick={reading.toggle}
+                    title={`${reading.on ? 'Hide' : 'Show'} ${reading.label}`}
+                    aria-label={reading.label}
+                    aria-pressed={reading.on}
+                    aria-busy={reading.loading}
+                  >
+                    {reading.loading ? (
+                      <Icon name="loader" className="vt-spin" />
+                    ) : (
+                      <span
+                        className="segment__action-glyph"
+                        aria-hidden="true"
+                      >
+                        {reading.script === 'kana' ? 'あ' : 'ā'}
+                      </span>
+                    )}
+                  </button>
+                  <span className="sr-only" role="status">
+                    {reading.loading
+                      ? `Loading ${reading.label}…`
+                      : reading.parts
+                        ? `${reading.label} shown`
+                        : ''}
+                  </span>
+                </>
               )}
               {!readOnly && explain && (
                 <button
@@ -337,26 +350,30 @@ export function SegmentCard({
 
 // Pinyin/Kana over the target text, off by default so the learner tries to
 // read it first. Readings are generated client-side on the first toggle and
-// recomputed when a retry replaces the tokens.
+// recomputed when a retry replaces the tokens or the Character's target
+// language changes (the card stays mounted with the same tokens).
 function useReadings(tokens: SegmentToken[], language: string) {
   const script = readingScriptFor(language)
   const label = script ? READING_LABEL[script] : ''
   const [on, setOn] = React.useState(false)
   const [loaded, setLoaded] = React.useState<{
     tokens: SegmentToken[]
+    language: string
     parts: RubyPart[][]
   } | null>(null)
-  const parts = on && loaded?.tokens === tokens ? loaded.parts : null
+  const active = on && script !== null
+  const fresh = loaded?.tokens === tokens && loaded.language === language
+  const parts = active && fresh ? loaded.parts : null
 
   React.useEffect(() => {
-    if (!on || loaded?.tokens === tokens) return
+    if (!active || fresh) return
     let live = true
     loadReadings(
       tokens.map((tok) => tok.t),
       language,
     ).then(
       (next) => {
-        if (live) setLoaded({ tokens, parts: next })
+        if (live) setLoaded({ tokens, language, parts: next })
       },
       (error: unknown) => {
         if (!live) return
@@ -368,14 +385,14 @@ function useReadings(tokens: SegmentToken[], language: string) {
     return () => {
       live = false
     }
-  }, [on, tokens, loaded, language, label])
+  }, [active, fresh, tokens, language, label])
 
   return {
     script,
     label,
-    on,
+    on: active,
     parts,
-    loading: on && !parts,
+    loading: active && !parts,
     toggle: () => setOn((curr) => !curr),
   }
 }

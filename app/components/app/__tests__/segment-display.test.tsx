@@ -9,7 +9,22 @@ import {
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import type { RubyPart } from '@/lib/readings'
+import type { SegmentToken } from '@/lib/types'
+
 import { SegmentCard } from '../segment-card'
+
+// Readings run for real unless a test supplies controlled ones.
+const readings = vi.hoisted(() => ({
+  load: vi.fn<(tokens: string[], language: string) => Promise<RubyPart[][]>>(),
+}))
+vi.mock('@/lib/readings', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/readings')>()
+  readings.load.mockImplementation(actual.loadReadings)
+  return { ...actual, loadReadings: readings.load }
+})
+const toastError = vi.hoisted(() => vi.fn())
+vi.mock('sonner', () => ({ toast: { error: toastError } }))
 
 const SOURCE = 'Good evening, see you tomorrow'
 const TARGET = 'こんばんは、また明日'
@@ -297,33 +312,64 @@ describe('segment retry and delete', () => {
 })
 
 describe('Segment card reading toggle', () => {
-  const renderChinese = (targetLanguage = 'zh-TW') =>
-    render(
-      <SegmentCard
-        seg={{
-          id: 's1',
-          sourceText: 'When will the train arrive?',
-          targetText: '火車什麼時候會到?',
-          vibe: 'casual',
-          tokenAlignment: [
-            { t: '火車', src: 'train' },
-            { t: '什麼時候', src: 'When' },
-            { t: '會到', src: 'will arrive' },
-            { t: '?', src: '?' },
-          ],
-          createdAt: '2026-10-09T00:00:00Z',
-        }}
-        idx={1}
-        isActive
-        collapsed={false}
-        sourceLanguage="en-US"
-        targetLanguage={targetLanguage}
-        vibes={[]}
-        onExpand={vi.fn()}
-        onCopy={vi.fn()}
-        onSpeak={vi.fn()}
-      />,
-    )
+  const ZH_TOKENS: SegmentToken[] = [
+    { t: '火車', src: 'train' },
+    { t: '什麼時候', src: 'When' },
+    { t: '會到', src: 'will arrive' },
+    { t: '?', src: '?' },
+  ]
+  const chineseCard = (
+    targetLanguage = 'zh-TW',
+    tokenAlignment = ZH_TOKENS,
+  ) => (
+    <SegmentCard
+      seg={{
+        id: 's1',
+        sourceText: 'When will the train arrive?',
+        targetText: '火車什麼時候會到?',
+        vibe: 'casual',
+        tokenAlignment,
+        createdAt: '2026-10-09T00:00:00Z',
+      }}
+      idx={1}
+      isActive
+      collapsed={false}
+      sourceLanguage="en-US"
+      targetLanguage={targetLanguage}
+      vibes={[]}
+      onExpand={vi.fn()}
+      onCopy={vi.fn()}
+      onSpeak={vi.fn()}
+    />
+  )
+  const renderChinese = (targetLanguage?: string) =>
+    render(chineseCard(targetLanguage))
+
+  const rts = (container: HTMLElement) =>
+    [...container.querySelectorAll('rt')].map((rt) => rt.textContent)
+  const targetTokens = (container: HTMLElement) => [
+    ...container.querySelectorAll<HTMLElement>('.segment__tgt-text .tok'),
+  ]
+  // A token's text as read, without the readings drawn above it.
+  const baseText = (tok: HTMLElement) => {
+    const copy = tok.cloneNode(true) as HTMLElement
+    copy.querySelectorAll('rt').forEach((rt) => rt.remove())
+    return copy.textContent
+  }
+  const deferred = () => {
+    let resolve!: (parts: RubyPart[][]) => void
+    let reject!: (error: Error) => void
+    const promise = new Promise<RubyPart[][]>((res, rej) => {
+      resolve = res
+      reject = rej
+    })
+    return { promise, resolve, reject }
+  }
+
+  afterEach(() => {
+    readings.load.mockClear()
+    toastError.mockClear()
+  })
 
   it('shows Pinyin over the characters, keeping alignment tokens intact', async () => {
     const user = userEvent.setup()
@@ -333,16 +379,137 @@ describe('Segment card reading toggle', () => {
     expect(container.querySelector('rt')).toBeNull()
     await user.click(toggle)
     await waitFor(() =>
-      expect(
-        [...container.querySelectorAll('rt')].map((rt) => rt.textContent),
-      ).toEqual(['huǒ', 'chē', 'shén', 'me', 'shí', 'hòu', 'huì', 'dào']),
+      expect(rts(container)).toEqual([
+        'huǒ',
+        'chē',
+        'shén',
+        'me',
+        'shí',
+        'hòu',
+        'huì',
+        'dào',
+      ]),
     )
     expect(toggle.getAttribute('aria-pressed')).toBe('true')
-    expect(container.querySelectorAll('.segment__tgt-text .tok')).toHaveLength(
-      4,
-    )
+    expect(screen.getByRole('status').textContent).toBe('Pinyin shown')
+    const toks = targetTokens(container)
+    expect(toks.map(baseText)).toEqual(ZH_TOKENS.map((tok) => tok.t))
+    // Hover and tap still pair a ruby token with its source word.
+    const word = (text: string) =>
+      [...container.querySelectorAll('.segment__src-text .tok')].find(
+        (el) => el.textContent === text,
+      )!
+    await user.hover(toks[1].querySelector('ruby')!)
+    expect(word('When').classList.contains('is-paired')).toBe(true)
+    await user.click(toks[0].querySelector('ruby')!)
+    expect(word('train').classList.contains('is-paired')).toBe(true)
+    expect(word('When').classList.contains('is-paired')).toBe(false)
     await user.click(toggle)
     expect(container.querySelector('rt')).toBeNull()
+  })
+
+  it('shows Kana over kanji only, leaving okurigana bare', async () => {
+    const user = userEvent.setup()
+    readings.load.mockResolvedValueOnce([
+      [{ base: 'こんばんは、' }],
+      [{ base: 'また' }, { base: '明日', rt: 'あした' }],
+    ])
+    const { container } = render(card())
+    const toggle = screen.getByRole('button', { name: 'Kana' })
+    await user.click(toggle)
+    await waitFor(() => expect(rts(container)).toEqual(['あした']))
+    expect(readings.load).toHaveBeenCalledWith(
+      ['こんばんは、', 'また明日'],
+      'ja-JP',
+    )
+    const ruby = container.querySelector('ruby')!
+    expect(baseText(ruby)).toBe('明日')
+    expect(ruby.parentElement?.firstChild?.textContent).toBe('また')
+    expect(targetTokens(container).map(baseText)).toEqual([
+      'こんばんは、',
+      'また明日',
+    ])
+    expect(toggle.getAttribute('aria-pressed')).toBe('true')
+    await user.click(toggle)
+    expect(container.querySelector('rt')).toBeNull()
+    expect(toggle.getAttribute('aria-pressed')).toBe('false')
+  })
+
+  it('announces loading and resets the toggle when loading fails', async () => {
+    const user = userEvent.setup()
+    const pending = deferred()
+    readings.load.mockReturnValueOnce(pending.promise)
+    vi.spyOn(console, 'error').mockImplementationOnce(() => {})
+    const { container } = render(card())
+    const toggle = screen.getByRole('button', { name: 'Kana' })
+    await user.click(toggle)
+    expect(toggle.getAttribute('aria-busy')).toBe('true')
+    expect(screen.getByRole('status').textContent).toBe('Loading Kana…')
+    pending.reject(new Error('Offline'))
+    await waitFor(() =>
+      expect(toggle.getAttribute('aria-pressed')).toBe('false'),
+    )
+    expect(toggle.getAttribute('aria-busy')).toBe('false')
+    expect(toastError).toHaveBeenCalledWith('Could not load Kana.')
+    expect(container.querySelector('rt')).toBeNull()
+  })
+
+  it('ignores a result that arrives after the toggle is turned off', async () => {
+    const user = userEvent.setup()
+    const pending = deferred()
+    readings.load.mockReturnValueOnce(pending.promise)
+    const { container } = render(card())
+    const toggle = screen.getByRole('button', { name: 'Kana' })
+    await user.click(toggle)
+    await user.click(toggle)
+    pending.resolve([[{ base: 'こんばんは、' }], [{ base: '明日', rt: 'X' }]])
+    await pending.promise
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(container.querySelector('rt')).toBeNull()
+    expect(toggle.getAttribute('aria-pressed')).toBe('false')
+  })
+
+  it('installs only the readings for the current alignment after a retry', async () => {
+    const user = userEvent.setup()
+    const stale = deferred()
+    const current = deferred()
+    readings.load
+      .mockReturnValueOnce(stale.promise)
+      .mockReturnValueOnce(current.promise)
+    const view = render(chineseCard())
+    await user.click(screen.getByRole('button', { name: 'Pinyin' }))
+    const retried = [{ t: '火車什麼時候會到?', src: 'train' }]
+    view.rerender(chineseCard('zh-TW', retried))
+    await waitFor(() => expect(readings.load).toHaveBeenCalledTimes(2))
+    stale.resolve(ZH_TOKENS.map((tok) => [{ base: tok.t, rt: 'stale' }]))
+    await stale.promise
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(view.container.querySelector('rt')).toBeNull()
+    current.resolve([[{ base: '火車什麼時候會到?', rt: 'current' }]])
+    await waitFor(() => expect(rts(view.container)).toEqual(['current']))
+  })
+
+  it('reloads readings when the target language changes', async () => {
+    const user = userEvent.setup()
+    const view = render(chineseCard())
+    await user.click(screen.getByRole('button', { name: 'Pinyin' }))
+    await waitFor(() => expect(rts(view.container)).toHaveLength(8))
+    const kana = deferred()
+    readings.load.mockReturnValueOnce(kana.promise)
+    // Same Segment, same alignment array: only the Character's language moved.
+    view.rerender(chineseCard('ja-JP'))
+    const toggle = screen.getByRole('button', { name: 'Kana' })
+    expect(toggle.getAttribute('aria-pressed')).toBe('true')
+    expect(view.container.querySelector('rt')).toBeNull()
+    expect(readings.load).toHaveBeenLastCalledWith(
+      ZH_TOKENS.map((tok) => tok.t),
+      'ja-JP',
+    )
+    kana.resolve(ZH_TOKENS.map((tok) => [{ base: tok.t, rt: 'かな' }]))
+    await waitFor(() => expect(rts(view.container)).toHaveLength(4))
+    view.rerender(chineseCard('th-TH'))
+    expect(screen.queryByRole('button', { name: 'Kana' })).toBeNull()
+    expect(view.container.querySelector('rt')).toBeNull()
   })
 
   it('offers no reading toggle for languages without one', () => {
