@@ -25,7 +25,9 @@ const source = readFileSync(
     '/* __OPTIONAL_ASSETS__ */ []',
     JSON.stringify(['/icons/icon-192.png']),
   )
+  .replace("/* __DICT_DIR__ */ ''", JSON.stringify('/dict/kuromoji-2.0.0/'))
 const cacheName = 'vibe-translate-static-test-release'
+const dictCacheName = 'vibe-translate-dict'
 
 type WorkerEvent = {
   request?: { url: string; method: string; mode: string; headers?: Headers }
@@ -35,79 +37,95 @@ type WorkerEvent = {
 
 function worker(failingUrl?: string) {
   const listeners = new Map<string, (event: WorkerEvent) => void>()
-  const entries = new Map<string, Response>()
   const key = (input: string | { url: string }) =>
     new URL(typeof input === 'string' ? input : input.url, origin).href
-  const cachedRequests = new Map<string, Headers>()
   const fetcher = vi.fn(async (input: string | { url: string }) => {
     if (key(input).endsWith(failingUrl ?? 'no-failure'))
       throw new Error('Offline')
     return new Response(key(input))
   })
-  const cache = {
-    addAll: vi.fn(async (requests: Request[]) => {
-      const responses = await Promise.all(requests.map(fetcher))
-      for (const [i, request] of requests.entries()) {
-        if (!responses[i].ok) throw new Error('HTTP failure')
-        const digest = createHash('sha256')
-          .update(await responses[i].clone().text())
-          .digest('base64')
-        if (request.integrity && request.integrity !== `sha256-${digest}`)
-          throw new Error('Integrity mismatch')
-      }
-      requests.forEach((request, i) => {
-        entries.set(key(request), responses[i])
-        cachedRequests.set(key(request), request.headers)
-      })
-    }),
-    add: vi.fn(async (url: string) => {
-      const response = await fetcher(url)
-      if (!response.ok) throw new Error('HTTP failure')
-      entries.set(key(url), response)
-    }),
-    match: vi.fn(
-      async (
-        request: string | { url: string; headers?: Headers },
-        options?: { ignoreVary?: boolean },
-      ) => {
-        const response = entries.get(key(request))
-        if (!response) return undefined
-        if (!options?.ignoreVary) {
-          const headers =
-            typeof request === 'string'
-              ? new Headers()
-              : (request.headers ?? new Headers())
-          const stored = cachedRequests.get(key(request)) ?? new Headers()
-          const vary = response.headers.get('vary')
-          if (
-            vary &&
-            vary
-              .split(',')
-              .some(
-                (name) =>
-                  name.trim() === '*' ||
-                  stored.get(name.trim()) !== headers.get(name.trim()),
-              )
-          )
-            return undefined
+  // One distinct cache per CacheStorage name, like the real thing.
+  const makeCache = () => {
+    const entries = new Map<string, Response>()
+    const cachedRequests = new Map<string, Headers>()
+    return {
+      entries,
+      addAll: vi.fn(async (requests: Request[]) => {
+        const responses = await Promise.all(requests.map(fetcher))
+        for (const [i, request] of requests.entries()) {
+          if (!responses[i].ok) throw new Error('HTTP failure')
+          const digest = createHash('sha256')
+            .update(await responses[i].clone().text())
+            .digest('base64')
+          if (request.integrity && request.integrity !== `sha256-${digest}`)
+            throw new Error('Integrity mismatch')
         }
-        return response.clone()
-      },
-    ),
-    put: vi.fn(
-      async (request: string | { url: string }, response: Response) => {
-        entries.set(key(request), response)
-      },
-    ),
+        requests.forEach((request, i) => {
+          entries.set(key(request), responses[i])
+          cachedRequests.set(key(request), request.headers)
+        })
+      }),
+      add: vi.fn(async (url: string) => {
+        const response = await fetcher(url)
+        if (!response.ok) throw new Error('HTTP failure')
+        entries.set(key(url), response)
+      }),
+      match: vi.fn(
+        async (
+          request: string | { url: string; headers?: Headers },
+          options?: { ignoreVary?: boolean },
+        ) => {
+          const response = entries.get(key(request))
+          if (!response) return undefined
+          if (!options?.ignoreVary) {
+            const headers =
+              typeof request === 'string'
+                ? new Headers()
+                : (request.headers ?? new Headers())
+            const stored = cachedRequests.get(key(request)) ?? new Headers()
+            const vary = response.headers.get('vary')
+            if (
+              vary &&
+              vary
+                .split(',')
+                .some(
+                  (name) =>
+                    name.trim() === '*' ||
+                    stored.get(name.trim()) !== headers.get(name.trim()),
+                )
+            )
+              return undefined
+          }
+          return response.clone()
+        },
+      ),
+      put: vi.fn(
+        async (request: string | { url: string }, response: Response) => {
+          entries.set(key(request), response)
+        },
+      ),
+      keys: vi.fn(async () => [...entries.keys()].map((url) => ({ url }))),
+      delete: vi.fn(async (request: string | { url: string }) =>
+        entries.delete(key(request)),
+      ),
+    }
   }
+  const stores = new Map<string, ReturnType<typeof makeCache>>()
+  const cacheFor = (name: string) => {
+    if (!stores.has(name)) stores.set(name, makeCache())
+    return stores.get(name)!
+  }
+  const cache = cacheFor(cacheName)
+  const dict = cacheFor(dictCacheName)
   const cacheStorage = {
-    open: vi.fn(async () => cache),
+    open: vi.fn(async (name: string) => cacheFor(name)),
     keys: vi.fn(async () => [
       cacheName,
       'vibe-translate-static-v3',
+      dictCacheName,
       'another-app-cache',
     ]),
-    delete: vi.fn(async () => true),
+    delete: vi.fn(async (name: string) => stores.delete(name)),
   }
   const claim = vi.fn(async () => {})
   const skipWaiting = vi.fn()
@@ -160,7 +178,16 @@ function worker(failingUrl?: string) {
       },
     }
   }
-  return { cache, entries, cacheStorage, fetcher, claim, skipWaiting, dispatch }
+  return {
+    cache,
+    entries: cache.entries,
+    dict,
+    cacheStorage,
+    fetcher,
+    claim,
+    skipWaiting,
+    dispatch,
+  }
 }
 
 describe('production offline worker', () => {
@@ -327,6 +354,92 @@ describe('production offline worker', () => {
     const w = worker()
     expect(w.dispatch('fetch', path).response).toBeUndefined()
     expect(w.fetcher).not.toHaveBeenCalled()
+  })
+
+  const dictionaryResponse = (body: string) => {
+    const response = new Response(body)
+    Object.defineProperty(response, 'type', { value: 'basic' })
+    return response
+  }
+
+  it('caches the reading dictionary on first use, apart from the static cache', async () => {
+    const w = worker()
+    await w.dispatch('install').done()
+    const precached = [...w.entries.keys()].sort()
+    expect(w.dict.entries.size).toBe(0)
+    expect(precached.some((url) => url.includes('/dict/'))).toBe(false)
+    const path = '/dict/kuromoji-2.0.0/base.dat.gz'
+    w.fetcher.mockResolvedValueOnce(dictionaryResponse('dictionary'))
+    expect(await (await w.dispatch('fetch', path).done())?.text()).toBe(
+      'dictionary',
+    )
+    expect([...w.dict.entries.keys()]).toEqual([origin + path])
+    expect([...w.entries.keys()].sort()).toEqual(precached)
+    w.fetcher.mockRejectedValue(new Error('Offline'))
+    expect(await (await w.dispatch('fetch', path).done())?.text()).toBe(
+      'dictionary',
+    )
+    expect(
+      await (await w.dispatch('fetch', '/app', 'navigate').done())?.text(),
+    ).toBe(`${origin}/`)
+  })
+
+  it('keeps older dictionaries until this release activates', async () => {
+    const w = worker()
+    await w.dispatch('install').done()
+    const v1 = '/dict/kuromoji-1.0.0/base.dat.gz'
+    const v1cc = '/dict/kuromoji-1.0.0/cc.dat.gz'
+    const v2 = '/dict/kuromoji-2.0.0/base.dat.gz'
+    // An old tab and a newer deploy's tab interleave, and the upgrade stops
+    // halfway (no v2 cc.dat.gz yet).
+    w.fetcher
+      .mockResolvedValueOnce(dictionaryResponse('v1 base'))
+      .mockResolvedValueOnce(dictionaryResponse('v2 base'))
+      .mockResolvedValueOnce(dictionaryResponse('v1 cc'))
+    await w.dispatch('fetch', v1).done()
+    await w.dispatch('fetch', v2).done()
+    await w.dispatch('fetch', v1cc).done()
+    w.fetcher.mockRejectedValue(new Error('Offline'))
+    for (const [path, body] of [
+      [v1, 'v1 base'],
+      [v1cc, 'v1 cc'],
+      [v2, 'v2 base'],
+    ])
+      expect(await (await w.dispatch('fetch', path).done())?.text()).toBe(body)
+    expect(w.dict.delete).not.toHaveBeenCalled()
+
+    await w.dispatch('activate').done()
+    expect([...w.dict.entries.keys()]).toEqual([origin + v2])
+    expect(w.cacheStorage.delete).not.toHaveBeenCalledWith(dictCacheName)
+    expect(w.entries.has(`${origin}/assets/main.js`)).toBe(true)
+  })
+
+  it('does not cache SPA fallback HTML as a dictionary file', async () => {
+    const w = worker()
+    const fallback = new Response('<html></html>', {
+      headers: { 'Content-Type': 'text/html' },
+    })
+    Object.defineProperty(fallback, 'type', { value: 'basic' })
+    w.fetcher.mockResolvedValueOnce(fallback)
+    await w.dispatch('fetch', '/dict/kuromoji-2.0.0/missing.dat.gz').done()
+    expect(w.dict.put).not.toHaveBeenCalled()
+  })
+
+  it('falls back to the network when the dictionary cache cannot be read', async () => {
+    const path = '/dict/kuromoji-2.0.0/base.dat.gz'
+    const openFails = worker()
+    openFails.cacheStorage.open.mockRejectedValue(new Error('Storage error'))
+    openFails.fetcher.mockResolvedValueOnce(dictionaryResponse('dictionary'))
+    expect(await (await openFails.dispatch('fetch', path).done())?.text()).toBe(
+      'dictionary',
+    )
+    const matchFails = worker()
+    matchFails.dict.match.mockRejectedValue(new Error('Storage error'))
+    matchFails.fetcher.mockResolvedValueOnce(dictionaryResponse('dictionary'))
+    expect(
+      await (await matchFails.dispatch('fetch', path).done())?.text(),
+    ).toBe('dictionary')
+    expect(matchFails.dict.put).toHaveBeenCalledOnce()
   })
 
   it('does not intercept writes and handles runtime storage failure', async () => {

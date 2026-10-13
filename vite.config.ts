@@ -4,6 +4,7 @@ import tailwindcss from '@tailwindcss/vite'
 import { existsSync, readFileSync } from 'node:fs'
 import { fileURLToPath, URL } from 'node:url'
 import { defineConfig } from 'vite'
+import { kuromojiDict } from './build/kuromoji-dict'
 import { pwaPrecache } from './build/pwa-precache'
 
 // Wrangler local secrets live in `.dev.vars`. Vite only auto-loads `.env*`,
@@ -57,6 +58,7 @@ export default defineConfig(({ mode }) => {
       }),
       react(),
       tailwindcss(),
+      kuromojiDict(),
       pwaPrecache(),
     ],
     resolve: {

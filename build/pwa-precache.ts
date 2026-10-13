@@ -3,6 +3,8 @@ import { readFileSync, writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import type { Plugin } from 'vite'
 
+import { kuromojiDictBase } from './kuromoji-dict'
+
 const optionalAssets = [
   '/manifest.webmanifest',
   '/icon.svg',
@@ -37,8 +39,9 @@ export function pwaPrecache(): Plugin {
         })
       const template = readFileSync(resolve(root, 'public/sw.js'), 'utf8')
       const shell = readFileSync(resolve(outDir, 'index.html'), 'utf8')
+      const dictDir = kuromojiDictBase()
       const hash = createHash('sha256').update(template).update(shell)
-      hash.update(JSON.stringify(assets))
+      hash.update(JSON.stringify(assets)).update(dictDir)
       for (const url of optionalAssets) {
         hash.update(url).update(readFileSync(resolve(outDir, url.slice(1))))
       }
@@ -50,7 +53,8 @@ export function pwaPrecache(): Plugin {
           .replace("/* __BUILD_SHELL__ */ ''", () => JSON.stringify(shell))
           .replace('/* __OPTIONAL_ASSETS__ */ []', () =>
             JSON.stringify(optionalAssets),
-          ),
+          )
+          .replace("/* __DICT_DIR__ */ ''", () => JSON.stringify(dictDir)),
       )
     },
   }

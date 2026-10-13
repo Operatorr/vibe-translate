@@ -70,6 +70,10 @@ _Avoid_: source/target string, input/output
 A 0.0–1.0 model sampling setting stored on the **Character**. Lower = more predictable wording; higher = more varied phrasing. It does not set politeness, length, or meaning: **Vibe** controls the register, and **Persona** verbosity controls phrasing length. Identical wording is not guaranteed even at zero; stored/cache hits may reuse the same result.
 _Avoid_: creativity, variance — `temperature` is the canonical name (matches the LLM API term).
 
+**Reading**:
+The pronunciation drawn above a **Target segment** on demand: Pinyin for Chinese, Kana (furigana over kanji) for Japanese. Generated in the browser and never stored; not part of **Explain**.
+_Avoid_: furigana or pinyin as the generic term (each is one script's Reading), romanization
+
 **Explain**:
 The pedagogical breakdown of a **Target segment** — romaji, literal gloss, morphemes and particles, kanji decomposition (radicals, readings, stroke count, JLPT level), and grammar patterns. Triggered by an Explain button on the target side.
 _Avoid_: analysis, breakdown, deep-dive
