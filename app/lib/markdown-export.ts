@@ -55,11 +55,14 @@ export function safeLinkUrl(url: string | null | undefined): string | null {
 }
 
 // Render a Thread as a Markdown document: one section per Segment, oldest
-// first, with the Vibe stop label localized for the target language and the
+// first, with the Vibe stop label in the source language and the
 // perspective tag when one was recorded.
 export function threadToMarkdown(input: ExportInput): string {
   const { character, segments, title } = input
-  const vibes = getVibesForLang(character.targetLanguage)
+  const vibes = getVibesForLang(
+    character.targetLanguage,
+    character.sourceLanguage,
+  )
   const vibeLabel = (id: VibeStop | null) =>
     id === null
       ? 'Vibe not recorded'

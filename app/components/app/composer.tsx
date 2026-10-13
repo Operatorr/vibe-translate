@@ -2,10 +2,14 @@ import * as React from 'react'
 import { toast } from 'sonner'
 
 import { Icon } from '@/components/vibe-design/icon'
-import type { VibePreset } from '@/components/vibe-design/design-data'
+import {
+  vibeDetailParts,
+  type VibePreset,
+} from '@/components/vibe-design/design-data'
 import { PERSPECTIVE_OPTIONS } from '@/lib/character-options'
 import { cssVars } from '@/lib/css-vars'
 import { readDrafts, writeDrafts, type Drafts } from '@/lib/draft-store'
+import { snapDragHandlers } from '@/lib/snap-drag'
 import {
   createRecognizer,
   speechRecognitionSupported,
@@ -56,7 +60,7 @@ export const VibeMini = ({
       <div className="vibe-mini__head">
         <span className="vibe-mini__head-l">VIBE · {vibes.length} STOPS</span>
         <span className="vibe-mini__head-r" style={{ color: active.color }}>
-          {active.label} · {active.hint}
+          {vibeDetailParts(active).join(' · ')}
         </span>
       </div>
       <div
@@ -69,6 +73,7 @@ export const VibeMini = ({
         aria-valuenow={valueIdx}
         aria-valuetext={active.label}
         onKeyDown={onKey}
+        {...snapDragHandlers(vibes.length, valueIdx, onChange)}
       >
         <div className="vibe-mini__rail"></div>
         <div
@@ -76,11 +81,11 @@ export const VibeMini = ({
           style={{ width: `${at(valueIdx) * 100}%`, background: active.color }}
         ></div>
         <div className="vibe-mini__stops">
+          {/* Presses land on the rail, which snaps to the nearest stop. */}
           {vibes.map((v, i) => (
-            <button
-              type="button"
+            <span
               key={v.id}
-              tabIndex={-1}
+              aria-hidden="true"
               className={
                 'vibe-mini__dot ' + (i === valueIdx ? 'is-active' : '')
               }
@@ -88,8 +93,6 @@ export const VibeMini = ({
                 left: `${at(i) * 100}%`,
                 '--vibe-fill': v.color,
               })}
-              onClick={() => onChange(i)}
-              aria-label={v.label}
             />
           ))}
         </div>

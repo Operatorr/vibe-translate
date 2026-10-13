@@ -2986,6 +2986,7 @@ body,
 }
 .segment__actions {
   display: flex;
+  flex: 1;
   gap: 4px;
   opacity: 0.5;
   transition: opacity var(--dur-fast) var(--ease-productive);
@@ -3017,6 +3018,7 @@ body,
   background: var(--bg-elev-1);
 }
 .segment__action--explain {
+  margin-left: auto;
   color: var(--cyan-400);
   border-color: var(--cyan-400);
 }
@@ -3387,6 +3389,15 @@ body,
 .vibe-mini__rail-wrap {
   position: relative;
   height: 24px;
+  cursor: pointer;
+  /* Horizontal drags move the stop instead of panning the page. */
+  touch-action: none;
+}
+/* A taller press target than the 24px rail, short of the labels below. */
+.vibe-mini__rail-wrap::before {
+  content: '';
+  position: absolute;
+  inset: -8px -8px -4px;
 }
 .vibe-mini__rail {
   position: absolute;

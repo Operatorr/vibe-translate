@@ -1,4 +1,8 @@
-import { DEMO_PAIRS_JA, VIBE_PRESETS_PER_LANG } from './design-data.ts'
+import {
+  DEMO_PAIRS_JA,
+  VIBE_PRESETS_PER_LANG,
+  vibePresets,
+} from './design-data.ts'
 import type { VibePreset } from './design-data.ts'
 
 export const DEMO_SOURCE = "Stop talking and follow me. You won't regret it."
@@ -53,44 +57,14 @@ export const DEMO_TARGETS: DemoTarget[] = [
     flag: '🇹🇼',
     speechLanguage: 'zh',
     accent: 'taiwan mandarin',
-    vibes: [
-      {
-        id: 'yakuza',
-        label: '粗話',
-        hint: 'rough · 老子',
-        color: 'var(--red-400)',
-      },
-      {
-        id: 'friend',
-        label: '朋友',
-        hint: 'friends · 啦 / 喔',
-        color: 'var(--orange-400)',
-      },
-      {
-        id: 'casual',
-        label: '日常',
-        hint: 'everyday · 你',
-        color: 'var(--amber-400)',
-      },
-      {
-        id: 'keigo',
-        label: '禮貌',
-        hint: 'polite · 請 / 您',
-        color: 'var(--turq-400)',
-      },
-      {
-        id: 'keigoplus',
-        label: '正式',
-        hint: 'formal · 敬請',
-        color: 'var(--cyan-400)',
-      },
-      {
-        id: 'emperor',
-        label: '皇室',
-        hint: 'imperial · 朕',
-        color: 'var(--magenta-400)',
-      },
-    ],
+    vibes: vibePresets({
+      yakuza: ['Rough', '粗話', 'street · 老子'],
+      friend: ['Friend', '朋友', 'relaxed · 啦 / 喔'],
+      casual: ['Casual', '日常', 'everyday · 你'],
+      keigo: ['Polite', '禮貌', 'respectful · 請 / 您'],
+      keigoplus: ['Formal', '正式', 'business · 敬請'],
+      emperor: ['Royal', '皇室', 'imperial · 朕'],
+    }),
     translations: {
       yakuza: '閉嘴，跟老子走。保證你不會後悔。',
       friend: '別講啦，跟我來嘛。保證你不會後悔喔！',
@@ -108,44 +82,14 @@ export const DEMO_TARGETS: DemoTarget[] = [
     flag: '🇹🇭',
     speechLanguage: 'th',
     accent: 'standard',
-    vibes: [
-      {
-        id: 'yakuza',
-        label: 'หยาบ',
-        hint: 'rough · กู / มึง',
-        color: 'var(--red-400)',
-      },
-      {
-        id: 'friend',
-        label: 'เพื่อน',
-        hint: 'friends · เรา / เธอ',
-        color: 'var(--orange-400)',
-      },
-      {
-        id: 'casual',
-        label: 'ทั่วไป',
-        hint: 'everyday · ฉัน / คุณ',
-        color: 'var(--amber-400)',
-      },
-      {
-        id: 'keigo',
-        label: 'สุภาพ',
-        hint: 'polite · ผม / ครับ',
-        color: 'var(--turq-400)',
-      },
-      {
-        id: 'keigoplus',
-        label: 'ทางการ',
-        hint: 'formal · ดิฉัน / ท่าน',
-        color: 'var(--cyan-400)',
-      },
-      {
-        id: 'emperor',
-        label: 'ราชสำนัก',
-        hint: 'royal decree · เรา / เจ้า',
-        color: 'var(--magenta-400)',
-      },
-    ],
+    vibes: vibePresets({
+      yakuza: ['Rough', 'หยาบ', 'street · กู / มึง'],
+      friend: ['Friend', 'เพื่อน', 'familiar · เรา / เธอ'],
+      casual: ['Casual', 'ทั่วไป', 'everyday · ฉัน / คุณ'],
+      keigo: ['Polite', 'สุภาพ', 'respectful · ผม / ครับ'],
+      keigoplus: ['Formal', 'ทางการ', 'business · ดิฉัน / ท่าน'],
+      emperor: ['Royal', 'ราชสำนัก', 'royal decree · เรา / เจ้า'],
+    }),
     translations: {
       yakuza: 'หุบปากแล้วตามกูมา มึงจะไม่เสียใจทีหลัง',
       friend: 'หยุดพูดแล้วตามเรามานะ เธอจะไม่เสียใจแน่นอน!',

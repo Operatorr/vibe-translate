@@ -27,7 +27,10 @@ const LANGUAGE_NAMES = LANG_NAME as Record<string, string>
 // browser-TTS speak only (no retry/explain — those need an account).
 export function SharedThreadView({ data }: { data: SharedThread }) {
   const { thread, character, segments } = data
-  const vibes = getVibesForLang(character.targetLanguage)
+  const vibes = getVibesForLang(
+    character.targetLanguage,
+    character.sourceLanguage,
+  )
   const [speakingId, setSpeakingId] = React.useState<string | null>(null)
   const ordered = [...segments].reverse()
 

@@ -1,391 +1,200 @@
+// One stop on the Vibe slider. `label` and `hint` are in the user's source
+// language (English unless `getVibesForLang` localizes them), so the slider is
+// readable before the user can read the target. `native` is the target
+// language's own name for the register, shown beside the label in the header.
 export type VibePreset = {
   id: string
   label: string
+  native: string
   hint: string
   color: string
 }
 
-// Shared sample data copied from the designer prototype.
+// Slider order. A third copy of the six-stop contract (DB enum, api/_lib/
+// schemas.ts → VIBE_STOPS); app/lib/__tests__/vibe-presets.test.ts keeps them
+// in lockstep. Kept import-free so scripts can load this file directly.
+const VIBE_STOP_IDS = [
+  'yakuza',
+  'friend',
+  'casual',
+  'keigo',
+  'keigoplus',
+  'emperor',
+] as const
+type VibeStopId = (typeof VIBE_STOP_IDS)[number]
 
+const VIBE_COLORS: Record<VibeStopId, string> = {
+  yakuza: 'var(--red-400)',
+  friend: 'var(--orange-400)',
+  casual: 'var(--amber-400)',
+  keigo: 'var(--turq-400)',
+  keigoplus: 'var(--cyan-400)',
+  emperor: 'var(--magenta-400)',
+}
+
+// [label, native, hint] per stop.
+type StopText = readonly [label: string, native: string, hint: string]
+
+export const vibePresets = (
+  stops: Record<VibeStopId, StopText>,
+): VibePreset[] =>
+  VIBE_STOP_IDS.map((id) => {
+    const [label, native, hint] = stops[id]
+    return { id, label, native, hint, color: VIBE_COLORS[id] }
+  })
+
+// Shared sample data copied from the designer prototype. Labels and hints are
+// English; `native` is the target-language term.
 export const VIBE_PRESETS_PER_LANG = {
-  'ja-JP': [
-    {
-      id: 'yakuza',
-      label: 'Yakuza',
-      hint: 'rough · 俺・お前・なめんなよ',
-      color: 'var(--red-400)',
-    },
-    {
-      id: 'friend',
-      label: 'Friend',
-      hint: 'タメ口 · お疲れ・〜じゃん',
-      color: 'var(--orange-400)',
-    },
-    {
-      id: 'casual',
-      label: 'Casual',
-      hint: 'です・ます · light politeness',
-      color: 'var(--amber-400)',
-    },
-    {
-      id: 'keigo',
-      label: 'Keigo',
-      hint: '丁寧語 · standard polite',
-      color: 'var(--turq-400)',
-    },
-    {
-      id: 'keigoplus',
-      label: 'Keigo+',
-      hint: '尊敬語 · honorifics, business',
-      color: 'var(--cyan-400)',
-    },
-    {
-      id: 'emperor',
-      label: 'Emperor',
-      hint: '宮中言葉 · archaic, ceremonial',
-      color: 'var(--magenta-400)',
-    },
-  ],
-  'ko-KR': [
-    {
-      id: 'yakuza',
-      label: 'Banmal-',
-      hint: 'rough · 야 · 너',
-      color: 'var(--red-400)',
-    },
-    {
-      id: 'friend',
-      label: 'Banmal',
-      hint: '반말 · friends, family',
-      color: 'var(--orange-400)',
-    },
-    {
-      id: 'casual',
-      label: 'Casual',
-      hint: '해요체 · standard polite',
-      color: 'var(--amber-400)',
-    },
-    {
-      id: 'keigo',
-      label: 'Jondaemal',
-      hint: '존댓말 · formal',
-      color: 'var(--turq-400)',
-    },
-    {
-      id: 'keigoplus',
-      label: 'Hapsyo',
-      hint: '합쇼체 · business, broadcast',
-      color: 'var(--cyan-400)',
-    },
-    {
-      id: 'emperor',
-      label: 'Royal',
-      hint: 'archaic court speech',
-      color: 'var(--magenta-400)',
-    },
-  ],
-  'en-US': [
-    {
-      id: 'yakuza',
-      label: 'Gritty',
-      hint: 'street · cussing ok',
-      color: 'var(--red-400)',
-    },
-    {
-      id: 'friend',
-      label: 'Buddy',
-      hint: 'slack · contractions',
-      color: 'var(--orange-400)',
-    },
-    {
-      id: 'casual',
-      label: 'Casual',
-      hint: 'newsletter voice',
-      color: 'var(--amber-400)',
-    },
-    {
-      id: 'keigo',
-      label: 'Polite',
-      hint: 'docs default',
-      color: 'var(--turq-400)',
-    },
-    {
-      id: 'keigoplus',
-      label: 'Formal',
-      hint: 'press release · cover letter',
-      color: 'var(--cyan-400)',
-    },
-    {
-      id: 'emperor',
-      label: 'Lordly',
-      hint: 'thy / thee · ceremonial',
-      color: 'var(--magenta-400)',
-    },
-  ],
-  'pt-BR': [
-    {
-      id: 'yakuza',
-      label: 'Boca-suja',
-      hint: 'rua · gírias pesadas',
-      color: 'var(--red-400)',
-    },
-    {
-      id: 'friend',
-      label: 'Amigo',
-      hint: 'mano · cara · tipo',
-      color: 'var(--orange-400)',
-    },
-    {
-      id: 'casual',
-      label: 'Casual',
-      hint: 'voz de podcast',
-      color: 'var(--amber-400)',
-    },
-    {
-      id: 'keigo',
-      label: 'Polido',
-      hint: 'você · pronome de tratamento',
-      color: 'var(--turq-400)',
-    },
-    {
-      id: 'keigoplus',
-      label: 'Formal',
-      hint: 'senhor · cargo público',
-      color: 'var(--cyan-400)',
-    },
-    {
-      id: 'emperor',
-      label: 'Cortês',
-      hint: 'vossa mercê · arcaico',
-      color: 'var(--magenta-400)',
-    },
-  ],
-  'fr-FR': [
-    {
-      id: 'yakuza',
-      label: 'Argot',
-      hint: 'verlan · grossier',
-      color: 'var(--red-400)',
-    },
-    {
-      id: 'friend',
-      label: 'Pote',
-      hint: 'tu · familier',
-      color: 'var(--orange-400)',
-    },
-    {
-      id: 'casual',
-      label: 'Casual',
-      hint: 'tu · neutre',
-      color: 'var(--amber-400)',
-    },
-    {
-      id: 'keigo',
-      label: 'Vous',
-      hint: 'vouvoiement · pro',
-      color: 'var(--turq-400)',
-    },
-    {
-      id: 'keigoplus',
-      label: 'Formel',
-      hint: 'monsieur · administratif',
-      color: 'var(--cyan-400)',
-    },
-    {
-      id: 'emperor',
-      label: 'Royal',
-      hint: 'précieux · académique',
-      color: 'var(--magenta-400)',
-    },
-  ],
-  'de-DE': [
-    {
-      id: 'yakuza',
-      label: 'Derb',
-      hint: 'Berliner · derbe Sprache',
-      color: 'var(--red-400)',
-    },
-    {
-      id: 'friend',
-      label: 'Du',
-      hint: 'duzen · Kumpel',
-      color: 'var(--orange-400)',
-    },
-    {
-      id: 'casual',
-      label: 'Casual',
-      hint: 'Du · neutral',
-      color: 'var(--amber-400)',
-    },
-    {
-      id: 'keigo',
-      label: 'Sie',
-      hint: 'siezen · höflich',
-      color: 'var(--turq-400)',
-    },
-    {
-      id: 'keigoplus',
-      label: 'Förmlich',
-      hint: 'Herr/Frau · amtlich',
-      color: 'var(--cyan-400)',
-    },
-    {
-      id: 'emperor',
-      label: 'Majestät',
-      hint: 'höfisch · historisch',
-      color: 'var(--magenta-400)',
-    },
-  ],
-  'es-ES': [
-    {
-      id: 'yakuza',
-      label: 'Tacos',
-      hint: 'callejero · vulgar',
-      color: 'var(--red-400)',
-    },
-    {
-      id: 'friend',
-      label: 'Tío',
-      hint: 'tuteo · entre amigos',
-      color: 'var(--orange-400)',
-    },
-    {
-      id: 'casual',
-      label: 'Casual',
-      hint: 'tú · neutro',
-      color: 'var(--amber-400)',
-    },
-    {
-      id: 'keigo',
-      label: 'Usted',
-      hint: 'cortés · profesional',
-      color: 'var(--turq-400)',
-    },
-    {
-      id: 'keigoplus',
-      label: 'Formal',
-      hint: 'Don · administrativo',
-      color: 'var(--cyan-400)',
-    },
-    {
-      id: 'emperor',
-      label: 'Real',
-      hint: 'Su Majestad · arcaico',
-      color: 'var(--magenta-400)',
-    },
-  ],
-  'zh-CN': [
-    {
-      id: 'yakuza',
-      label: '糙话',
-      hint: '街头 · 粗鲁',
-      color: 'var(--red-400)',
-    },
-    {
-      id: 'friend',
-      label: '朋友',
-      hint: '哥们 · 随便聊',
-      color: 'var(--orange-400)',
-    },
-    {
-      id: 'casual',
-      label: '日常',
-      hint: '中性日常',
-      color: 'var(--amber-400)',
-    },
-    { id: 'keigo', label: '礼貌', hint: '您 · 商务', color: 'var(--turq-400)' },
-    {
-      id: 'keigoplus',
-      label: '正式',
-      hint: '尊敬 · 公文',
-      color: 'var(--cyan-400)',
-    },
-    {
-      id: 'emperor',
-      label: '皇室',
-      hint: '朕 · 古风',
-      color: 'var(--magenta-400)',
-    },
-  ],
-  'zh-TW': [
-    {
-      id: 'yakuza',
-      label: '粗話',
-      hint: '街頭 · 粗魯',
-      color: 'var(--red-400)',
-    },
-    {
-      id: 'friend',
-      label: '朋友',
-      hint: '熟人 · 輕鬆聊天',
-      color: 'var(--orange-400)',
-    },
-    {
-      id: 'casual',
-      label: '日常',
-      hint: '自然 · 日常用語',
-      color: 'var(--amber-400)',
-    },
-    { id: 'keigo', label: '禮貌', hint: '您 · 尊重', color: 'var(--turq-400)' },
-    {
-      id: 'keigoplus',
-      label: '正式',
-      hint: '敬語 · 商務',
-      color: 'var(--cyan-400)',
-    },
-    {
-      id: 'emperor',
-      label: '皇室',
-      hint: '朕 · 古風',
-      color: 'var(--magenta-400)',
-    },
-  ],
-  'th-TH': [
-    {
-      id: 'yakuza',
-      label: 'หยาบ',
-      hint: 'rough · blunt street language',
-      color: 'var(--red-400)',
-    },
-    {
-      id: 'friend',
-      label: 'เพื่อน',
-      hint: 'friends · familiar language',
-      color: 'var(--orange-400)',
-    },
-    {
-      id: 'casual',
-      label: 'ทั่วไป',
-      hint: 'everyday · conversational',
-      color: 'var(--amber-400)',
-    },
-    {
-      id: 'keigo',
-      label: 'สุภาพ',
-      hint: 'polite · respectful language',
-      color: 'var(--turq-400)',
-    },
-    {
-      id: 'keigoplus',
-      label: 'ทางการ',
-      hint: 'formal · business language',
-      color: 'var(--cyan-400)',
-    },
-    {
-      id: 'emperor',
-      label: 'ราชาศัพท์',
-      hint: 'royal · ceremonial language',
-      color: 'var(--magenta-400)',
-    },
-  ],
+  'ja-JP': vibePresets({
+    yakuza: ['Yakuza', 'ヤクザ言葉', 'rough · 俺・お前・なめんなよ'],
+    friend: ['Friend', 'タメ口', 'casual · お疲れ・〜じゃん'],
+    casual: ['Casual', 'です・ます', 'light politeness'],
+    keigo: ['Keigo', '丁寧語', 'standard polite'],
+    keigoplus: ['Keigo+', '尊敬語', 'honorifics, business'],
+    emperor: ['Emperor', '宮中言葉', 'archaic, ceremonial'],
+  }),
+  'ko-KR': vibePresets({
+    yakuza: ['Rough', '막말', 'rough · 야 · 너'],
+    friend: ['Banmal', '반말', 'friends, family'],
+    casual: ['Casual', '해요체', 'standard polite'],
+    keigo: ['Jondaemal', '존댓말', 'formal'],
+    keigoplus: ['Hapsyo', '합쇼체', 'business, broadcast'],
+    emperor: ['Royal', '궁중어', 'archaic court speech'],
+  }),
+  'en-US': vibePresets({
+    yakuza: ['Gritty', 'Gritty', 'street · cussing ok'],
+    friend: ['Buddy', 'Buddy', 'slack · contractions'],
+    casual: ['Casual', 'Casual', 'newsletter voice'],
+    keigo: ['Polite', 'Polite', 'docs default'],
+    keigoplus: ['Formal', 'Formal', 'press release · cover letter'],
+    emperor: ['Lordly', 'Lordly', 'thy / thee · ceremonial'],
+  }),
+  'pt-BR': vibePresets({
+    yakuza: ['Rough', 'Boca-suja', 'street · heavy slang'],
+    friend: ['Buddy', 'Amigo', 'mano · cara · tipo'],
+    casual: ['Casual', 'Casual', 'podcast voice'],
+    keigo: ['Polite', 'Polido', 'você · polite address'],
+    keigoplus: ['Formal', 'Formal', 'senhor · public office'],
+    emperor: ['Courtly', 'Cortês', 'vossa mercê · archaic'],
+  }),
+  'fr-FR': vibePresets({
+    yakuza: ['Slang', 'Argot', 'verlan · crude'],
+    friend: ['Buddy', 'Pote', 'tu · familiar'],
+    casual: ['Casual', 'Neutre', 'tu · neutral'],
+    keigo: ['Polite', 'Vous', 'vouvoiement · professional'],
+    keigoplus: ['Formal', 'Formel', 'monsieur · administrative'],
+    emperor: ['Royal', 'Royal', 'précieux · academic'],
+  }),
+  'de-DE': vibePresets({
+    yakuza: ['Rough', 'Derb', 'Berlin · coarse'],
+    friend: ['Buddy', 'Du', 'duzen · mates'],
+    casual: ['Casual', 'Locker', 'Du · neutral'],
+    keigo: ['Polite', 'Sie', 'siezen · polite'],
+    keigoplus: ['Formal', 'Förmlich', 'Herr/Frau · official'],
+    emperor: ['Majesty', 'Majestät', 'courtly · historic'],
+  }),
+  'es-ES': vibePresets({
+    yakuza: ['Rough', 'Tacos', 'street · vulgar'],
+    friend: ['Buddy', 'Tío', 'tuteo · among friends'],
+    casual: ['Casual', 'Neutro', 'tú · neutral'],
+    keigo: ['Polite', 'Usted', 'courteous · professional'],
+    keigoplus: ['Formal', 'Formal', 'Don · administrative'],
+    emperor: ['Royal', 'Real', 'Su Majestad · archaic'],
+  }),
+  'zh-CN': vibePresets({
+    yakuza: ['Rough', '糙话', 'street · rude'],
+    friend: ['Friend', '朋友', 'buddies · easy chat'],
+    casual: ['Casual', '日常', 'neutral everyday'],
+    keigo: ['Polite', '礼貌', '您 · business'],
+    keigoplus: ['Formal', '正式', 'deferential · official'],
+    emperor: ['Royal', '皇室', '朕 · archaic'],
+  }),
+  'zh-TW': vibePresets({
+    yakuza: ['Rough', '粗話', 'street · rude'],
+    friend: ['Friend', '朋友', 'familiar · easy chat'],
+    casual: ['Casual', '日常', 'natural · everyday'],
+    keigo: ['Polite', '禮貌', '您 · respectful'],
+    keigoplus: ['Formal', '正式', 'honorifics · business'],
+    emperor: ['Royal', '皇室', '朕 · archaic'],
+  }),
+  'th-TH': vibePresets({
+    yakuza: ['Rough', 'หยาบ', 'blunt street language'],
+    friend: ['Friend', 'เพื่อน', 'familiar language'],
+    casual: ['Casual', 'ทั่วไป', 'everyday · conversational'],
+    keigo: ['Polite', 'สุภาพ', 'respectful language'],
+    keigoplus: ['Formal', 'ทางการ', 'business language'],
+    emperor: ['Royal', 'ราชาศัพท์', 'royal · ceremonial'],
+  }),
 }
 
 // Default fallback
 export const VIBE_PRESETS_DEFAULT = VIBE_PRESETS_PER_LANG['en-US']
 
-export const getVibesForLang = (langCode: string): VibePreset[] =>
-  VIBE_PRESETS_PER_LANG[langCode as keyof typeof VIBE_PRESETS_PER_LANG] ||
-  VIBE_PRESETS_DEFAULT
+// [label, hint] per stop for non-English source languages. Generic across
+// targets: the target-specific nuance lives in `native`.
+const SOURCE_LABELS: Record<
+  string,
+  Record<VibeStopId, readonly [label: string, hint: string]>
+> = {
+  'ja-JP': {
+    yakuza: ['乱暴', '荒っぽい言葉づかい'],
+    friend: ['友達', 'くだけた口調'],
+    casual: ['普通', '日常会話'],
+    keigo: ['丁寧', '丁寧な言葉づかい'],
+    keigoplus: ['敬語', '改まった・ビジネス'],
+    emperor: ['皇室', '古風・儀式的'],
+  },
+  'zh-CN': {
+    yakuza: ['粗话', '街头 · 粗鲁'],
+    friend: ['朋友', '随意聊天'],
+    casual: ['日常', '中性日常'],
+    keigo: ['礼貌', '客气 · 尊重'],
+    keigoplus: ['正式', '公务 · 庄重'],
+    emperor: ['皇室', '古风 · 典礼'],
+  },
+  'zh-TW': {
+    yakuza: ['粗話', '街頭 · 粗魯'],
+    friend: ['朋友', '輕鬆聊天'],
+    casual: ['日常', '自然日常'],
+    keigo: ['禮貌', '客氣 · 尊重'],
+    keigoplus: ['正式', '公務 · 莊重'],
+    emperor: ['皇室', '古風 · 典禮'],
+  },
+  'th-TH': {
+    yakuza: ['หยาบ', 'ภาษาข้างถนน'],
+    friend: ['เพื่อน', 'ภาษากันเอง'],
+    casual: ['ทั่วไป', 'ภาษาพูดทั่วไป'],
+    keigo: ['สุภาพ', 'ภาษาสุภาพ'],
+    keigoplus: ['ทางการ', 'ภาษาทางการ'],
+    emperor: ['ราชาศัพท์', 'โบราณ · พิธีการ'],
+  },
+}
+
+// Presets for a target language, labelled in the source language so the user
+// can read the slider. English sources keep the target-tuned English labels.
+export const getVibesForLang = (
+  targetLang: string,
+  sourceLang = 'en-US',
+): VibePreset[] => {
+  const vibes =
+    VIBE_PRESETS_PER_LANG[targetLang as keyof typeof VIBE_PRESETS_PER_LANG] ||
+    VIBE_PRESETS_DEFAULT
+  const local = SOURCE_LABELS[sourceLang]
+  if (!local) return vibes
+  return vibes.map((v) => {
+    const [label, hint] = local[v.id as VibeStopId]
+    return { ...v, label, hint }
+  })
+}
+
+// Header detail for the active stop: "Keigo · 丁寧語 · standard polite". The
+// native term is dropped when it repeats the label (English targets).
+export const vibeDetailParts = (v: VibePreset): string[] => [
+  v.label,
+  ...(v.native && v.native !== v.label ? [v.native] : []),
+  ...v.hint.split(' · '),
+]
 
 // --- Sample characters/presets for the App page sidebar ---
 export const SAMPLE_CHARS = [

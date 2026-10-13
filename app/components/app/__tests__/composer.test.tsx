@@ -16,9 +16,27 @@ import type { VibePreset } from '@/components/vibe-design/design-data'
 import { Composer } from '../composer'
 
 const VIBES: VibePreset[] = [
-  { id: 'casual', label: 'Casual', hint: 'friends', color: 'rgb(1, 2, 3)' },
-  { id: 'polite', label: 'Polite', hint: 'teineigo', color: 'rgb(4, 5, 6)' },
-  { id: 'keigo', label: 'Keigo', hint: 'honorific', color: 'rgb(7, 8, 9)' },
+  {
+    id: 'casual',
+    label: 'Casual',
+    native: 'Casual',
+    hint: 'friends',
+    color: 'rgb(1, 2, 3)',
+  },
+  {
+    id: 'polite',
+    label: 'Polite',
+    native: 'Polite',
+    hint: 'teineigo',
+    color: 'rgb(4, 5, 6)',
+  },
+  {
+    id: 'keigo',
+    label: 'Keigo',
+    native: 'Keigo',
+    hint: 'honorific',
+    color: 'rgb(7, 8, 9)',
+  },
 ]
 const storedKey = (owner: string) => `vibe-translate:drafts:${owner}`
 

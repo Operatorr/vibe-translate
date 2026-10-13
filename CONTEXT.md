@@ -7,7 +7,7 @@ A language-learning translator that lets the user pick the social **register** (
 ### Product
 
 **Vibe**:
-The user-facing name for the chosen social **Register** of a translation, picked from a fixed 6-stop slider. The 6 canonical stop IDs are `yakuza`, `friend`, `casual`, `keigo`, `keigoplus`, `emperor` — chosen as evocative brand metaphors. Each stop carries a language-specific label (e.g. `keigoplus` → "Keigo+" in `ja-JP`, "Formel" in `fr-FR`, "Formal" in `en-US`).
+The user-facing name for the chosen social **Register** of a translation, picked from a fixed 6-stop slider. The 6 canonical stop IDs are `yakuza`, `friend`, `casual`, `keigo`, `keigoplus`, `emperor` — chosen as evocative brand metaphors. Each stop carries a label in the user's source language (e.g. `keigoplus` → "Keigo+" for a `ja-JP` target, "Formal" for `zh-TW`) and the target language's own term for it (尊敬語, 正式).
 _Avoid_: tone, style, mood, register slot
 
 **Register**:
@@ -15,11 +15,11 @@ The linguistic concept underneath **Vibe** — formality, dialect, social distan
 _Avoid_: formality (too narrow), politeness level (too narrow)
 
 **Vibe stop**:
-One of the six discrete positions on the **Vibe** slider. Same six IDs across all languages; labels and hint phrases are localized per target language.
+One of the six discrete positions on the **Vibe** slider. Same six IDs across all languages; labels and hints follow the source language, the native term follows the target.
 _Avoid_: vibe preset (overloaded with the per-language preset table)
 
 **Vibe preset table**:
-The per-target-language mapping from **Vibe stop** ID to localized label, hint, and color. Lives in design data today (`Vibe_Translate_App_Design/js/data.js → VIBE_PRESETS_PER_LANG`).
+The per-target-language mapping from **Vibe stop** ID to English label, native term, English hint, and color. Lives in `app/components/vibe-design/design-data.ts → VIBE_PRESETS_PER_LANG`; `getVibesForLang(target, source)` relabels it for non-English sources.
 _Avoid_: vibe map, presets
 
 **Character**:

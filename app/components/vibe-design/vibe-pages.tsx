@@ -8,8 +8,13 @@ import { SpectrumBackdrop } from '@/components/landing/spectrum-backdrop'
 import { RevealHeading } from '@/components/landing/reveal-heading'
 
 import { cssVars } from '@/lib/css-vars'
+import { snapDragHandlers } from '@/lib/snap-drag'
 
-import { DEMO_PAIRS_JA, VIBE_PRESETS_PER_LANG } from './design-data'
+import {
+  DEMO_PAIRS_JA,
+  VIBE_PRESETS_PER_LANG,
+  vibeDetailParts,
+} from './design-data'
 import { DEMO_SOURCE, DEMO_TARGETS, demoAudioPath } from './landing-demo-data'
 import type { DemoLanguage, DemoVibe } from './landing-demo-data'
 import { Icon } from './icon'
@@ -307,17 +312,18 @@ const LandingDemo = () => {
                   className="vibe-mini__head-r"
                   style={{ color: activeVibe.color }}
                 >
-                  {[activeVibe.label, ...activeVibe.hint.split(' · ')].map(
-                    (part, index) => (
-                      <span className="demo__vibe-detail" key={index}>
-                        {index > 0 && '· '}
-                        {part}
-                      </span>
-                    ),
-                  )}
+                  {vibeDetailParts(activeVibe).map((part, index) => (
+                    <span className="demo__vibe-detail" key={index}>
+                      {index > 0 && '· '}
+                      {part}
+                    </span>
+                  ))}
                 </span>
               </div>
-              <div className="vibe-mini__rail-wrap">
+              <div
+                className="vibe-mini__rail-wrap"
+                {...snapDragHandlers(vibes.length, vibeIdx, setVibeIdx)}
+              >
                 <div className="vibe-mini__rail"></div>
                 <div
                   className="vibe-mini__fill"

@@ -233,9 +233,27 @@ describe('full-screen translation display and the Back button', () => {
 
 describe('segment retry and delete', () => {
   const VIBES = [
-    { id: 'friend', label: 'Friend', hint: 'tomodachi', color: '#0f0' },
-    { id: 'casual', label: 'Casual', hint: 'teineigo', color: '#00f' },
-    { id: 'keigo', label: 'Keigo', hint: 'honorific', color: '#f00' },
+    {
+      id: 'friend',
+      label: 'Friend',
+      native: 'Friend',
+      hint: 'tomodachi',
+      color: '#0f0',
+    },
+    {
+      id: 'casual',
+      label: 'Casual',
+      native: 'Casual',
+      hint: 'teineigo',
+      color: '#00f',
+    },
+    {
+      id: 'keigo',
+      label: 'Keigo',
+      native: 'Keigo',
+      hint: 'honorific',
+      color: '#f00',
+    },
   ]
   const actions = () => ({ onRetry: vi.fn(), onDelete: vi.fn() })
   const renderCard = (handlers: ReturnType<typeof actions>) =>

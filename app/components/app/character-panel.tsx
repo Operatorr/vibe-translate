@@ -109,7 +109,7 @@ export function CharacterPanel({
   const [confirmingDelete, setConfirmingDelete] = React.useState(false)
   const [confirmName, setConfirmName] = React.useState('')
   const patch = (p: Partial<Draft>) => setD((prev) => ({ ...prev, ...p }))
-  const vibes = getVibesForLang(d.targetLanguage)
+  const vibes = getVibesForLang(d.targetLanguage, d.sourceLanguage)
   const isCreate = character === null
   const regions = getRegionsForLanguage(d.targetLanguage)
   // The former formality field is edit-only: shown for Characters that saved a

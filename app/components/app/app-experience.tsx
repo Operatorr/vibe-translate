@@ -294,8 +294,9 @@ export function AppExperience() {
   const shareBusy = React.useRef(false)
 
   const vibes = React.useMemo(
-    () => getVibesForLang(char?.targetLanguage ?? 'ja-JP'),
-    [char?.targetLanguage],
+    () =>
+      getVibesForLang(char?.targetLanguage ?? 'ja-JP', char?.sourceLanguage),
+    [char?.targetLanguage, char?.sourceLanguage],
   )
   const [vibeIdx, setVibeIdx] = React.useState(0)
   const [temp, setTemp] = React.useState(0.4)
@@ -902,7 +903,7 @@ export function AppExperience() {
                     <span className="arrow">→</span>
                     {FLAGS[c.targetLanguage] ?? c.targetLanguage} ·{' '}
                     {
-                      getVibesForLang(c.targetLanguage).find(
+                      getVibesForLang(c.targetLanguage, c.sourceLanguage).find(
                         (v) => v.id === c.defaultVibe,
                       )?.label
                     }

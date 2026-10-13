@@ -26,13 +26,13 @@ The six **Vibe stops** have fixed brand colors forming a rough "heat" ramp from 
 | keigoplus | `--cyan-400`    | `#00a8ff` |
 | emperor   | `--magenta-400` | `#ff1f9d` |
 
-The color is consistent across all languages; only the **labels** localize (`keigoplus` → "Keigo+" in `ja-JP`, "Formel" in `fr-FR`).
+The color is consistent across all languages. Each stop carries three texts: a **label** and **hint** in the user's _source_ language, and the **native** term for that register in the _target_ language. The slider shows labels, so a learner can read it before they can read the target; the header names the active stop as `label · native · hint` ("Keigo · 丁寧語 · standard polite", "Polite · 禮貌 · 您 · respectful"). Labels are English by default and tuned per target (`keigoplus` → "Keigo+" for `ja-JP`, "Formal" for `zh-TW`); a Japanese, Chinese or Thai source swaps in generic labels in that language. `getVibesForLang(target, source)` in `design-data.ts` builds the list.
 
 ## Key interactions
 
 ### The Vibe slider {#the-vibe-slider}
 
-- A **6-stop discrete slider**, color-coded per the ramp above. Stops are selectable by click, drag, or keyboard (arrow keys move between stops).
+- A **6-stop discrete slider**, color-coded per the ramp above. Stops are selectable by click, drag, or keyboard (arrow keys move between stops). Pressing anywhere on the rail jumps to the nearest stop; dragging (mouse or touch) snaps from stop to stop under the pointer. The rail sets `touch-action: none` so a horizontal drag on a phone moves the stop instead of the page (`app/lib/snap-drag.ts`). The landing demo uses the same handlers.
 - **Commit-to-translate**, not translate-on-move: sliding previews the selection but does not fire a translation on every stop. The user commits one stop → one translation runs. This is a deliberate cost guard (see [PRODUCT.md](./PRODUCT.md#the-wedge) and [adr/0004](./adr/0004-shared-canonical-translation-cache.md)).
 - **Generated vs. ungenerated stops are visually distinct.** A stop already translated for this source text shows as a **filled dot** (tapping it is instant + free — served from history or the shared cache). An ungenerated stop shows as a **hollow dot** with a subtle "1 translation" cost hint; committing it spends credits (unless BYOK).
 
@@ -57,6 +57,7 @@ The color is consistent across all languages; only the **labels** localize (`kei
 
 ### Explain panel
 
+- The **Explain** button sits at the right end of the Segment's action row, apart from the icon actions on the left (it wraps to its own row, still right-aligned, if space runs out).
 - **Explain** opens **inline, directly under its Segment card**, not as a modal — the translation stays visible right above the breakdown so the learner can cross-reference. One panel is open at a time.
 - On open, and again when its content loads, the panel **slides into view**: the thread scrolls smoothly up until the panel clears the composer, but never past the top of its Segment card, so the translation stays on screen above the breakdown. Instant under `prefers-reduced-motion`.
 - The panel renders the language-aware payload: romaji, literal gloss, morphemes & particles (color-coded by part of speech), kanji decomposition (radicals, readings, JLPT, stroke count), and grammar patterns with dialect notes.
