@@ -44,7 +44,7 @@ import { cssVars } from '@/lib/css-vars'
 import { keys } from '@/lib/query-keys'
 import { timeAgo } from '@/lib/time'
 import { speak, stopSpeaking } from '@/lib/tts'
-import type { Character, Thread, VibeStop } from '@/lib/types'
+import type { Character, Perspective, Thread, VibeStop } from '@/lib/types'
 import { copyText } from '@/lib/clipboard'
 import { initialsFor } from '@/lib/initials'
 
@@ -299,11 +299,13 @@ export function AppExperience() {
   )
   const [vibeIdx, setVibeIdx] = React.useState(0)
   const [temp, setTemp] = React.useState(0.4)
+  const [perspective, setPerspective] = React.useState<Perspective>('to')
   // Separate effects: committing the temperature PATCHes the Character, and that
   // must not snap the Vibe slider back to the Character's default stop.
   const charId = char?.id
   const charDefaultVibe = char?.defaultVibe
   const charTemperature = char?.temperature
+  const charPerspective = char?.perspective
   React.useEffect(() => {
     if (!charId || !charDefaultVibe) return
     setVibeIdx(
@@ -316,6 +318,11 @@ export function AppExperience() {
   React.useEffect(() => {
     if (charId && charTemperature !== undefined) setTemp(charTemperature)
   }, [charId, charTemperature])
+  // A Character cached offline before Perspective existed has no field; it
+  // means the default, not "keep whatever the last Character had".
+  React.useEffect(() => {
+    if (charId) setPerspective(charPerspective ?? 'to')
+  }, [charId, charPerspective])
 
   React.useEffect(() => {
     setExplainOpenId(null)
@@ -371,7 +378,10 @@ export function AppExperience() {
   // allowing translations in other threads to proceed independently.
   const sendingRef = React.useRef(new Set<string>())
   const [pendingSends, setPendingSends] = React.useState<
-    Map<string, { sourceText: string; vibe: VibeStop }>
+    Map<
+      string,
+      { sourceText: string; vibe: VibeStop; perspective: Perspective }
+    >
   >(() => new Map())
   const composerContext = thread?.id ?? `new:${char?.id ?? ''}`
   const activeThreadRef = React.useRef(activeThreadId)
@@ -383,7 +393,13 @@ export function AppExperience() {
     if (!char || threads.isPending || sendingRef.current.has(composerContext))
       return false
     const locked = [composerContext]
-    const pending = { sourceText: text, vibe: vibes[vibeIdx].id as VibeStop }
+    // Perspective is sent explicitly, so a still-pending PATCH from the radio
+    // can't make the worker translate with the other one.
+    const pending = {
+      sourceText: text,
+      vibe: vibes[vibeIdx].id as VibeStop,
+      perspective,
+    }
     sendingRef.current.add(composerContext)
     setPendingSends((prev) => new Map(prev).set(composerContext, pending))
     try {
@@ -400,14 +416,14 @@ export function AppExperience() {
       const createdForSend = threadList.some((t) => t.id === target.id)
         ? null
         : target
-      const vibe = pending.vibe
       await tempCommit.current
       let created
       try {
         created = await createSegment.mutateAsync({
           threadId: target.id,
           sourceText: text,
-          vibe,
+          vibe: pending.vibe,
+          perspective: pending.perspective,
         })
       } catch (error) {
         if (!(error instanceof ApiError && error.status === 402))
@@ -472,6 +488,21 @@ export function AppExperience() {
         if (tempCommit.current === commit) tempCommit.current = null
       })
     tempCommit.current = commit
+  }
+
+  // Perspective belongs to the Character, so the radio saves it right away and
+  // the next visit opens with the same choice. The PATCH is optimistic and
+  // queued behind any earlier one (useUpdateCharacter), so quick clicks land in
+  // order and the radio stays on the last. A failure rolls back just that
+  // Character's perspective, and the effect above resets the radio.
+  const changePerspective = (value: Perspective) => {
+    setPerspective(value)
+    if (!char || value === char.perspective) return
+    updateCharacter
+      .mutateAsync({ id: char.id, perspective: value })
+      .catch((error: unknown) =>
+        toast.error(errorMessage(error, 'Could not save the perspective.')),
+      )
   }
 
   const copySegment = async (seg: SegmentView) => {
@@ -1170,6 +1201,7 @@ export function AppExperience() {
                     sourceLanguage={char.sourceLanguage}
                     targetLanguage={char.targetLanguage}
                     vibe={vibes.find((v) => v.id === pendingSend.vibe)}
+                    perspective={pendingSend.perspective}
                   />
                 )}
                 {ordered.map((s, i) => (
@@ -1233,7 +1265,11 @@ export function AppExperience() {
             <Composer
               contextId={composerContext}
               ref={composerRef}
-              placeholder={`Translate to ${langName(char.targetLanguage)} as ${char.name} · ${activeVibe?.label}…`}
+              placeholder={
+                perspective === 'as'
+                  ? `Speak as ${char.name} in ${langName(char.targetLanguage)} · ${activeVibe?.label}…`
+                  : `Write to ${char.name} in ${langName(char.targetLanguage)} · ${activeVibe?.label}…`
+              }
               sourceLanguage={char.sourceLanguage}
               vibes={vibes}
               vibeIdx={vibeIdx}
@@ -1241,6 +1277,8 @@ export function AppExperience() {
               temperature={temp}
               onTemperatureChange={setTemp}
               onTemperatureCommit={commitTemperature}
+              perspective={perspective}
+              onPerspectiveChange={changePerspective}
               onSend={send}
               sending={pendingHere || threads.isPending}
               draftOwner={userId}

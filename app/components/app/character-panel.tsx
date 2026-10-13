@@ -16,6 +16,7 @@ import {
 } from '@/lib/character-draft'
 import {
   CHARACTER_LANGUAGES,
+  PERSPECTIVE_OPTIONS,
   SOURCE_LANGUAGES,
   getRegionsForLanguage,
   getTraitsForLanguage,
@@ -115,6 +116,7 @@ export function CharacterPanel({
   // value, and kept mounted while the draft is cleared so it can be retyped.
   const hasVoiceNotes = !!character?.persona.formality
   const traitOptions = getTraitsForLanguage(d.targetLanguage)
+  const who = d.name.trim() || 'this character'
 
   React.useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -131,6 +133,7 @@ export function CharacterPanel({
     sourceLanguage: d.sourceLanguage,
     targetLanguage: d.targetLanguage,
     vibe: d.defaultVibe,
+    perspective: d.perspective,
     temperature: input.temperature,
     persona: input.persona,
     instructions: input.instructions,
@@ -359,6 +362,48 @@ export function CharacterPanel({
                     {v.label}
                   </button>
                 ))}
+              </div>
+            </div>
+            <div className="cust__field cust__field--top">
+              <div className="cust__label-row">
+                <span className="cust__label" id="cp-perspective-label">
+                  Perspective
+                </span>
+                <CharacterSettingHelp
+                  setting="perspective"
+                  onOpenChange={setHelpOpen}
+                />
+              </div>
+              <div className="cust__control">
+                <div
+                  className="cust__chip-row"
+                  role="radiogroup"
+                  aria-labelledby="cp-perspective-label"
+                  aria-describedby="cp-perspective-help"
+                >
+                  {PERSPECTIVE_OPTIONS.map((o) => (
+                    <label
+                      key={o.id}
+                      className={
+                        'cust__chip cust__radio ' +
+                        (d.perspective === o.id ? 'is-active' : '')
+                      }
+                    >
+                      <input
+                        type="radio"
+                        name="cp-perspective"
+                        value={o.id}
+                        checked={d.perspective === o.id}
+                        onChange={() => patch({ perspective: o.id })}
+                      />
+                      {o.label}
+                    </label>
+                  ))}
+                </div>
+                <p id="cp-perspective-help" className="cust__helper">
+                  As: {who}’s own words, in their voice. To: your own words,
+                  addressed to {who}.
+                </p>
               </div>
             </div>
           </div>

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import { escapeInline, safeLinkUrl, threadToMarkdown } from '../markdown-export'
+import type { Perspective } from '../types'
 
 const character = {
   name: 'Oba-chan',
@@ -28,6 +29,46 @@ describe('threadToMarkdown', () => {
     expect(before).toContain('## 01 · Vibe not recorded')
     expect(after).toContain('## 01 · Vibe not recorded')
   })
+
+  const sectionHeadings = (md: string) =>
+    md.split('\n').filter((line) => line.startsWith('## '))
+  const segment = (perspective: Perspective | null, n = 1) => ({
+    sourceText: `source ${n}`,
+    targetText: `target ${n}`,
+    vibe: 'casual' as const,
+    perspective,
+    createdAt: '2026-09-14T10:00:00Z',
+  })
+
+  it.each([
+    ['as' as const, '## 01 · Casual · as speaker'],
+    ['to' as const, '## 01 · Casual · to speaker'],
+    [null, '## 01 · Casual'],
+  ])(
+    'tags a %s perspective snapshot in its heading',
+    (perspective, heading) => {
+      const md = threadToMarkdown({
+        title: 't',
+        character,
+        segments: [segment(perspective)],
+      })
+      expect(sectionHeadings(md)).toEqual([heading])
+    },
+  )
+
+  it('tags each Segment with its own perspective in a mixed history', () => {
+    const md = threadToMarkdown({
+      title: 't',
+      character,
+      segments: [segment('as', 1), segment(null, 2), segment('to', 3)],
+    })
+    expect(sectionHeadings(md)).toEqual([
+      '## 01 · Casual · as speaker',
+      '## 02 · Casual',
+      '## 03 · Casual · to speaker',
+    ])
+  })
+
   it('cannot inject blocks through the title', () => {
     const md = threadToMarkdown({
       title: 'Recipe\n\n# Injected',

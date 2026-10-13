@@ -17,6 +17,7 @@ const baseInput = (overrides: Partial<TranslateSegmentInput> = {}): TranslateSeg
   sourceLanguage: 'en-US',
   targetLanguage: 'ja-JP',
   vibe: 'casual',
+  perspective: 'to',
   temperature: 0.4,
   persona: { traits: [] },
   ...overrides,
@@ -80,11 +81,56 @@ describe('buildTranslateMessages', () => {
     const withPersona = buildTranslateMessages(
       baseInput({ persona: { age: '20s', traits: [] } }),
     ).find((m) => m.role === 'system')!.content
-    expect(withPersona).toContain('SPEAKER PERSONA')
+    expect(withPersona).toContain('CHARACTER PERSONA')
     expect(withPersona).toContain('- Age: 20s')
 
     const without = buildTranslateMessages(baseInput()).find((m) => m.role === 'system')!.content
-    expect(without).not.toContain('SPEAKER PERSONA')
+    expect(without).not.toContain('CHARACTER PERSONA')
+  })
+
+  describe('perspective', () => {
+    const system = (overrides: Partial<TranslateSegmentInput>) =>
+      buildTranslateMessages(baseInput(overrides)).find(
+        (m) => m.role === 'system',
+      )!.content
+    const register = (text: string) =>
+      text.split('\n').find((l) => l.startsWith('REGISTER'))
+
+    it('is stated even without a persona, since it changes the register', () => {
+      expect(system({ perspective: 'as' })).toContain(
+        'PERSPECTIVE: speaking AS the character',
+      )
+      expect(system({ perspective: 'to' })).toContain(
+        'PERSPECTIVE: speaking TO the character',
+      )
+    })
+
+    it.each(['yakuza', 'keigoplus', 'emperor'] as const)(
+      'gives %s different register guidance as and to the character',
+      (vibe) => {
+        expect(register(system({ vibe, perspective: 'as' }))).not.toBe(
+          register(system({ vibe, perspective: 'to' })),
+        )
+      },
+    )
+
+    it('frames the persona as the speaker or the addressee', () => {
+      const persona = { age: '70s', traits: [] }
+      const as = system({ perspective: 'as', persona })
+      const to = system({ perspective: 'to', persona })
+      expect(as).toContain('CHARACTER PERSONA (the speaker')
+      expect(as).toContain('The persona describes the speaker')
+      expect(to).toContain(
+        'CHARACTER PERSONA (the person being addressed, not the speaker)',
+      )
+      expect(to).toContain('The persona describes the person being addressed')
+    })
+
+    it('never lets a "to" translation speak as the character', () => {
+      expect(system({ vibe: 'emperor', perspective: 'to' })).toContain(
+        'Never speak as the character',
+      )
+    })
   })
 
   it('appends free-form instructions only when present', () => {
@@ -151,5 +197,22 @@ describe('buildDictationMessages', () => {
     expect(system).toContain('"ok"')
     expect(system).toContain('"defaultVibe"')
     expect(messages[1]).toEqual({ role: 'user', content: 'text my friend Tomoko in Tokyo' })
+  })
+
+  // A Character may be spoken as or to (adr/0009), so no field may assume an
+  // addressee; the register is read per perspective.
+  it('describes the draft fields without assuming an addressee', () => {
+    const system = buildDictationMessages(
+      'I want to sound like a yakuza',
+    )[0].content.replace(/\s+/g, ' ')
+    expect(system).toContain(`"name": the Character's name`)
+    expect(system).toContain('the target is the output language')
+    expect(system).toContain(
+      'When the user speaks as the Character, it is how the Character talks',
+    )
+    expect(system).toContain(
+      'When the user writes to the Character, it is the register for addressing them',
+    )
+    expect(system).not.toMatch(/addressee|who they are writing to/)
   })
 })

@@ -38,6 +38,12 @@ The color is consistent across all languages; only the **labels** localize (`kei
 
 - **Retry reuses the slider.** RETRY on a Segment opens a small dialog with the same slider, starting at the stop the Segment was translated at. Confirm unchanged for a fresh take, or move it first to re-translate that Segment in another register. Same commit-to-translate rule: one Confirm, one translation, replacing the card's target in place.
 
+### Perspective radios
+
+- Two native radios under Temperature in the composer drawer: **As the speaker** (left) and **To the speaker** (right). Desktop puts Temperature and Perspective in the drawer's right column; at 720px and below they stack under the Vibe slider, and at 900px and below the radios grow to 44px touch targets. Each option redraws the hidden native radio's dot (hollow, filled when checked) so the choice never rests on color alone, and checked options use the `Highlight` system color in forced-colors mode; the Character panel's perspective chips do the same. In the light theme the checked label uses blue-600 for 4.5:1 contrast. The head shows a compact "?" beside the PERSPECTIVE label, which opens the explanation dialog (both options, when to pick which, and Japanese examples at Emperor and Yakuza), and a short hint on the right ("in their voice" / "addressed to them"). The "?" is 22px with a 44px hit area. The Character panel uses the same dialog.
+- The choice belongs to the Character and saves on change. It also shows while the drawer is shut, in the placeholder ("Write to …" / "Speak as …") and the toggle's label.
+- Segment cards, the pending card, share pages and Markdown exports tag the vibe label with `as speaker` / `to speaker`. Legacy Segments without a recorded perspective get no tag.
+
 ### Hover-to-align
 
 - Hovering a word on the **source** or **target** side highlights its counterpart on the other side, using the per-token `token_alignment` map (`{ t, src }` pairs).

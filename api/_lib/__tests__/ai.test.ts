@@ -21,6 +21,7 @@ const input = (
   sourceLanguage: 'en-US',
   targetLanguage: 'ja-JP',
   vibe: 'casual',
+  perspective: 'to',
   temperature: 0.4,
   persona: { traits: [] },
   ...overrides,
@@ -136,6 +137,7 @@ describe('draftCharacterFromDictation', () => {
         sourceLanguage: 'en-US',
         targetLanguage: 'not a locale',
         defaultVibe: 'friend',
+        perspective: 'to',
         temperature: 0.6,
         persona: {
           age: '20s',
@@ -158,6 +160,7 @@ describe('draftCharacterFromDictation', () => {
       name: 'Tomoko',
       sourceLanguage: 'en-US',
       defaultVibe: 'friend',
+      perspective: 'to',
       temperature: 0.6,
       instructions: 'friend in Tokyo',
     })
@@ -170,6 +173,39 @@ describe('draftCharacterFromDictation', () => {
     expect(tokenUsage?.promptTokens).toBe(8)
   })
 
+  // "as" (sound like them) and "to" (write to them) both survive; null means
+  // the description did not say, so the form keeps its own default (adr/0009).
+  it.each([
+    { perspective: 'as', expected: 'as' },
+    { perspective: 'to', expected: 'to' },
+    { perspective: null, expected: undefined },
+  ] as const)(
+    'maps a $perspective perspective onto the draft',
+    async ({ perspective, expected }) => {
+      mockChatJson.mockResolvedValue({
+        data: {
+          ok: true,
+          name: 'Ryu',
+          sourceLanguage: null,
+          targetLanguage: null,
+          defaultVibe: 'yakuza',
+          perspective,
+          temperature: null,
+          persona: null,
+          instructions: null,
+        },
+        tokenUsage: { modelId: 'g', promptTokens: 1, completionTokens: 1 },
+      })
+      const { draft } = await draftCharacterFromDictation(
+        'I want to sound like a yakuza',
+        config,
+      )
+      expect(draft.perspective).toBe(expected)
+      if (expected === undefined)
+        expect(draft).not.toHaveProperty('perspective')
+    },
+  )
+
   it('drops unsupported languages from a dictation draft without substituting another language', async () => {
     mockChatJson.mockResolvedValue({
       data: {
@@ -178,6 +214,7 @@ describe('draftCharacterFromDictation', () => {
         sourceLanguage: 'ko-KR',
         targetLanguage: 'en-US',
         defaultVibe: null,
+        perspective: null,
         temperature: null,
         persona: null,
         instructions: null,
@@ -199,6 +236,7 @@ describe('draftCharacterFromDictation', () => {
         sourceLanguage: null,
         targetLanguage: null,
         defaultVibe: null,
+        perspective: null,
         temperature: null,
         persona: {
           age: null,
@@ -224,6 +262,7 @@ describe('draftCharacterFromDictation', () => {
         sourceLanguage: null,
         targetLanguage: null,
         defaultVibe: null,
+        perspective: null,
         temperature: 5,
         persona: null,
         instructions: null,
@@ -242,6 +281,7 @@ describe('draftCharacterFromDictation', () => {
         sourceLanguage: null,
         targetLanguage: null,
         defaultVibe: null,
+        perspective: null,
         temperature: null,
         persona: null,
         instructions: null,

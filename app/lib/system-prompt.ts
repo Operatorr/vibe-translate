@@ -1,23 +1,54 @@
-import type { Persona, VibeStop } from '@/lib/types'
+import type { Perspective, Persona, VibeStop } from '@/lib/types'
 
 // Client-side mirror of the server's translate prompt assembly
 // (api/_lib/prompts.ts → buildTranslateMessages). Used ONLY for the live
 // "compiled system prompt" preview in the character panel — the worker builds
-// the real prompt. Keep the register lines and persona formatting in step.
+// the real prompt. Keep the perspective and register lines and the persona
+// formatting in step; app/lib/__tests__/system-prompt-parity.test.ts checks.
 
-const VIBE_REGISTER: Record<VibeStop, string> = {
-  yakuza:
-    'Rough, aggressive, hyper-masculine street register; blunt slang, dropped politeness, intimidating.',
-  friend:
-    'Warm casual register between close friends; relaxed contractions, familiar particles, easy banter.',
-  casual:
-    'Everyday neutral-casual register; plain form, conversational but not slangy.',
-  keigo:
-    'Standard polite / business register; teineigo (です・ます equivalents), respectful but not deferential.',
-  keigoplus:
-    'Elevated honorific register; humble + exalted forms (sonkeigo + kenjougo equivalents), deferential toward a superior.',
-  emperor:
-    'Maximally grandiose, archaic, ceremonial register; ornate, lofty, imperial phrasing.',
+const VIBE_REGISTER: Record<VibeStop, Record<Perspective, string>> = {
+  yakuza: {
+    as: 'Rough, aggressive, hyper-masculine street register; blunt slang, rough self-reference, dropped politeness, intimidating.',
+    to: 'Addressing a dangerous street tough; careful, respectful and never provocative, with polite forms or a junior’s deference to a senior. Do not mirror their slang or aggression.',
+  },
+  friend: {
+    as: 'Warm casual register of a close friend; relaxed contractions, familiar particles, easy banter.',
+    to: 'Addressing a close friend; warm casual register, relaxed contractions, familiar particles, easy banter.',
+  },
+  casual: {
+    as: 'Everyday neutral-casual register; plain form, conversational but not slangy.',
+    to: 'Addressing a peer or acquaintance; everyday neutral-casual register, plain form, conversational but not slangy.',
+  },
+  keigo: {
+    as: 'Polite professional register, as staff or a business person speaks; teineigo (です・ます equivalents), courteous but not deferential.',
+    to: 'Addressing a colleague, customer or stranger; standard polite register, teineigo (です・ます equivalents), respectful but not deferential.',
+  },
+  keigoplus: {
+    as: 'Refined, elevated register of someone versed in etiquette; exalted forms for others and humble forms for themselves (sonkeigo + kenjougo equivalents), gracious and composed.',
+    to: 'Addressing a superior (boss, client, elder); elevated honorific register, exalted forms for their actions and humble forms for the speaker’s own (sonkeigo + kenjougo equivalents), deferential.',
+  },
+  emperor: {
+    as: 'A sovereign speaking; maximally grandiose, archaic, ceremonial register, imperial self-reference, speaks down to the listener, commands rather than requests, never humble.',
+    to: 'Addressing royalty; the most exalted honorifics available (court-level, beyond business keigo), formal titles of address, extreme humility for the speaker, ceremonial and reverent.',
+  },
+}
+
+// Who is talking in the translation. Always emitted (persona or not): it flips
+// the register above, so canonical translations depend on it too.
+const PERSPECTIVE_GUIDANCE: Record<Perspective, string> = {
+  as: 'speaking AS the character. The source text is the character’s own words; translate it as the character would say it, in their voice, with their self-reference and way of talking. The register below is the character’s own.',
+  to: 'speaking TO the character. The source text is the user’s own words, addressed to the character; translate it as the user would say it to them. The register below is how to address someone like the character. Never speak as the character: do not borrow their self-reference, attitude or status.',
+}
+
+const PERSONA_HEADING: Record<Perspective, string> = {
+  as: 'CHARACTER PERSONA (the speaker; write in their voice):',
+  to: 'CHARACTER PERSONA (the person being addressed, not the speaker):',
+}
+
+// How the persona applies, prefixed to VOICE_PRIORITY in the voice rules.
+const PERSONA_ROLE: Record<Perspective, string> = {
+  as: 'The persona describes the speaker: their age, region, personality, tone and traits shape the wording.',
+  to: 'The persona describes the person being addressed: pitch the message to suit their age and personality, and write in their regional variety so it reads naturally to them. Tone, verbosity and style traits shape the user’s wording.',
 }
 
 export function describeVerbosity(value: number): string {
@@ -80,6 +111,7 @@ export function compileSystemPrompt(input: {
   sourceLanguage: string
   targetLanguage: string
   vibe: VibeStop
+  perspective: Perspective
   temperature: number
   persona: Persona
   instructions?: string
@@ -92,12 +124,13 @@ export function compileSystemPrompt(input: {
     `Translate from ${input.sourceLanguage} to ${input.targetLanguage}.`,
     targetLanguageGuidance(input.targetLanguage, input.persona),
     ``,
-    `REGISTER (vibe = "${input.vibe}"): ${VIBE_REGISTER[input.vibe]}`,
-    persona
-      ? `\nSPEAKER PERSONA (who is speaking / being addressed):\n${persona}`
-      : null,
+    `PERSPECTIVE: ${PERSPECTIVE_GUIDANCE[input.perspective]}`,
+    `REGISTER (vibe = "${input.vibe}"): ${VIBE_REGISTER[input.vibe][input.perspective]}`,
+    persona ? `\n${PERSONA_HEADING[input.perspective]}\n${persona}` : null,
     instructions ? `\nADDITIONAL INSTRUCTIONS:\n${instructions}` : null,
-    persona || instructions ? `\nVOICE RULES: ${VOICE_PRIORITY}` : null,
+    persona || instructions
+      ? `\nVOICE RULES: ${PERSONA_ROLE[input.perspective]} ${VOICE_PRIORITY}`
+      : null,
     ``,
     `Respond with JSON: "targetText" plus a word-level "tokens" alignment.`,
     ``,

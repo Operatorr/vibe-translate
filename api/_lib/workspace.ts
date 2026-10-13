@@ -1,6 +1,6 @@
 import type { Client } from 'pg'
 
-import type { Persona, SegmentToken, VibeStop } from './schemas'
+import type { Perspective, Persona, SegmentToken, VibeStop } from './schemas'
 
 // Character → Thread → Segment row shapes (snake_case → API camelCase), the
 // bounded Segment page, and the bootstrap/workspace snapshot reads. Every
@@ -8,7 +8,7 @@ import type { Persona, SegmentToken, VibeStop } from './schemas'
 // size, lookahead and cursor rules live in one place. See docs/API.md.
 
 export const CHARACTER_COLUMNS = `id, user_id, name, initials, color, source_language, target_language,
-  default_vibe, temperature, persona, instructions, sort_order, archived_at, created_at, updated_at`
+  default_vibe, perspective, temperature, persona, instructions, sort_order, archived_at, created_at, updated_at`
 
 export type CharacterDbRow = {
   id: string
@@ -19,6 +19,7 @@ export type CharacterDbRow = {
   source_language: string
   target_language: string
   default_vibe: VibeStop
+  perspective: Perspective
   temperature: string | number
   persona: Persona
   instructions: string | null
@@ -37,6 +38,7 @@ export function mapCharacter(r: CharacterDbRow) {
     sourceLanguage: r.source_language,
     targetLanguage: r.target_language,
     defaultVibe: r.default_vibe,
+    perspective: r.perspective,
     temperature: Number(r.temperature),
     persona: r.persona,
     instructions: r.instructions ?? undefined,
@@ -78,8 +80,8 @@ export function mapThread(r: ThreadDbRow) {
   }
 }
 
-export const SEGMENT_COLUMNS = `id, thread_id, source_text, target_text, vibe, token_alignment,
-  token_usage, created_at, updated_at`
+export const SEGMENT_COLUMNS = `id, thread_id, source_text, target_text, vibe, perspective,
+  token_alignment, token_usage, created_at, updated_at`
 
 export type SegmentDbRow = {
   id: string
@@ -87,6 +89,8 @@ export type SegmentDbRow = {
   source_text: string
   target_text: string
   vibe: VibeStop | null
+  // Null only for legacy rows generated before Perspective existed (adr/0009).
+  perspective: Perspective | null
   token_alignment: SegmentToken[]
   token_usage: Record<string, unknown>
   created_at: string | Date
@@ -100,6 +104,7 @@ export function mapSegment(r: SegmentDbRow) {
     sourceText: r.source_text,
     targetText: r.target_text,
     vibe: r.vibe,
+    perspective: r.perspective,
     tokenAlignment: r.token_alignment,
     tokenUsage: r.token_usage,
     createdAt: new Date(r.created_at).toISOString(),

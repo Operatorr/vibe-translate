@@ -73,20 +73,21 @@ The app-side profile. `api/_lib/users.ts → getOrCreateUser` creates it lazily 
 
 A persistent persona the user translates _toward_. One row = one **Character**.
 
-| column                               | type                                             | notes                                                                                                            |
-| ------------------------------------ | ------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------- |
-| `id`                                 | uuid pk                                          |                                                                                                                  |
-| `user_id`                            | text fk → `users.auth_user_id` on delete cascade | per-user scoping                                                                                                 |
-| `name`                               | text                                             | display name, e.g. "Oba-chan"                                                                                    |
-| `initials`, `color`                  | text                                             | UI ornamentation                                                                                                 |
-| `source_language`, `target_language` | text                                             | BCP-47 codes (`en-US`, `ja-JP`)                                                                                  |
-| `default_vibe`                       | `vibe_stop` not null                             | the default **Vibe** for new Segments                                                                            |
-| `temperature`                        | numeric(3,2) bounded 0..1, default 0.40          | per-Character model temperature                                                                                  |
-| `persona`                            | jsonb default `{}`                               | _structured_ attributes `{ age, region, formality, tone, verbosity (0..1), traits: string[] }` — UI chips + form |
-| `instructions`                       | text nullable                                    | _free-form_ system-prompt extension appended at translate time; populated by dictation or hand-edited            |
-| `sort_order`                         | int                                              | user-controlled ordering (reorder endpoint)                                                                      |
-| `archived_at`                        | timestamptz nullable                             | soft-archive                                                                                                     |
-| `created_at`, `updated_at`           | timestamptz                                      |                                                                                                                  |
+| column                               | type                                             | notes                                                                                                                                 |
+| ------------------------------------ | ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------- |
+| `id`                                 | uuid pk                                          |                                                                                                                                       |
+| `user_id`                            | text fk → `users.auth_user_id` on delete cascade | per-user scoping                                                                                                                      |
+| `name`                               | text                                             | display name, e.g. "Oba-chan"                                                                                                         |
+| `initials`, `color`                  | text                                             | UI ornamentation                                                                                                                      |
+| `source_language`, `target_language` | text                                             | BCP-47 codes (`en-US`, `ja-JP`)                                                                                                       |
+| `default_vibe`                       | `vibe_stop` not null                             | the default **Vibe** for new Segments                                                                                                 |
+| `perspective`                        | `perspective` not null, default `'to'`           | speaking **as** the Character or **to** them; the composer radio writes it ([ADR 0009](./adr/0009-perspective-as-or-to-character.md)) |
+| `temperature`                        | numeric(3,2) bounded 0..1, default 0.40          | per-Character model temperature                                                                                                       |
+| `persona`                            | jsonb default `{}`                               | _structured_ attributes `{ age, region, formality, tone, verbosity (0..1), traits: string[] }` — UI chips + form                      |
+| `instructions`                       | text nullable                                    | _free-form_ system-prompt extension appended at translate time; populated by dictation or hand-edited                                 |
+| `sort_order`                         | int                                              | user-controlled ordering (reorder endpoint)                                                                                           |
+| `archived_at`                        | timestamptz nullable                             | soft-archive                                                                                                                          |
+| `created_at`, `updated_at`           | timestamptz                                      |                                                                                                                                       |
 
 Indexes: `(user_id, sort_order)`.
 
@@ -123,6 +124,7 @@ One source-text → target-text translation inside a Thread.
 | `source_text`              | text not null                                    | what the user typed                                                                                                                          |
 | `target_text`              | text not null                                    | model output                                                                                                                                 |
 | `vibe`                     | `vibe_stop` **nullable**                         | generation-time stop; legacy `null` = unrecorded, never resolved from the current default ([ADR 0007](./adr/0007-segment-vibe-snapshot.md)). |
+| `perspective`              | `perspective` **nullable**                       | generation-time perspective (`as` / `to`); `null` = created before it existed ([ADR 0009](./adr/0009-perspective-as-or-to-character.md)).    |
 | `token_alignment`          | jsonb default `[]`                               | array of `{ t, src }` — target token + matched source span. Drives hover-to-align UI.                                                        |
 | `token_usage`              | jsonb default `{}`                               | model accounting: `{ model_id, prompt_tokens, completion_tokens, cost_cents }`                                                               |
 | `metadata`                 | jsonb default `{}`                               | catch-all (model id used, retrieval hits considered, etc.)                                                                                   |
@@ -233,18 +235,19 @@ Fulfillment still accepts a late valid payment for any unfulfilled order, includ
 
 Shared, cross-user cache of **canonical** translations (no persona — tone and verbosity included — no instructions, default temperature). Privacy-safe — see [adr/0004](./adr/0004-shared-canonical-translation-cache.md). **No `user_id`** by design.
 
-| column                               | type                    | notes                                                                                 |
-| ------------------------------------ | ----------------------- | ------------------------------------------------------------------------------------- |
-| `id`                                 | uuid pk                 |                                                                                       |
-| `fingerprint`                        | text unique             | sha-256 of `(source_text, source_lang, target_lang, vibe, model_id, prompt_revision)` |
-| `source_language`, `target_language` | text                    |                                                                                       |
-| `vibe`                               | `vibe_stop`             |                                                                                       |
-| `model_id`                           | text                    | which translate model produced it (part of the key)                                   |
-| `source_text`, `target_text`         | text                    | the cached mapping                                                                    |
-| `token_alignment`                    | jsonb                   | copied into the per-user Segment on a hit                                             |
-| `source_embedding`                   | `vector(1536)` nullable | copied into the per-user Segment on a hit, avoiding a re-embed                        |
-| `hits`                               | int                     | incremented per lookup; supports eviction                                             |
-| `created_at`, `last_used_at`         | timestamptz             |                                                                                       |
+| column                               | type                    | notes                                                                                              |
+| ------------------------------------ | ----------------------- | -------------------------------------------------------------------------------------------------- |
+| `id`                                 | uuid pk                 |                                                                                                    |
+| `fingerprint`                        | text unique             | sha-256 of `(source_text, source_lang, target_lang, vibe, perspective, model_id, prompt_revision)` |
+| `source_language`, `target_language` | text                    |                                                                                                    |
+| `vibe`                               | `vibe_stop`             |                                                                                                    |
+| `perspective`                        | `perspective` nullable  | descriptive; the key is the fingerprint. `null` on rows from before prompt revision 3              |
+| `model_id`                           | text                    | which translate model produced it (part of the key)                                                |
+| `source_text`, `target_text`         | text                    | the cached mapping                                                                                 |
+| `token_alignment`                    | jsonb                   | copied into the per-user Segment on a hit                                                          |
+| `source_embedding`                   | `vector(1536)` nullable | copied into the per-user Segment on a hit, avoiding a re-embed                                     |
+| `hits`                               | int                     | incremented per lookup; supports eviction                                                          |
+| `created_at`, `last_used_at`         | timestamptz             |                                                                                                    |
 
 Index: unique `(fingerprint)`, `(last_used_at desc)`. Derived data — safe to truncate and rebuild.
 
@@ -274,6 +277,7 @@ Derived/operational data — not user-scoped, no cascade.
 - **Per-user scoping.** Every row in `characters`, `threads`, `segments`, `activity_log` is scoped by `user_id = users.auth_user_id`. All queries must include the user filter — see [SECURITY.md](./SECURITY.md#per-user-scoping).
 - **Cascade deletes** flow `auth_users` → `users` → character → thread → segment (and every other per-user table). Deleting the identity row wipes all owned data, so it is the one-statement account deletion.
 - **`segments.vibe` records the generation-time stop**, including when the request omits `vibe`. Changing a Character default affects future translations, not existing targets. Null remains only for legacy rows with an unrecorded stop; render it as "Vibe not recorded" ([ADR 0007](./adr/0007-segment-vibe-snapshot.md)).
+- **`segments.perspective` records the generation-time perspective** the same way. Null marks a row from before Perspective existed; the UI shows no tag for it, and Retry records the Character's current perspective ([ADR 0009](./adr/0009-perspective-as-or-to-character.md)). The two `perspective` enum values (`as`, `to`) are shared by the DB type, `api/_lib/schemas.ts → PERSPECTIVES` and `app/lib/schemas.ts`.
 - **`token_alignment` shape** is the same as the design prototype's `target` arrays in `data.js` (each entry `{ t, src }`). This is the contract between the model output and the frontend hover-alignment renderer.
 - **Embeddings are derived data.** Source-of-truth is `source_text` (and for explains, `target_text` + `body`). Re-embedding is always safe; never trust the embedding vector over the underlying text.
 - **Explain payload versioning.** Bumping `EXPLAIN_PAYLOAD_VERSION` in `api/_lib/explain.ts` invalidates older `explains` rows. The next read on those segments triggers re-generation. Old rows are retained as a fallback only — they should never be served above a newer one.
@@ -284,7 +288,7 @@ Derived/operational data — not user-scoped, no cascade.
 
 - New incremental changes go in `db/migrations/000N_<slug>.sql`. Apply manually for now; deploy hooks land later.
 - `db/schema.sql` is the canonical bootstrap — keep it in sync with the latest migration so fresh environments are one step.
-- The `0001_initial.sql` migration establishes the Character/Thread/Segment model directly; there is no pre-character schema in production. Later migrations are additive: `0002_commerce.sql` (webhook idempotency + `subscription_id` index), `0003_embed_via_openrouter.sql` (embed routed via OpenRouter), `0004_embed_dims_1536.sql` (embed columns/model to 1536 for any pre-1536 DB), `0005_thread_star_share.sql` (starring + share links), `0006_better_auth.sql` (`auth_*` tables; renames `users.clerk_user_id` → `auth_user_id` and adds the cascading FK to `auth_users`), `0007_auth_account_uniqueness.sql` (unique provider/account), `0008_segment_pagination.sql` (cursor index, below), `0009_credit_purchases.sql` (top-up orders), `0010_credit_purchase_lifecycle.sql` (checkout traceability, reversal state and the fulfillment/reversal checks on `credit_purchases`).
+- The `0001_initial.sql` migration establishes the Character/Thread/Segment model directly; there is no pre-character schema in production. Later migrations are additive: `0002_commerce.sql` (webhook idempotency + `subscription_id` index), `0003_embed_via_openrouter.sql` (embed routed via OpenRouter), `0004_embed_dims_1536.sql` (embed columns/model to 1536 for any pre-1536 DB), `0005_thread_star_share.sql` (starring + share links), `0006_better_auth.sql` (`auth_*` tables; renames `users.clerk_user_id` → `auth_user_id` and adds the cascading FK to `auth_users`), `0007_auth_account_uniqueness.sql` (unique provider/account), `0008_segment_pagination.sql` (cursor index, below), `0009_credit_purchases.sql` (top-up orders), `0010_credit_purchase_lifecycle.sql` (checkout traceability, reversal state and the fulfillment/reversal checks on `credit_purchases`), `0011_perspective.sql` (the `perspective` enum; `characters.perspective` default `to`, nullable `segments.perspective` and `translation_cache.perspective`).
 - **Never edit an applied migration in place.** Because every statement is `if not exists` / `on conflict do nothing` / type-guarded, re-running an edited file won't change existing objects — only a new forward migration reaches provisioned databases.
 
 ## Open questions

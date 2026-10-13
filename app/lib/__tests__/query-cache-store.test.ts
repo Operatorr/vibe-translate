@@ -34,6 +34,7 @@ const segment = (id: string, createdAt: string) => ({
   sourceText: `source ${id}`,
   targetText: `target ${id}`,
   vibe: null,
+  perspective: null,
   tokenAlignment: [],
   tokenUsage: {},
   createdAt,

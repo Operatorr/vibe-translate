@@ -3,7 +3,7 @@ import {
   getTraitsForLanguage,
 } from './character-options'
 import { initialsFor } from './initials'
-import type { Character, VibeStop } from './types'
+import type { Character, Perspective, VibeStop } from './types'
 
 import type { CharacterInput } from '@/hooks/use-app-data'
 
@@ -25,6 +25,7 @@ export type Draft = {
   sourceLanguage: string
   targetLanguage: string
   defaultVibe: VibeStop
+  perspective: Perspective
   color: string
   instructions: string
 }
@@ -45,6 +46,7 @@ export function draftFrom(
     sourceLanguage: char?.sourceLanguage ?? 'en-US',
     targetLanguage: char?.targetLanguage ?? 'ja-JP',
     defaultVibe: char?.defaultVibe ?? 'casual',
+    perspective: char?.perspective ?? 'to',
     color: char?.color ?? fallbackColor,
     instructions: char?.instructions ?? '',
   }
@@ -68,6 +70,7 @@ export function toInput(d: Draft): CharacterInput {
     sourceLanguage: d.sourceLanguage,
     targetLanguage: d.targetLanguage,
     defaultVibe: d.defaultVibe,
+    perspective: d.perspective,
     temperature: Math.round(d.temperature * 100) / 100,
     persona,
     instructions: d.instructions.trim() || undefined,

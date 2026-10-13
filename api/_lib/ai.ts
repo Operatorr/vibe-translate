@@ -4,12 +4,19 @@ import * as z from 'zod'
 import { chatJson, type ProviderConfig, type TokenUsage } from './openrouter'
 import { buildDictationMessages, buildTranslateMessages } from './prompts'
 import {
+  PERSPECTIVES,
   VIBE_STOPS,
   segmentTokenSchema,
   sourceLanguageSchema,
   targetLanguageSchema,
 } from './schemas'
-import type { CharacterDraft, Persona, SegmentToken, VibeStop } from './schemas'
+import type {
+  CharacterDraft,
+  Perspective,
+  Persona,
+  SegmentToken,
+  VibeStop,
+} from './schemas'
 
 export type TranslationProviderResult = {
   targetText: string
@@ -27,6 +34,8 @@ export type TranslateSegmentInput = {
   sourceLanguage: string
   targetLanguage: string
   vibe: VibeStop
+  // Speaking as or to the Character; flips how vibe and persona are read.
+  perspective: Perspective
   temperature: number
   persona: Persona
   // Free-form system-prompt extension from the Character.
@@ -96,6 +105,7 @@ const dictationOutputSchema = z.strictObject({
   sourceLanguage: z.string().nullable(),
   targetLanguage: z.string().nullable(),
   defaultVibe: z.enum(VIBE_STOPS).nullable(),
+  perspective: z.enum(PERSPECTIVES).nullable(),
   temperature: z.number().nullable(),
   persona: z
     .strictObject({
@@ -139,6 +149,7 @@ function toCharacterDraft(
   if (targetLanguage.success) draft.targetLanguage = targetLanguage.data
 
   if (raw.defaultVibe) draft.defaultVibe = raw.defaultVibe
+  if (raw.perspective) draft.perspective = raw.perspective
 
   if (typeof raw.temperature === 'number' && Number.isFinite(raw.temperature)) {
     draft.temperature = Math.min(1, Math.max(0, raw.temperature))

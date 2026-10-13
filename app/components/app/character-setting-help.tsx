@@ -2,6 +2,18 @@ import * as Dialog from '@radix-ui/react-dialog'
 
 import { Icon } from '@/components/vibe-design/icon'
 
+type Help = {
+  title: string
+  summary: string
+  detail?: string
+  // Headed paragraphs, for settings with more than one option to explain.
+  sections?: ReadonlyArray<{ heading: string; body: string }>
+  example: string
+  exampleLang: string
+  examples: ReadonlyArray<readonly [label: string, text: string]>
+  note: string
+}
+
 const HELP = {
   verbosity: {
     title: 'Verbosity',
@@ -30,22 +42,58 @@ const HELP = {
     ],
     note: 'These are illustrative possibilities, not guaranteed outputs. The selected vibe still controls formality at every temperature.',
   },
-}
+  perspective: {
+    title: 'Perspective',
+    summary: 'Who is talking in the translation: the character, or you.',
+    sections: [
+      {
+        heading: 'As the speaker',
+        body: 'You put words in the character’s mouth. The translation is what they would say, in their own voice: how they refer to themselves, their attitude, their dialect. The vibe describes how the character talks. Pick this to practise sounding like someone, or to write their lines.',
+      },
+      {
+        heading: 'To the speaker',
+        body: 'You talk to the character, in your own voice. The translation is your message to them. The vibe describes who you are addressing and how to speak to someone like that, so you never borrow their way of talking. Their age and region still shape the wording, so the message reads naturally to them.',
+      },
+      {
+        heading: 'Which one?',
+        body: 'Messaging a real person, like a friend, your boss or your grandmother: To the speaker. Role-play, writing dialogue, or learning how a type of person talks: As the speaker. Friend, Casual and Keigo come out much the same either way; Yakuza, Keigo+ and Emperor change the most.',
+      },
+    ],
+    example: 'Example meaning: “Come here.”',
+    exampleLang: 'ja-JP',
+    examples: [
+      ['Emperor · as the speaker', '朕のもとへ参れ。'],
+      [
+        'Emperor · to the speaker',
+        '陛下、どうぞこちらへお出ましくださいませ。',
+      ],
+      ['Yakuza · as the speaker', 'おい、こっち来いや。'],
+      ['Yakuza · to the speaker', '兄貴、ちょっとこっちに来てもらえますか。'],
+    ],
+    note: 'Examples are in Japanese and illustrative, not guaranteed outputs. Perspective is saved on the character, and each translation records the one it used.',
+  },
+} satisfies Record<string, Help>
 
 export function CharacterSettingHelp({
   setting,
   onOpenChange,
+  compact,
 }: {
   setting: keyof typeof HELP
-  onOpenChange: (open: boolean) => void
+  // The Character panel listens so Escape closes the help, not the panel.
+  onOpenChange?: (open: boolean) => void
+  // A smaller trigger for dense rows such as the composer's settings drawer.
+  compact?: boolean
 }) {
-  const help = HELP[setting]
+  const help: Help = HELP[setting]
   return (
     <Dialog.Root onOpenChange={onOpenChange}>
       <Dialog.Trigger asChild>
         <button
           type="button"
-          className="cust__help-button"
+          className={
+            'cust__help-button' + (compact ? ' cust__help-button--compact' : '')
+          }
           aria-label={`About ${help.title.toLowerCase()}`}
         >
           <span aria-hidden="true">?</span>
@@ -74,7 +122,13 @@ export function CharacterSettingHelp({
           <Dialog.Description className="cust-help__summary">
             {help.summary}
           </Dialog.Description>
-          <p>{help.detail}</p>
+          {help.detail && <p>{help.detail}</p>}
+          {help.sections?.map((section) => (
+            <section key={section.heading} className="cust-help__section">
+              <h3 className="cust-help__section-h">{section.heading}</h3>
+              <p>{section.body}</p>
+            </section>
+          ))}
           <p className="cust-help__example-label">{help.example}</p>
           <dl className="cust-help__examples">
             {help.examples.map(([label, example]) => (

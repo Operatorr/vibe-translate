@@ -13,6 +13,14 @@ export const VIBE_STOPS = [
 
 export const vibeStopSchema = z.enum(VIBE_STOPS)
 
+// Perspective: whether the user speaks AS the Character (the translation is in
+// the Character's own voice) or TO the Character (the user's own voice,
+// addressed to them). Flips how the Vibe stop and Persona are read in the
+// translate prompt. Shared with the DB `perspective` enum. See adr/0009.
+export const PERSPECTIVES = ['as', 'to'] as const
+
+export const perspectiveSchema = z.enum(PERSPECTIVES)
+
 // Persona block that shapes a Character's translation prompt.
 export const personaSchema = z
   .object({
@@ -60,6 +68,7 @@ const characterFields = {
   sourceLanguage: sourceLanguageSchema,
   targetLanguage: targetLanguageSchema,
   defaultVibe: vibeStopSchema,
+  perspective: perspectiveSchema,
   temperature: z.number().min(0).max(1),
   persona: personaSchema,
   // Free-form system-prompt extension. Appended to the translate prompt.
@@ -69,6 +78,7 @@ const characterFields = {
 export const characterCreateSchema = z.object({
   ...characterFields,
   defaultVibe: characterFields.defaultVibe.default('casual'),
+  perspective: characterFields.perspective.default('to'),
   temperature: characterFields.temperature.default(0.4),
   persona: characterFields.persona.default({ traits: [] }),
 })
@@ -87,6 +97,7 @@ export const characterDraftSchema = z.object({
   sourceLanguage: sourceLanguageSchema.optional(),
   targetLanguage: targetLanguageSchema.optional(),
   defaultVibe: vibeStopSchema.optional(),
+  perspective: perspectiveSchema.optional(),
   temperature: z.number().min(0).max(1).optional(),
   persona: personaSchema.optional(),
   instructions: z.string().trim().max(2000).optional(),
@@ -133,11 +144,13 @@ export const segmentTokenSchema = z
 
 // Client posts only the input. `targetText` and `tokenAlignment` are
 // produced server-side by calling the translation provider; clients cannot
-// supply them directly. Omitting `vibe` means "inherit characters.default_vibe".
+// supply them directly. Omitting `vibe` means "inherit characters.default_vibe";
+// omitting `perspective` means "inherit characters.perspective".
 export const segmentCreateSchema = z.object({
   threadId: z.string().uuid(),
   sourceText: z.string().trim().min(1).max(20_000),
   vibe: vibeStopSchema.optional(),
+  perspective: perspectiveSchema.optional(),
 })
 
 // Retry re-translates in place. Omitting `vibe` keeps the Segment's stored
@@ -247,6 +260,7 @@ export const textToSpeechSchema = z.object({
 })
 
 export type VibeStop = z.infer<typeof vibeStopSchema>
+export type Perspective = z.infer<typeof perspectiveSchema>
 export type Persona = z.infer<typeof personaSchema>
 export type CharacterCreateInput = z.infer<typeof characterCreateSchema>
 export type CharacterDraft = z.infer<typeof characterDraftSchema>

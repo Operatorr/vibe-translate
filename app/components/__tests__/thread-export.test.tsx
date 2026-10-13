@@ -41,6 +41,7 @@ const seg = (n: number): Segment => ({
   sourceText: `source ${n}`,
   targetText: `target ${n}`,
   vibe: 'casual',
+  perspective: 'to',
   tokenAlignment: [],
   tokenUsage: {},
   createdAt: `2026-01-0${n}T00:00:00Z`,
@@ -198,6 +199,29 @@ describe('thread export preparation', () => {
     expect(mocks.download).toHaveBeenCalledOnce()
     expect(fetch).not.toHaveBeenCalled()
     screen.getByText('idle')
+  })
+
+  it('tags each heading with its Segment’s perspective, not the Character’s', () => {
+    client.setQueryData(keys.share('t'), SHARE)
+    mount({
+      // The Character now defaults to "as"; history keeps what each used.
+      character: { ...character, perspective: 'as' },
+      segments: [
+        { ...seg(1), perspective: 'to' },
+        { ...seg(2), perspective: null },
+        { ...seg(3), perspective: 'as' },
+      ],
+      complete: true,
+    })
+    click('Download')
+    const markdown: string = mocks.download.mock.calls[0][1]
+    expect(
+      markdown.split('\n').filter((line) => line.startsWith('## ')),
+    ).toEqual([
+      '## 01 · Casual · to speaker',
+      '## 02 · Casual',
+      '## 03 · Casual · as speaker',
+    ])
   })
 
   it('advises reconnecting, not copying, when preparation fails', async () => {

@@ -8,6 +8,9 @@ export type VibeStop =
   | 'keigoplus'
   | 'emperor'
 
+// Whether the user speaks AS the Character or TO them. See CONTEXT.md.
+export type Perspective = 'as' | 'to'
+
 export type Persona = {
   age?: string
   region?: string
@@ -25,6 +28,7 @@ export type Character = {
   sourceLanguage: string
   targetLanguage: string
   defaultVibe: VibeStop
+  perspective: Perspective
   temperature: number
   persona: Persona
   instructions?: string
@@ -40,6 +44,7 @@ export type CharacterDraft = {
   sourceLanguage?: string
   targetLanguage?: string
   defaultVibe?: VibeStop
+  perspective?: Perspective
   temperature?: number
   persona?: Persona
   instructions?: string
@@ -79,6 +84,7 @@ export type SharedThread = {
     sourceText: string
     targetText: string
     vibe: VibeStop | null
+    perspective: Perspective | null
     tokenAlignment: SegmentToken[]
     createdAt: string
   }>
@@ -95,6 +101,8 @@ export type Segment = {
   sourceText: string
   targetText: string
   vibe: VibeStop | null
+  // Null only for legacy rows generated before Perspective existed.
+  perspective: Perspective | null
   tokenAlignment: SegmentToken[]
   tokenUsage: Record<string, unknown>
   createdAt: string

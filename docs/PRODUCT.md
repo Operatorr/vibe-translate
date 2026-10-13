@@ -32,7 +32,7 @@ This is what nothing else does well. DeepL and Google Translate emit a fixed reg
 
 The product is organized around three nested concepts:
 
-- A **Character** is a persistent persona the user translates *toward* — "Oba-chan" (Osaka grandma, casual, kansai-ben), "Buchou-san" (Tokyo manager, keigo+). It pins source/target language, a default **Vibe**, a **Temperature**, and a **Persona** block (age, region, formality, traits) that feeds the model prompt.
+- A **Character** is a persistent persona the user translates *toward* — "Oba-chan" (Osaka grandma, casual, kansai-ben), "Buchou-san" (Tokyo manager, keigo+). It pins source/target language, a default **Vibe**, a **Perspective** (speak as them or to them), a **Temperature**, and a **Persona** block (age, region, formality, traits) that feeds the model prompt.
 - A **Thread** is a topic-level conversation under a Character — "Asking for grandma's recipe", "Email: Q3 release notes review".
 - A **Segment** is one source→target translation inside a Thread, produced at a chosen **Vibe stop**.
 
@@ -41,6 +41,7 @@ Characters are the primary navigation surface. The learner thinks "I'm messaging
 ### Translate with a chosen Vibe
 
 - A **Segment**'s default Vibe inherits from its **Character**; the slider lets the learner override per-Segment.
+- **Perspective** says who is talking: the learner speaks **as** the Character (in their voice) or **to** them (in their own voice). The same stop reads in opposite ways. Speaking as an emperor commands, speaking to one bows. Speaking as a yakuza threatens, speaking to one stays careful and respectful. The choice is a radio under Temperature, saved on the Character (default: to).
 - **Commit-to-translate:** moving the slider doesn't fire a translation on every stop — the user commits one stop and one translation runs. This protects credits (a drag across all six stops would otherwise be six spends).
 - **Already-generated stops are instant and free.** A stop the user has already translated in this thread is served from history (0 credits). A *canonical* phrase someone else already translated is served from the shared **Translation cache** (0 credits). Only a genuinely new translation spends credits.
 - Changing the Vibe re-runs the translation and appends to history rather than overwriting.
@@ -80,7 +81,7 @@ Explain payloads are stored as **Explain memory** — one row per `(segment, ver
 
 A new user's first job is to create a **Character**. The flow is **dictation-first with a form fallback**:
 
-1. **Dictation box with an on-screen sample.** The user describes who they're translating for in plain language — the sample shows them how (*"Help me text my friend Tomoko in Tokyo casually in Japanese"*). The model parses this into a **Character draft**: name, source/target language, default vibe, temperature, structured persona, and — most valuably — the free-form **Instructions** that extend the system prompt ("friend in Tokyo, named Tomoko").
+1. **Dictation box with an on-screen sample.** The user describes who they're translating for, or whose voice they want to speak in, in plain language — the sample shows them how (*"Help me text my friend Tomoko in Tokyo casually in Japanese"*). The model parses this into a **Character draft**: name, source/target language, default vibe, perspective, temperature, structured persona, and — most valuably — the free-form **Instructions** that extend the system prompt ("friend in Tokyo, named Tomoko").
 2. **Confirmation form, pre-filled.** The draft lands in the Character form for the user to confirm or edit. This is where dictation's power shows: it shapes the Character better than blank form fields could.
 3. **Fallbacks.** If the parse fails (`ok: false` — the user phrased it in a way the model couldn't turn into a config), the UI drops to an empty Character form. There's also a **Skip** button to bypass dictation and go straight to the form.
 

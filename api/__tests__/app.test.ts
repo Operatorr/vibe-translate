@@ -100,6 +100,7 @@ const segmentRow = (targetText = 'やあ') => ({
   source_text: 'hi',
   target_text: targetText,
   vibe: 'casual',
+  perspective: 'to',
   token_alignment: [],
   token_usage: {},
   created_at: '2026-09-14T10:00:00.000Z',
@@ -192,7 +193,9 @@ describe('share links', () => {
     expect(queries).toHaveLength(0)
   })
 
-  it('does not relabel an unknown historical vibe with the current default', async () => {
+  // Legacy rows keep null for an unrecorded stop or perspective (adr/0007,
+  // adr/0009); the Character's current defaults never stand in for them.
+  it('does not relabel an unknown historical vibe or perspective with the current default', async () => {
     answer = (sql) => {
       if (sql.includes('from thread_shares sh'))
         return {
@@ -206,14 +209,16 @@ describe('share links', () => {
               source_language: 'en-US',
               target_language: 'ja-JP',
               default_vibe: 'emperor',
+              perspective: 'as',
             },
           ],
         }
       if (sql.includes('from segments where thread_id'))
         return {
           rows: [
-            { ...segmentRow(), vibe: null },
-            { ...segmentRow(), id: 'known', vibe: 'casual' },
+            { ...segmentRow(), vibe: null, perspective: null },
+            { ...segmentRow(), id: 'as', vibe: 'casual', perspective: 'as' },
+            { ...segmentRow(), id: 'to', vibe: 'casual', perspective: 'to' },
           ],
         }
       return { rows: [] }
@@ -222,15 +227,22 @@ describe('share links', () => {
     expect(res.status).toBe(200)
     expect(await res.json()).toMatchObject({
       character: { defaultVibe: 'emperor' },
-      segments: [{ vibe: null }, { vibe: 'casual' }],
+      segments: [
+        { vibe: null, perspective: null },
+        { vibe: 'casual', perspective: 'as' },
+        { vibe: 'casual', perspective: 'to' },
+      ],
     })
   })
 })
 
 describe('translate credit ordering', () => {
+  // The inserted row echoes its vibe and perspective parameters, so a response
+  // shows what was actually stored.
   const createAnswers = (
     sql: string,
-    overrides: Partial<Record<'insert', Answer>> = {},
+    params: unknown[] = [],
+    overrides: { insert?: Answer; character?: Row } = {},
   ): Answer => {
     if (sql.startsWith('select t.user_id, c.source_language')) {
       return {
@@ -240,31 +252,42 @@ describe('translate credit ordering', () => {
             source_language: 'en-US',
             target_language: 'ja-JP',
             default_vibe: 'casual',
+            perspective: 'to',
             temperature: '0.4',
             persona: { traits: [] },
             instructions: null,
+            ...overrides.character,
           },
         ],
       }
     }
     if (sql.includes('vibe is not distinct from')) return { rows: [] } // no dedupe hit
     if (sql.startsWith('insert into segments'))
-      return overrides.insert ?? { rows: [segmentRow()] }
+      return (
+        overrides.insert ?? {
+          rows: [{ ...segmentRow(), vibe: params[4], perspective: params[5] }],
+        }
+      )
     return { rows: [] }
   }
 
   it('returns an in-thread duplicate as 200 reused without charging', async () => {
-    answer = (sql) =>
+    answer = (sql, params) =>
       sql.includes('vibe is not distinct from')
-        ? { rows: [segmentRow()] }
-        : createAnswers(sql)
+        ? { rows: [{ ...segmentRow(), perspective: params[3] }] }
+        : createAnswers(sql, params)
     const res = await postJson('/api/segments', {
       threadId: THREAD,
       sourceText: 'hi',
       vibe: 'casual',
+      perspective: 'as',
     })
     expect(res.status).toBe(200)
-    expect(await res.json()).toMatchObject({ id: SEGMENT, reused: true })
+    expect(await res.json()).toMatchObject({
+      id: SEGMENT,
+      perspective: 'as',
+      reused: true,
+    })
     expect(queries.some((q) => q.startsWith('insert into segments'))).toBe(
       false,
     )
@@ -280,14 +303,18 @@ describe('translate credit ordering', () => {
           tokenAlignment: [],
           sourceEmbedding: null,
         })
-      answer = (sql) => createAnswers(sql)
+      answer = createAnswers
       const res = await postJson('/api/segments', {
         threadId: THREAD,
         sourceText: 'hi',
         vibe: 'casual',
       })
       expect(res.status).toBe(201)
-      expect(await res.json()).toMatchObject({ id: SEGMENT, reused: false })
+      expect(await res.json()).toMatchObject({
+        id: SEGMENT,
+        perspective: 'to',
+        reused: false,
+      })
       expect(
         queries.filter((q) => q.startsWith('insert into segments')),
       ).toHaveLength(1)
@@ -299,7 +326,7 @@ describe('translate credit ordering', () => {
     const errors = vi
       .spyOn(console, 'error')
       .mockImplementation(() => undefined)
-    answer = (sql) => createAnswers(sql)
+    answer = createAnswers
     const res = await postJson('/api/segments', {
       threadId: THREAD,
       sourceText: 'hi',
@@ -343,8 +370,8 @@ describe('translate credit ordering', () => {
       let usage: { creditsCharged?: unknown } | undefined
       answer = (sql, params) => {
         if (sql.startsWith('insert into segments'))
-          usage = JSON.parse(params[6] as string)
-        return createAnswers(sql)
+          usage = JSON.parse(params[7] as string)
+        return createAnswers(sql, params)
       }
       const res = await postJson('/api/segments', {
         threadId: THREAD,
@@ -370,10 +397,10 @@ describe('translate credit ordering', () => {
 
   it('reports the remaining balance and required hold when a translation is rejected', async () => {
     vi.mocked(credits.reserveCredits).mockResolvedValueOnce(null)
-    answer = (sql) =>
+    answer = (sql, params) =>
       sql.startsWith('select credits_balance')
         ? { rows: [{ credits_balance: 198 }] }
-        : createAnswers(sql)
+        : createAnswers(sql, params)
     const res = await postJson('/api/segments', {
       threadId: THREAD,
       sourceText: 'hi',
@@ -399,7 +426,8 @@ describe('translate credit ordering', () => {
   })
 
   it('refunds when the Segment insert itself fails', async () => {
-    answer = (sql) => createAnswers(sql, { insert: new Error('insert failed') })
+    answer = (sql, params) =>
+      createAnswers(sql, params, { insert: new Error('insert failed') })
     const res = await postJson('/api/segments', {
       threadId: THREAD,
       sourceText: 'hi',
@@ -416,7 +444,7 @@ describe('translate credit ordering', () => {
       tokenAlignment: [],
       sourceEmbedding: null,
     })
-    answer = (sql) => createAnswers(sql)
+    answer = createAnswers
     await postJson('/api/segments', {
       threadId: THREAD,
       sourceText: 'hi',
@@ -425,46 +453,151 @@ describe('translate credit ordering', () => {
     const insert = fakeDb.query.mock.calls.find(([sql]) =>
       String(sql).includes('insert into segments'),
     )
-    expect(insert?.[1]?.[6]).toBe(JSON.stringify({ cached: true }))
+    expect(insert?.[1]?.[7]).toBe(JSON.stringify({ cached: true }))
     expect(credits.reserveCredits).not.toHaveBeenCalled()
   })
 
-  it.each([false, true])(
-    'snapshots an omitted vibe on create (cache hit: %s)',
-    async (cached) => {
+  // An omitted perspective inherits the Character's, whichever it is, and
+  // that resolved value keys dedupe and the cache, reaches the model and is
+  // stored (adr/0009).
+  it.each([
+    { perspective: 'as', cached: false },
+    { perspective: 'as', cached: true },
+    { perspective: 'to', cached: false },
+    { perspective: 'to', cached: true },
+  ] as const)(
+    'snapshots an omitted vibe and perspective on create (Character $perspective, cache hit: $cached)',
+    async ({ perspective, cached }) => {
+      const ai = await import('../_lib/ai')
+      const fingerprint = vi.spyOn(cache, 'fingerprint')
       if (cached)
         vi.mocked(cache.lookupCache).mockResolvedValueOnce({
           targetText: 'やあ',
           tokenAlignment: [],
           sourceEmbedding: null,
         })
-      answer = (sql) => createAnswers(sql)
+      answer = (sql, params) =>
+        createAnswers(sql, params, { character: { perspective } })
       const res = await postJson('/api/segments', {
         threadId: THREAD,
         sourceText: 'hi',
       })
       expect(res.status).toBe(201)
-      const insert = fakeDb.query.mock.calls.find(([sql]) =>
-        String(sql).includes('insert into segments'),
-      )
-      expect(insert?.[1]?.[4]).toBe('casual')
+      expect(await res.json()).toMatchObject({ vibe: 'casual', perspective })
       const dedupe = fakeDb.query.mock.calls.find(([sql]) =>
         String(sql).includes('vibe is not distinct from'),
       )
       expect(dedupe?.[1]?.[2]).toBe('casual')
+      expect(dedupe?.[1]?.[3]).toBe(perspective)
+      expect(fingerprint).toHaveBeenCalledWith(
+        expect.objectContaining({ vibe: 'casual', perspective }),
+      )
+      const insert = fakeDb.query.mock.calls.find(([sql]) =>
+        String(sql).includes('insert into segments'),
+      )
+      expect(insert?.[1]?.[4]).toBe('casual')
+      expect(insert?.[1]?.[5]).toBe(perspective)
+      if (cached) {
+        expect(ai.translateSegment).not.toHaveBeenCalled()
+      } else {
+        expect(ai.translateSegment).toHaveBeenLastCalledWith(
+          expect.objectContaining({ vibe: 'casual', perspective }),
+          expect.anything(),
+        )
+        expect(cache.upsertCache).toHaveBeenCalledWith(
+          fakeDb,
+          expect.any(String),
+          expect.objectContaining({ vibe: 'casual', perspective }),
+        )
+      }
+      fingerprint.mockRestore()
     },
   )
 
-  it.each(['friend', null])(
-    'retry persists the actual vibe used (stored vibe: %s)',
-    async (stored) => {
+  // Speaking as and to the Character are different translations: the request
+  // overrides the Character's perspective, and dedupe, the cache key, the
+  // model input and the stored row all follow it (adr/0009).
+  it('translates, dedupes and caches at the requested perspective', async () => {
+    const ai = await import('../_lib/ai')
+    const fingerprint = vi.spyOn(cache, 'fingerprint')
+    answer = createAnswers
+    const res = await postJson('/api/segments', {
+      threadId: THREAD,
+      sourceText: 'hi',
+      vibe: 'emperor',
+      perspective: 'as',
+    })
+    expect(res.status).toBe(201)
+    expect(await res.json()).toMatchObject({
+      vibe: 'emperor',
+      perspective: 'as',
+      reused: false,
+    })
+    const dedupe = fakeDb.query.mock.calls.find(([sql]) =>
+      String(sql).includes('perspective is not distinct from'),
+    )
+    expect(dedupe?.[1]?.[3]).toBe('as')
+    expect(fingerprint).toHaveBeenCalledWith(
+      expect.objectContaining({ vibe: 'emperor', perspective: 'as' }),
+    )
+    expect(ai.translateSegment).toHaveBeenLastCalledWith(
+      expect.objectContaining({ vibe: 'emperor', perspective: 'as' }),
+      expect.anything(),
+    )
+    const insert = fakeDb.query.mock.calls.find(([sql]) =>
+      String(sql).includes('insert into segments'),
+    )
+    expect(insert?.[1]?.[5]).toBe('as')
+    expect(cache.upsertCache).toHaveBeenCalledWith(
+      fakeDb,
+      expect.any(String),
+      expect.objectContaining({ perspective: 'as' }),
+    )
+    fingerprint.mockRestore()
+  })
+
+  it('rejects an unknown perspective', async () => {
+    const res = await postJson('/api/segments', {
+      threadId: THREAD,
+      sourceText: 'hi',
+      perspective: 'about',
+    })
+    expect(res.status).toBe(400)
+  })
+
+  // A recorded row keeps its own stop and perspective; a legacy row (null
+  // stop and perspective) resolves the Character's current ones and records
+  // them. Either way the same values reach the model, the UPDATE and the
+  // response (adr/0007, adr/0009).
+  it.each([
+    {
+      label: 'recorded',
+      stored: { vibe: 'friend', perspective: 'as' },
+      defaultPerspective: 'to',
+      used: { vibe: 'friend', perspective: 'as' },
+    },
+    {
+      label: 'legacy, Character to',
+      stored: { vibe: null, perspective: null },
+      defaultPerspective: 'to',
+      used: { vibe: 'emperor', perspective: 'to' },
+    },
+    {
+      label: 'legacy, Character as',
+      stored: { vibe: null, perspective: null },
+      defaultPerspective: 'as',
+      used: { vibe: 'emperor', perspective: 'as' },
+    },
+  ])(
+    'retry persists the actual vibe and perspective used ($label)',
+    async ({ stored, defaultPerspective, used }) => {
       answer = (sql, params) => {
         if (sql.startsWith('select s.id, s.thread_id'))
           return {
             rows: [
               {
                 ...segmentRow('old'),
-                vibe: stored,
+                ...stored,
                 user_id: 'user_1',
                 source_language: 'en-US',
                 target_language: 'ja-JP',
@@ -472,27 +605,39 @@ describe('translate credit ordering', () => {
                 persona: { traits: [] },
                 instructions: null,
                 default_vibe: 'emperor',
+                default_perspective: defaultPerspective,
               },
             ],
           }
         if (sql.startsWith('with updated as'))
-          return { rows: [{ ...segmentRow(), vibe: params[5] }] }
+          return {
+            rows: [
+              { ...segmentRow(), vibe: params[5], perspective: params[6] },
+            ],
+          }
         return { rows: [] }
       }
       const res = await call(`/api/segments/${SEGMENT}/retry`, {
         method: 'POST',
       })
       expect(res.status).toBe(200)
-      expect(await res.json()).toMatchObject({ vibe: stored ?? 'emperor' })
+      expect(await res.json()).toMatchObject(used)
+      const ai = await import('../_lib/ai')
+      expect(ai.translateSegment).toHaveBeenLastCalledWith(
+        expect.objectContaining(used),
+        expect.anything(),
+      )
       const update = fakeDb.query.mock.calls.find(([sql]) =>
         String(sql).includes('with updated as'),
       )
       expect(update?.[0]).toContain('vibe = $6')
-      expect(update?.[1]?.[5]).toBe(stored ?? 'emperor')
+      expect(update?.[0]).toContain('perspective = $7')
+      expect(update?.[1]?.[5]).toBe(used.vibe)
+      expect(update?.[1]?.[6]).toBe(used.perspective)
     },
   )
 
-  it('retry re-translates at a requested vibe stop', async () => {
+  it('retry re-translates at a requested vibe stop, keeping the perspective', async () => {
     answer = (sql, params) => {
       if (sql.startsWith('select s.id, s.thread_id'))
         return {
@@ -500,6 +645,7 @@ describe('translate credit ordering', () => {
             {
               ...segmentRow('old'),
               vibe: 'friend',
+              perspective: 'as',
               user_id: 'user_1',
               source_language: 'en-US',
               target_language: 'ja-JP',
@@ -507,21 +653,29 @@ describe('translate credit ordering', () => {
               persona: { traits: [] },
               instructions: null,
               default_vibe: 'casual',
+              default_perspective: 'to',
             },
           ],
         }
       if (sql.startsWith('with updated as'))
-        return { rows: [{ ...segmentRow(), vibe: params[5] }] }
+        return {
+          rows: [{ ...segmentRow(), vibe: params[5], perspective: params[6] }],
+        }
       return { rows: [] }
     }
     const res = await postJson(`/api/segments/${SEGMENT}/retry`, {
       vibe: 'emperor',
     })
     expect(res.status).toBe(200)
-    expect(await res.json()).toMatchObject({ vibe: 'emperor' })
+    // A new stop, but the Segment's recorded perspective (not the
+    // Character's current default) is kept (adr/0009).
+    expect(await res.json()).toMatchObject({
+      vibe: 'emperor',
+      perspective: 'as',
+    })
     const ai = await import('../_lib/ai')
     expect(vi.mocked(ai.translateSegment)).toHaveBeenLastCalledWith(
-      expect.objectContaining({ vibe: 'emperor' }),
+      expect.objectContaining({ vibe: 'emperor', perspective: 'as' }),
       expect.anything(),
     )
   })
@@ -546,7 +700,7 @@ describe('translate credit ordering', () => {
     const errors = vi
       .spyOn(console, 'error')
       .mockImplementation(() => undefined)
-    answer = (sql) => createAnswers(sql)
+    answer = createAnswers
     const res = await postJson('/api/segments', {
       threadId: THREAD,
       sourceText: 'hi',
@@ -1251,7 +1405,7 @@ describe('credit page boundaries', () => {
   })
 })
 
-describe('character cap', () => {
+describe('characters', () => {
   const CHARACTER = '44444444-4444-4444-8444-444444444444'
   const characterRow = {
     id: CHARACTER,
@@ -1261,6 +1415,7 @@ describe('character cap', () => {
     source_language: 'en-US',
     target_language: 'ja-JP',
     default_vibe: 'casual',
+    perspective: 'to',
     temperature: '0.4',
     persona: { traits: [] },
     instructions: null,
@@ -1269,11 +1424,12 @@ describe('character cap', () => {
     created_at: '2026-10-10T00:00:00.000Z',
     updated_at: '2026-10-10T00:00:00.000Z',
   }
-  const create = () =>
+  const create = (body: Row = {}) =>
     postJson('/api/characters', {
       name: 'Aiko',
       sourceLanguage: 'en-US',
       targetLanguage: 'ja-JP',
+      ...body,
     })
   const withTier = async (tier: 'free' | 'pro' | 'team') => {
     const users = await import('../_lib/users')
@@ -1281,12 +1437,13 @@ describe('character cap', () => {
       tier,
     } as Awaited<ReturnType<typeof users.getOrCreateUser>>)
   }
+  // The inserted row echoes its perspective parameter.
   const ownedCharacters = (count: number) => {
-    answer = (sql) => {
+    answer = (sql, params) => {
       if (sql.startsWith('select count(*)::int as count from characters'))
         return { rows: [{ count }] }
       if (sql.startsWith('insert into characters'))
-        return { rows: [characterRow] }
+        return { rows: [{ ...characterRow, perspective: params[7] }] }
       return { rows: [] }
     }
   }
@@ -1334,4 +1491,67 @@ describe('character cap', () => {
       expect(queries.at(-1)).toBe('rollback')
     },
   )
+
+  // Perspective lives on the Character (adr/0009): create stores the
+  // requested one or defaults to "to", and an update that omits it leaves the
+  // stored value alone.
+  it.each([
+    { label: 'requested as', body: { perspective: 'as' }, stored: 'as' },
+    { label: 'omitted', body: {}, stored: 'to' },
+  ])('stores the perspective on create ($label)', async ({ body, stored }) => {
+    ownedCharacters(0)
+    const res = await create(body)
+    expect(res.status).toBe(201)
+    expect(await res.json()).toMatchObject({ perspective: stored })
+    expect(
+      queries.find((q) => q.startsWith('insert into characters')),
+    ).toContain(
+      '(user_id, name, initials, color, source_language, target_language, default_vibe, perspective, temperature, persona, instructions) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)',
+    )
+    const insert = fakeDb.query.mock.calls.find(([sql]) =>
+      String(sql).includes('insert into characters'),
+    )
+    expect(insert?.[1]).toEqual([
+      'user_1',
+      'Aiko',
+      null,
+      null,
+      'en-US',
+      'ja-JP',
+      'casual',
+      stored,
+      0.4,
+      JSON.stringify({ traits: [] }),
+      null,
+    ])
+  })
+
+  it('keeps the stored perspective on a temperature-only update', async () => {
+    answer = (sql) => {
+      if (sql.startsWith('select user_id from characters'))
+        return { rows: [{ user_id: 'user_1' }] }
+      if (sql.startsWith('select id, user_id, name'))
+        return {
+          rows: [{ ...characterRow, perspective: 'as', temperature: '0.7' }],
+        }
+      return { rows: [] }
+    }
+    const res = await call(`/api/characters/${CHARACTER}`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ temperature: 0.7 }),
+    })
+    expect(res.status).toBe(200)
+    expect(await res.json()).toMatchObject({
+      perspective: 'as',
+      temperature: 0.7,
+    })
+    const update = fakeDb.query.mock.calls.find(([sql]) =>
+      String(sql).startsWith('update characters'),
+    )
+    expect(update).toEqual([
+      'update characters set temperature = $2, updated_at = now() where id = $1',
+      [CHARACTER, 0.7],
+    ])
+  })
 })

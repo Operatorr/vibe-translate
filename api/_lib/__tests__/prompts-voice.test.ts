@@ -41,6 +41,7 @@ describe('translate prompt code spans', () => {
       sourceLanguage: 'en-US',
       targetLanguage: 'ja-JP',
       vibe: 'casual',
+      perspective: 'to',
       temperature: 0.4,
       persona: { traits: [] },
     })
@@ -57,6 +58,7 @@ describe('character voice and language constraints', () => {
       sourceLanguage: 'en-US',
       targetLanguage,
       vibe: 'yakuza',
+      perspective: 'as',
       temperature: 0.9,
       persona: {
         tone: 'ceremonial',
@@ -131,5 +133,10 @@ describe('dictation prompt', () => {
     const [system] = buildDictationMessages('my dry, terse boss in Tokyo')
     expect(system.content).toContain('"tone"')
     expect(system.content).toContain('"verbosity"')
+  })
+
+  it('asks whether the user speaks as or to the person', () => {
+    const [system] = buildDictationMessages('I want to sound like a yakuza')
+    expect(system.content).toContain('"perspective"')
   })
 })

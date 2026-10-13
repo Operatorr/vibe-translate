@@ -11,6 +11,14 @@ begin
   end if;
 end$$;
 
+-- Speaking AS the Character or TO them. See CONTEXT.md, adr/0009.
+do $$
+begin
+  if not exists (select 1 from pg_type where typname = 'perspective') then
+    create type perspective as enum ('as', 'to');
+  end if;
+end$$;
+
 -- Identity: Better Auth core schema (see api/_lib/auth.ts, adr/0008).
 create table if not exists auth_users (
   id text primary key,
@@ -150,6 +158,8 @@ create table if not exists characters (
   source_language text not null,
   target_language text not null,
   default_vibe vibe_stop not null default 'casual',
+  -- Whether the user speaks as this Character or to them (adr/0009).
+  perspective perspective not null default 'to',
   temperature numeric(3, 2) not null default 0.40 check (temperature >= 0 and temperature <= 1),
   -- Structured attributes for UI chips + deterministic form onboarding.
   persona jsonb not null default '{}'::jsonb,
@@ -196,6 +206,8 @@ create table if not exists segments (
   target_text text not null,
   -- Generation-time stop. Nullable only for legacy rows whose stop wasn't recorded.
   vibe vibe_stop,
+  -- Generation-time perspective. Null only for rows from before it existed.
+  perspective perspective,
   token_alignment jsonb not null default '[]'::jsonb,
   token_usage jsonb not null default '{}'::jsonb,
   metadata jsonb not null default '{}'::jsonb,
@@ -223,10 +235,11 @@ create table if not exists explains (
 -- Carries no user_id by design.
 create table if not exists translation_cache (
   id uuid primary key default gen_random_uuid(),
-  fingerprint text not null unique,            -- sha-256 of (source_text, src_lang, tgt_lang, vibe, model_id)
+  fingerprint text not null unique,            -- sha-256 of (source_text, src_lang, tgt_lang, vibe, perspective, model_id, prompt_revision)
   source_language text not null,
   target_language text not null,
   vibe vibe_stop not null,
+  perspective perspective,                     -- null on rows from before prompt revision 3
   model_id text not null,
   source_text text not null,
   target_text text not null,
