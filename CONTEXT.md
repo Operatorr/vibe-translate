@@ -79,7 +79,7 @@ The pedagogical breakdown of a **Target segment** — romaji, literal gloss, mor
 _Avoid_: analysis, breakdown, deep-dive
 
 **Tier**:
-The user's subscription level — `free`, `pro`, or `team` — granting a **Credits** allowance and unlocking feature flags. Defined in `api/_lib/tier.ts`. **Translation memory** and **Explain** are Pro+ features.
+The user's subscription level — `free`, `pro`, or `team` — granting a **Credits** allowance and unlocking feature flags. Defined in `api/_lib/tier.ts`. **Translation memory** is a Pro+ feature; **Explain** is on every tier and spends **Credits**.
 _Avoid_: plan (used only at billing checkout), subscription level
 
 **Credits**:
@@ -100,7 +100,7 @@ The user's accumulated **Segments** treated as a searchable corpus. Each Segment
 _Avoid_: TM (full term in docs), search history, corpus
 
 **Explain memory**:
-The persistent store of generated **Explain** payloads — one row per `(segment, version)`, deduped cross-segment via `(target_language, target_text_hash, version)`. Same Japanese sentence explained twice reuses one row. Pro+ only.
+The persistent store of generated **Explain** payloads — one row per `(segment, version)`, deduped cross-segment via `(target_language, target_text_hash, version)`. Same Japanese sentence explained twice reuses one row (and spends no credits the second time).
 _Avoid_: explain cache (it is not a cache — it is the system of record)
 
 **Embedding**:

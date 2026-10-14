@@ -120,7 +120,7 @@ One read-only public link per Thread.
   1. Look up `explains` by `(segment_id, version = EXPLAIN_PAYLOAD_VERSION)`.
   2. If missing, look up by `(user_id, target_language, target_text_hash, version)` — same target text in another Segment reuses one row.
   3. Otherwise generate via `api/_lib/explain.ts → generateExplain`, insert, return.
-     Response: `{ segmentId, version, body, cached }`. Pro+ only.
+     Response: `{ segmentId, version, body, cached }`. Available on every tier. Cache hits (steps 1–2) are free. A fresh generation on the platform key places a credit hold first and settles it as a `spend.explain` ledger row; a hold the balance cannot cover returns `402` with `error.details = { code: 'insufficient_credits', balance, requiredCredits }` before any model call. BYOK users skip the credit check entirely.
 
 ### Memory (Translation memory)
 

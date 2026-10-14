@@ -80,7 +80,11 @@ vi.mock('../_lib/explain', async (importOriginal) => ({
       kanji: [],
       grammarPatterns: [],
     },
-    tokenUsage: { modelId: 'test/model', promptTokens: 7, completionTokens: 4 },
+    tokenUsage: {
+      modelId: 'test/model',
+      promptTokens: 773,
+      completionTokens: 59,
+    },
   })),
 }))
 vi.mock('../_lib/credits', async (importOriginal) => ({
@@ -916,6 +920,68 @@ describe('explain', () => {
       return { rows: [{ id: 'explain_1' }] }
     return { rows: [] }
   }
+
+  it('generates for a Free user and charges it as an Explain spend', async () => {
+    const users = await import('../_lib/users')
+    vi.mocked(users.getOrCreateUser).mockResolvedValueOnce({
+      tier: 'free',
+    } as Awaited<ReturnType<typeof users.getOrCreateUser>>)
+    answer = segmentAnswers
+    const res = await call(`/api/segments/${SEGMENT}/explain`)
+    expect(res.status).toBe(200)
+    expect(await res.json()).toMatchObject({ cached: false })
+    expect(credits.reserveCredits).toHaveBeenCalledWith(
+      fakeDb,
+      'user_1',
+      221,
+      'spend.explain',
+    )
+    // 773 + 59 tokens from the generateExplain mock → 83 Credits.
+    expect(credits.reconcileSpend).toHaveBeenCalledTimes(1)
+    expect(credits.reconcileSpend).toHaveBeenCalledWith(
+      fakeDb,
+      'user_1',
+      { ledgerId: 'ledger_1', reserved: 5 },
+      {
+        credits: 83,
+        promptTokens: 773,
+        completionTokens: 59,
+        modelId: 'test/model',
+      },
+      'explain_1',
+    )
+    expect(credits.refundReservation).not.toHaveBeenCalled()
+  })
+
+  it('answers 402 without generating when a Free user cannot cover the hold', async () => {
+    const users = await import('../_lib/users')
+    vi.mocked(users.getOrCreateUser).mockResolvedValueOnce({
+      tier: 'free',
+    } as Awaited<ReturnType<typeof users.getOrCreateUser>>)
+    vi.mocked(credits.reserveCredits).mockResolvedValueOnce(null)
+    answer = (sql) =>
+      sql.startsWith('select credits_balance')
+        ? { rows: [{ credits_balance: 3 }] }
+        : segmentAnswers(sql)
+    const res = await call(`/api/segments/${SEGMENT}/explain`)
+    expect(res.status).toBe(402)
+    expect(await res.json()).toMatchObject({
+      error: {
+        details: {
+          code: 'insufficient_credits',
+          balance: 3,
+          requiredCredits: 221,
+        },
+      },
+    })
+    const explain = await import('../_lib/explain')
+    expect(explain.generateExplain).not.toHaveBeenCalled()
+    expect(queries.some((q) => q.startsWith('insert into explains'))).toBe(
+      false,
+    )
+    expect(credits.reconcileSpend).not.toHaveBeenCalled()
+    expect(credits.refundReservation).not.toHaveBeenCalled()
+  })
 
   it('refunds before caching when reported usage is malformed', async () => {
     const explain = await import('../_lib/explain')

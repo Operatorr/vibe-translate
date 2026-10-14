@@ -16,5 +16,5 @@ Embeddings are computed synchronously inside the Segment create path. Marginal l
 
 - pgvector becomes a hard runtime dependency on the database. Neon supports it; other Postgres providers must enable the extension. See [DEPLOYMENT.md](../DEPLOYMENT.md).
 - A vibration in the embedding model (dimension change, provider swap) requires a rebuild of `segments.source_embedding`. Embeddings are derived data — the source_text + target_text + explain body remain the truth.
-- Tier gating: **Translation memory** and **Explain** are Pro+ features. Free tier creates Segments and sees hover alignment, but the Explain button shows an upsell and there is no `/api/memory` access. See [BACKEND.md](../BACKEND.md#tiers).
+- Tier gating: **Translation memory** is a Pro+ feature. Free tier creates Segments and sees hover alignment, but there is no `/api/memory` access. See [BACKEND.md](../BACKEND.md#tiers). (**Explain** was originally Pro+ too; as of 2026-10-14 it is on every tier and paid from **Credits** like a translation, so cost is controlled by the credit balance rather than the tier.)
 - Privacy: storing all translations + explanations long-term raises retention obligations. Per-tier `retentionDays` is the soft expiry; user-driven deletion (`DELETE /api/segments/:id` cascades the embedding and any Explain rows) is the hard control. See [SECURITY.md](../SECURITY.md).

@@ -82,7 +82,6 @@ const me = (balance = 1200): Me => ({
     credits: 1000,
     retentionDays: 30,
     aiDictation: false,
-    explain: false,
     translationMemory: false,
     customVibeStops: false,
     elevenLabsTts: false,

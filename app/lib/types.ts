@@ -138,7 +138,6 @@ export type TierLimits = {
   credits: number
   retentionDays: number
   aiDictation: boolean
-  explain: boolean
   translationMemory: boolean
   customVibeStops: boolean
   elevenLabsTts: boolean

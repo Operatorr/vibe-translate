@@ -23,7 +23,6 @@ export function makeMe(overrides: Partial<Me> = {}): Me {
       credits: 100,
       retentionDays: 30,
       aiDictation: false,
-      explain: false,
       translationMemory: false,
       customVibeStops: false,
       elevenLabsTts: false,

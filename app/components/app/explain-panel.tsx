@@ -1,8 +1,6 @@
-import { Link } from '@tanstack/react-router'
 import * as React from 'react'
 
 import { Icon } from '@/components/vibe-design/icon'
-import { ApiError } from '@/lib/api'
 import { cssVars } from '@/lib/css-vars'
 import type { ExplainBody, ExplainMorpheme } from '@/lib/types'
 
@@ -229,9 +227,8 @@ export function ExplainPanel({
   onClose: () => void
   onRetry: () => void
 }) {
-  const gated = error instanceof ApiError && error.status === 403
   const ref = React.useRef<HTMLDivElement>(null)
-  // Re-reveal when the content swaps (loader → breakdown / gate / error):
+  // Re-reveal when the content swaps (loader → breakdown / error):
   // the panel grows, and its new bottom may land behind the composer again.
   const phase = isLoading
     ? 'loading'
@@ -266,22 +263,7 @@ export function ExplainPanel({
         </div>
       )}
 
-      {!isLoading && gated && (
-        <div className="explain__state explain__state--gate">
-          <div>
-            <strong>Explain is a Pro feature.</strong>
-            <p>
-              Romaji, morphemes, kanji radicals, JLPT levels and grammar
-              patterns for every translation.
-            </p>
-          </div>
-          <Link className="vt-btn vt-btn--primary" to="/pricing">
-            Upgrade to Pro
-          </Link>
-        </div>
-      )}
-
-      {!isLoading && error != null && !gated && (
+      {!isLoading && error != null && (
         <div className="explain__state explain__state--error">
           <span>
             {error instanceof Error

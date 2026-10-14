@@ -47,8 +47,8 @@ Dashboard Text overrides:
 ```dotenv
 TRANSLATE_MODEL=x-ai/grok-4.3
 TRANSLATE_REASONING=none
-EXPLAIN_MODEL=x-ai/grok-4.3
-EXPLAIN_REASONING=none
+EXPLAIN_MODEL=openai/gpt-6-luna
+EXPLAIN_REASONING=low
 DICTATION_MODEL=
 DICTATION_REASONING=
 ELEVENLABS_MODEL_ID=eleven_multilingual_v2
