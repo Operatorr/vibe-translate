@@ -3,7 +3,6 @@ import type { Client } from 'pg'
 import { describe, expect, it } from 'vitest'
 import {
   computeCredits,
-  estimateCredits,
   reconcileSpend,
   refundReservation,
   reserveCredits,
@@ -26,6 +25,7 @@ async function state(db: Client, id: string) {
 }
 
 // Explicit local-only opt-in; see local-db.ts for target resolution.
+
 describe.runIf(process.env.RUN_LOCAL_DB_PERF === '1')(
   'local database credits',
   () => {
@@ -42,13 +42,19 @@ describe.runIf(process.env.RUN_LOCAL_DB_PERF === '1')(
             [id, 'Credit usage fixture', email],
           )
           await getOrCreateUser(db, id, email)
-          const estimate = estimateCredits(
-            'The food was very good, thank you!',
-            1,
-          )
+          // Hold half the welcome grant. Two provider calls fit; a third does not.
+          const estimate = 25_000
           // Illustrative recorded provider usage: 99 output tokens is only one
           // part of the charge. The reservation is replaced, never added to it.
-          const cost = computeCredits(350, 99, 'test/model', 1)
+          const cost = computeCredits(
+            {
+              promptTokens: 249_391,
+              completionTokens: 99,
+              modelId: 'test/model',
+              costUsd: 0.049949,
+            },
+            estimate,
+          )
           for (let n = 0; n < 2; n++) {
             const held = await reserveCredits(
               db,
@@ -101,7 +107,15 @@ describe.runIf(process.env.RUN_LOCAL_DB_PERF === '1')(
             rows: 2,
           })
 
-          const cost = computeCredits(10, 15, 'model-x', 1)
+          const cost = computeCredits(
+            {
+              promptTokens: 10,
+              completionTokens: 15,
+              modelId: 'model-x',
+              costUsd: 0.000025,
+            },
+            held!.reserved,
+          )
           const balance = await reconcileSpend(
             db,
             id,

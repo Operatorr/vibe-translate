@@ -59,7 +59,7 @@ Re-running the translation of an existing **Segment**, replacing the target in p
 _Avoid_: regenerate, re-translate (in code)
 
 **Segment**:
-A single source-text → target-text translation inside a **Thread**, produced at one **Vibe** and one **Perspective**. Carries word-aligned tokens (each target token mapped to its source span) and a token-cost count.
+A single source-text → target-text translation inside a **Thread**, produced at one **Vibe** and one **Perspective**. Carries word-aligned tokens (each target token mapped to its source span) and the generation-time credit charge.
 _Avoid_: translation (the DB table name today), message, turn
 
 **Source segment / Target segment**:
@@ -79,11 +79,12 @@ The pedagogical breakdown of a **Target segment** — romaji, literal gloss, mor
 _Avoid_: analysis, breakdown, deep-dive
 
 **Tier**:
-The user's subscription level — `free`, `pro`, or `team` — granting a monthly **Credits** allowance and unlocking feature flags. Defined in `api/_lib/tier.ts`. **Translation memory** is a Pro+ feature; **Explain** is on every tier and spends **Credits**.
+The user's subscription level — `free`, `pro`, or `team` — granting a **Credits** allowance and unlocking feature flags. Defined in `api/_lib/tier.ts`. **Translation memory** is a Pro+ feature; **Explain** is on every tier and spends **Credits**.
 _Avoid_: plan (used only at billing checkout), subscription level
 
 **Credits**:
-The platform-key budget unit. Spent on every **Segment** create and **Explain** generate (token-derived × per-model multiplier). Granted once on signup for Free (10,000 welcome credits), on billing renewal for paid **Tiers**, or bought as one-time top-up packs. A fully refunded or charged-back top-up is reversed in full, which can leave the balance negative until later grants cover it. Stored on `users.credits_balance`; every spend and grant is recorded in `credit_ledger`. **BYOK** users bypass credits.
+The platform-key budget unit. One Credit represents ten model tokens; each request’s input and output tokens are added, divided by ten, and rounded to a whole Credit (minimum one). Free receives 50,000 welcome credits once; Pro receives 3,500,000/month and Linguist (`team`) receives 14,000,000/month. Annual billing grants twelve months at once. Paid allowances approximate the agreed $5/$20 monthly Luna cost budgets; Credits have no fixed dollar exchange rate. One-time top-ups add 1,000,000, 5,000,000 or 10,000,000 Credits. Fully refunded or charged-back purchases are reversed using their snapshotted grant, which may leave the balance negative. Balances and ledger deltas are whole Credits in `users.credits_balance` and `credit_ledger`. **BYOK** users bypass credits.
+
 _Avoid_: tokens (confusable with model tokens), quota, allowance
 
 **BYOK** (Bring Your Own Key):

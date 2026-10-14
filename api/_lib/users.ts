@@ -1,5 +1,6 @@
 import type { Client } from 'pg'
 
+import { toCredits } from './credit-units'
 import { tierLimits, type Tier } from './tier'
 
 // User provisioning. Better Auth owns identity (auth_users); the first
@@ -15,6 +16,7 @@ export type UserRow = {
   tier: Tier
   onboardingComplete: boolean
   creditsBalance: number
+  billingPeriod?: 'monthly' | 'annual'
   creditsRefilledAt: string | null
   byokConfigured: boolean
   byokLast4: string | null
@@ -30,6 +32,7 @@ type UserDbRow = {
   tier: Tier
   onboarding_complete: boolean
   credits_balance: number
+  billing_period: 'monthly' | 'annual'
   credits_refilled_at: Date | string | null
   byok_configured: boolean
   openrouter_api_key_last4: string | null
@@ -40,7 +43,7 @@ type UserDbRow = {
 
 // Never selects the cipher — only the safe `last4` for display.
 const USER_COLUMNS = `auth_user_id, email, display_name, tier, onboarding_complete,
-  credits_balance, credits_refilled_at,
+  credits_balance, credits_refilled_at, billing_period,
   (openrouter_api_key_cipher is not null) as byok_configured,
   openrouter_api_key_last4, byok_translate_model_id, byok_explain_model_id, locale`
 
@@ -52,6 +55,7 @@ function mapUser(row: UserDbRow): UserRow {
     tier: row.tier,
     onboardingComplete: row.onboarding_complete,
     creditsBalance: row.credits_balance,
+    billingPeriod: row.billing_period,
     creditsRefilledAt: row.credits_refilled_at
       ? new Date(row.credits_refilled_at).toISOString()
       : null,
@@ -133,9 +137,15 @@ export function toMeResponse(user: UserRow) {
     email: user.email,
     displayName: user.displayName,
     tier: user.tier,
-    limits: tierLimits[user.tier],
+    billingPeriod: user.billingPeriod ?? 'monthly',
+    limits: {
+      ...tierLimits[user.tier],
+      credits:
+        toCredits(tierLimits[user.tier].credits) *
+        (user.tier !== 'free' && user.billingPeriod === 'annual' ? 12 : 1),
+    },
     credits: {
-      balance: user.creditsBalance,
+      balance: toCredits(user.creditsBalance),
       refilledAt: user.creditsRefilledAt,
     },
     byok: {

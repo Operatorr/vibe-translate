@@ -1,11 +1,12 @@
-// `credits` is the one-time welcome grant for Free, or the billing-renewal
-// grant for paid tiers on the platform key path. BYOK users bypass credits
+// `credits` is in whole Credits; Free is a one-time welcome grant,
+// paid allowances are monthly (annual billing grants twelve months at once).
+// BYOK users bypass credits
 // and pay OpenRouter directly. See docs/adr/0003.
 export const tierLimits = {
   free: {
     characters: 3,
     threadsPerCharacter: 20,
-    credits: 10000,
+    credits: 50_000,
     retentionDays: 30,
     aiDictation: false,
     translationMemory: false,
@@ -17,7 +18,7 @@ export const tierLimits = {
   pro: {
     characters: 100,
     threadsPerCharacter: 200,
-    credits: 25000,
+    credits: 3_500_000,
     retentionDays: 365,
     aiDictation: true,
     translationMemory: true,
@@ -27,7 +28,7 @@ export const tierLimits = {
   team: {
     characters: 1000,
     threadsPerCharacter: 2000,
-    credits: 250000,
+    credits: 14_000_000,
     retentionDays: 1095,
     aiDictation: true,
     translationMemory: true,

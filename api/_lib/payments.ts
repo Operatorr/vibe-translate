@@ -1,3 +1,4 @@
+import { fromCredits } from './credit-units'
 import { HTTPException } from 'hono/http-exception'
 import type { Client } from 'pg'
 import { z } from 'zod'
@@ -22,9 +23,18 @@ export type BillingPeriod = 'monthly' | 'annual'
 
 // Credits and product binding per pack. Prices live in Dodo.
 const CREDIT_PACKS = {
-  small: { credits: 25000, envKey: 'DODO_PRODUCT_CREDITS_SMALL' },
-  medium: { credits: 50000, envKey: 'DODO_PRODUCT_CREDITS_MEDIUM' },
-  large: { credits: 100000, envKey: 'DODO_PRODUCT_CREDITS_LARGE' },
+  small: {
+    credits: fromCredits(1000000),
+    envKey: 'DODO_PRODUCT_CREDITS_SMALL',
+  },
+  medium: {
+    credits: fromCredits(5000000),
+    envKey: 'DODO_PRODUCT_CREDITS_MEDIUM',
+  },
+  large: {
+    credits: fromCredits(10000000),
+    envKey: 'DODO_PRODUCT_CREDITS_LARGE',
+  },
 } as const satisfies Record<
   CreditPackId,
   { credits: number; envKey: keyof Bindings }
@@ -324,7 +334,7 @@ export async function createCheckoutSession(params: {
       product_cart: [{ product_id: productId, quantity: 1 }],
       customer: { email },
       return_url: `${env.APP_URL ?? ''}/app?upgraded=1`,
-      metadata: { user_id: userId, plan },
+      metadata: { user_id: userId, plan, billing_period: billingPeriod },
     }),
   })
   if (!res.ok) await dodoErrorMessage(res, 'checkout')
@@ -533,6 +543,31 @@ function resolvePlan(
   return undefined
 }
 
+async function resolveBillingPeriod(
+  db: Client,
+  env: Bindings,
+  data: NonNullable<DodoEvent['data']>,
+  userId: string,
+): Promise<BillingPeriod> {
+  if (data.product_id) {
+    if (
+      [env.DODO_PRODUCT_PRO_ANNUAL, env.DODO_PRODUCT_TEAM_ANNUAL].includes(
+        data.product_id,
+      )
+    )
+      return 'annual'
+    if ([env.DODO_PRODUCT_PRO, env.DODO_PRODUCT_TEAM].includes(data.product_id))
+      return 'monthly'
+  }
+  if (data.metadata?.billing_period === 'annual') return 'annual'
+  if (data.metadata?.billing_period === 'monthly') return 'monthly'
+  const result = await db.query<{ billing_period: BillingPeriod }>(
+    'select billing_period from users where auth_user_id = $1',
+    [userId],
+  )
+  return result.rows[0]?.billing_period ?? 'monthly'
+}
+
 // User from checkout metadata (primary), falling back to the stored
 // subscription id for lifecycle events that omit metadata. Email is
 // deliberately NOT used — account and Dodo billing emails can drift (adr/0005).
@@ -565,8 +600,10 @@ async function applySubscriptionGrant(
   plan: Tier,
   subscriptionId: string | undefined,
   isRenewal: boolean,
+  billingPeriod: BillingPeriod,
 ): Promise<void> {
-  const credits = tierLimits[plan].credits
+  const credits =
+    tierLimits[plan].credits * (billingPeriod === 'annual' ? 12 : 1)
   // Guarantee the FK target exists before the credit_ledger insert below: a user
   // may arrive through an external or legacy checkout. Our checkout route
   // already provisions the profile and email via getOrCreateUser. We don't call
@@ -583,11 +620,12 @@ async function applySubscriptionGrant(
     `update users
         set tier = $2,
             subscription_id = coalesce($3, subscription_id),
+            billing_period = $5,
             credits_balance = credits_balance + $4,
             credits_refilled_at = now(),
             updated_at = now()
       where auth_user_id = $1`,
-    [userId, plan, subscriptionId ?? null, credits],
+    [userId, plan, subscriptionId ?? null, credits, billingPeriod],
   )
   await db.query(
     `insert into credit_ledger (user_id, delta, reason, metadata)
@@ -596,7 +634,7 @@ async function applySubscriptionGrant(
       userId,
       credits,
       isRenewal ? 'grant.monthly' : 'grant.subscription',
-      JSON.stringify({ plan, subscriptionId }),
+      JSON.stringify({ plan, subscriptionId, billingPeriod }),
     ],
   )
 }
@@ -792,7 +830,15 @@ async function handleDodoEvent(
         return { status: 'ignored' }
       }
       const isRenewal = event.type === 'subscription.renewed'
-      await applySubscriptionGrant(db, userId, plan, subscriptionId, isRenewal)
+      const billingPeriod = await resolveBillingPeriod(db, env, data, userId)
+      await applySubscriptionGrant(
+        db,
+        userId,
+        plan,
+        subscriptionId,
+        isRenewal,
+        billingPeriod,
+      )
       await logActivity(
         db,
         userId,

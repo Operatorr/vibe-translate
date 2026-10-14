@@ -1,6 +1,6 @@
 import * as z from 'zod'
 
-import { chatJson, type ProviderConfig } from './openrouter'
+import { chatJson, type ProviderConfig, type TokenUsage } from './openrouter'
 import { buildExplainMessages, isJapaneseTarget } from './prompts'
 import type { Persona } from './schemas'
 
@@ -19,11 +19,7 @@ export type ExplainGenerateInput = {
 export type ExplainPayload = {
   version: number
   body: Record<string, unknown>
-  tokenUsage: {
-    modelId: string
-    promptTokens: number
-    completionTokens: number
-  }
+  tokenUsage: TokenUsage
 }
 
 // Strict structured-output schemas. Like the translate schema, these use
@@ -31,14 +27,19 @@ export type ExplainPayload = {
 // requires every key present and additionalProperties:false. The field lists
 // mirror the prompt built in api/_lib/prompts.ts → buildExplainMessages.
 
-const literalGlossSchema = z.strictObject({ token: z.string(), gloss: z.string() })
+const literalGlossSchema = z.strictObject({
+  token: z.string(),
+  gloss: z.string(),
+})
 
 // Generic fallback for non-Japanese targets: romaji/transliteration, a
 // word-by-word gloss, and grammar notes.
 const explainBodyGenericSchema = z.strictObject({
   romaji: z.string(),
   literalGloss: z.array(literalGlossSchema),
-  grammarPatterns: z.array(z.strictObject({ pattern: z.string(), note: z.string() })),
+  grammarPatterns: z.array(
+    z.strictObject({ pattern: z.string(), note: z.string() }),
+  ),
 })
 
 // Japanese targets get the full pedagogical breakdown (PRODUCT.md): morphemes,
@@ -51,7 +52,16 @@ const explainBodyJaSchema = z.strictObject({
       surface: z.string(),
       base: z.string(),
       reading: z.string(),
-      role: z.enum(['verb', 'noun', 'particle', 'aux', 'adjective', 'adverb', 'punct', 'other']),
+      role: z.enum([
+        'verb',
+        'noun',
+        'particle',
+        'aux',
+        'adjective',
+        'adverb',
+        'punct',
+        'other',
+      ]),
       inflection: z.string(),
     }),
   ),
@@ -66,7 +76,11 @@ const explainBodyJaSchema = z.strictObject({
     }),
   ),
   grammarPatterns: z.array(
-    z.strictObject({ pattern: z.string(), note: z.string(), dialectNote: z.string() }),
+    z.strictObject({
+      pattern: z.string(),
+      note: z.string(),
+      dialectNote: z.string(),
+    }),
   ),
 })
 
@@ -105,10 +119,6 @@ export async function generateExplain(
   return {
     version: EXPLAIN_PAYLOAD_VERSION,
     body: data as Record<string, unknown>,
-    tokenUsage: {
-      modelId: tokenUsage.modelId,
-      promptTokens: tokenUsage.promptTokens,
-      completionTokens: tokenUsage.completionTokens,
-    },
+    tokenUsage,
   }
 }

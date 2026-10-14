@@ -148,6 +148,7 @@ export type Me = {
   email: string | null
   displayName: string | null
   tier: UserTier
+  billingPeriod?: 'monthly' | 'annual'
   limits: TierLimits
   credits: CreditBalance
   byok: ByokState

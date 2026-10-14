@@ -1,14 +1,17 @@
 import type { Client } from 'pg'
+import { TOKENS_PER_CREDIT } from './credit-units'
+import type { TokenUsage } from './openrouter'
 
 // Credit accounting for the platform key path. BYOK requests skip this
 // module entirely — see docs/adr/0003.
 
 export type CreditCost = {
-  // Cost in credits, derived from token usage × the model's credit_cost_multiplier.
+  // Whole Credits: total model tokens divided by ten, rounded per request.
   credits: number
-  // Underlying token breakdown for the credit_ledger row.
-  promptTokens: number
-  completionTokens: number
+  costUsd?: number
+  // Underlying token breakdown for the credit_ledger row; null when unreported.
+  promptTokens: number | null
+  completionTokens: number | null
   modelId: string
 }
 
@@ -118,6 +121,7 @@ export async function reconcileSpend(
           modelId: cost.modelId,
           promptTokens: cost.promptTokens,
           completionTokens: cost.completionTokens,
+          costUsd: cost.costUsd,
         }),
       ],
     )
@@ -197,31 +201,32 @@ export async function recordGrant(
   }
 }
 
-export function computeCredits(
-  promptTokens: number,
-  completionTokens: number,
-  modelId: string,
-  multiplier: number,
-): CreditCost {
-  const credits = tokenCredits(promptTokens + completionTokens, multiplier)
-  return { credits, promptTokens, completionTokens, modelId }
+const isTokenCount = (value: number) =>
+  Number.isSafeInteger(value) && value >= 0
+
+// The settled charge for a completed platform call. When the provider left a
+// token count unreported, the request settles at its hold rather than as a
+// one-Credit call. Malformed counts throw; callers refund the hold.
+export function computeCredits(usage: TokenUsage, hold: number): CreditCost {
+  const { promptTokens, completionTokens } = usage
+  if (promptTokens === null || completionTokens === null)
+    return { ...usage, credits: hold }
+  const tokens = promptTokens + completionTokens
+  if (
+    !isTokenCount(promptTokens) ||
+    !isTokenCount(completionTokens) ||
+    !Number.isSafeInteger(tokens)
+  )
+    throw new Error('Invalid token usage')
+  return {
+    ...usage,
+    credits: Math.max(1, Math.round(tokens / TOKENS_PER_CREDIT)),
+  }
 }
 
-// Pre-call estimate for a credit hold, shaped like computeCredits so it scales
-// with the same per-model multiplier. Deliberately generous (system prompt +
-// input + a comparable output) so the reservation is a meaningful fraction of
-// the real cost — the hold is reconciled to the true token usage afterwards, so
-// over-estimating only tightens the concurrency gate, it does not over-charge.
-const PROMPT_OVERHEAD_TOKENS = 400
-
-// Registry multipliers are NUMERIC(6,3). Multiply integers first so e.g.
-// 100 × 1.1 cannot become 110.00000000000001 and charge 111 credits.
-function tokenCredits(tokens: number, multiplier: number): number {
-  return Math.max(1, Math.ceil((tokens * Math.round(multiplier * 1000)) / 1000))
-}
-
-export function estimateCredits(text: string, multiplier: number): number {
+// Temporary hold including prompt/schema overhead and structured output.
+// Replaced by the actual token-derived charge when the request completes.
+export function estimateCredits(text: string): number {
   const inputTokens = Math.ceil(text.length / 4)
-  const estimatedTokens = PROMPT_OVERHEAD_TOKENS + inputTokens * 2
-  return tokenCredits(estimatedTokens, multiplier)
+  return Math.max(1, Math.ceil((2200 + inputTokens * 3) / TOKENS_PER_CREDIT))
 }

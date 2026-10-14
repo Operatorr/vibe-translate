@@ -73,8 +73,18 @@ vi.mock('../_lib/explain', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../_lib/explain')>()),
   generateExplain: vi.fn(async () => ({
     version: 1,
-    body: { romaji: 'yaa', literalGloss: [], grammarPatterns: [] },
-    tokenUsage: { modelId: 'test/model', promptTokens: 7, completionTokens: 4 },
+    body: {
+      romaji: 'yaa',
+      literalGloss: [],
+      morphemes: [],
+      kanji: [],
+      grammarPatterns: [],
+    },
+    tokenUsage: {
+      modelId: 'test/model',
+      promptTokens: 773,
+      completionTokens: 59,
+    },
   })),
 }))
 vi.mock('../_lib/credits', async (importOriginal) => ({
@@ -347,7 +357,7 @@ describe('translate credit ordering', () => {
       'user_1',
       { ledgerId: 'ledger_1', reserved: 5 },
       {
-        credits: 8,
+        credits: 1,
         promptTokens: 5,
         completionTokens: 3,
         modelId: 'test/model',
@@ -360,8 +370,13 @@ describe('translate credit ordering', () => {
 
   // 5 prompt + 3 completion tokens from the translateSegment mock.
   it.each([
-    { label: 'platform at 1x', isByok: false, multiplier: 1, charged: 8 },
-    { label: 'platform at 2x', isByok: false, multiplier: 2, charged: 16 },
+    { label: 'platform at 1x', isByok: false, multiplier: 1, charged: 1 },
+    {
+      label: 'platform with legacy multiplier 2',
+      isByok: false,
+      multiplier: 2,
+      charged: 1,
+    },
     { label: 'BYOK', isByok: true, multiplier: 2, charged: 0 },
   ])(
     'persists the same credit charge that settlement applies ($label)',
@@ -377,8 +392,10 @@ describe('translate credit ordering', () => {
       })
       let usage: { creditsCharged?: unknown } | undefined
       answer = (sql, params) => {
-        if (sql.startsWith('insert into segments'))
+        if (sql.startsWith('insert into segments')) {
           usage = JSON.parse(params[7] as string)
+          return { rows: [{ ...segmentRow(), token_usage: usage }] }
+        }
         return createAnswers(sql, params)
       }
       const res = await postJson('/api/segments', {
@@ -387,6 +404,9 @@ describe('translate credit ordering', () => {
         vibe: 'casual',
       })
       expect(res.status).toBe(201)
+      expect(await res.json()).toMatchObject({
+        tokenUsage: { creditsCharged: charged },
+      })
       expect(usage).toMatchObject({
         promptTokens: 5,
         completionTokens: 3,
@@ -420,7 +440,7 @@ describe('translate credit ordering', () => {
         details: {
           code: 'insufficient_credits',
           balance: 198,
-          requiredCredits: 402,
+          requiredCredits: 221,
         },
       },
     })
@@ -444,6 +464,66 @@ describe('translate credit ordering', () => {
     expect(res.status).toBe(500)
     expect(credits.refundReservation).toHaveBeenCalledTimes(1)
     expect(credits.reconcileSpend).not.toHaveBeenCalled()
+  })
+
+  it('refunds without storing a Segment when reported usage is malformed', async () => {
+    const ai = await import('../_lib/ai')
+    vi.mocked(ai.translateSegment).mockResolvedValueOnce({
+      targetText: 'やあ',
+      tokenAlignment: [],
+      tokenUsage: {
+        modelId: 'test/model',
+        promptTokens: -100,
+        completionTokens: 100,
+      },
+    })
+    answer = createAnswers
+    const res = await postJson('/api/segments', {
+      threadId: THREAD,
+      sourceText: 'hi',
+      vibe: 'casual',
+    })
+    expect(res.status).toBe(500)
+    expect(credits.refundReservation).toHaveBeenCalledWith(fakeDb, 'user_1', {
+      ledgerId: 'ledger_1',
+      reserved: 5,
+    })
+    expect(credits.reconcileSpend).not.toHaveBeenCalled()
+    expect(queries.some((q) => q.startsWith('insert into segments'))).toBe(
+      false,
+    )
+  })
+
+  it('settles at the hold when the provider left token counts unreported', async () => {
+    const ai = await import('../_lib/ai')
+    vi.mocked(ai.translateSegment).mockResolvedValueOnce({
+      targetText: 'やあ',
+      tokenAlignment: [],
+      tokenUsage: {
+        modelId: 'test/model',
+        promptTokens: null,
+        completionTokens: 3,
+        costUsd: 0.01,
+      },
+    })
+    let usage: Record<string, unknown> | undefined
+    answer = (sql, params) => {
+      if (sql.startsWith('insert into segments')) {
+        usage = JSON.parse(params[7] as string)
+        return { rows: [{ ...segmentRow(), token_usage: usage }] }
+      }
+      return createAnswers(sql, params)
+    }
+    const res = await postJson('/api/segments', {
+      threadId: THREAD,
+      sourceText: 'hi',
+      vibe: 'casual',
+    })
+    expect(res.status).toBe(201)
+    expect(usage).toMatchObject({ promptTokens: null, creditsCharged: 5 })
+    const [, , , cost] = vi.mocked(credits.reconcileSpend).mock.calls[0]
+    expect(cost.credits).toBe(5)
+    expect(credits.refundReservation).not.toHaveBeenCalled()
   })
 
   it('marks a shared-cache hit as cached', async () => {
@@ -853,13 +933,101 @@ describe('explain', () => {
     expect(credits.reserveCredits).toHaveBeenCalledWith(
       fakeDb,
       'user_1',
-      expect.any(Number),
+      221,
       'spend.explain',
     )
-    const [, , , cost, referenceId] = vi.mocked(credits.reconcileSpend).mock
-      .calls[0]
-    expect(cost).toMatchObject({ promptTokens: 7, completionTokens: 4 })
-    expect(referenceId).toBe('explain_1')
+    // 773 + 59 tokens from the generateExplain mock → 83 Credits.
+    expect(credits.reconcileSpend).toHaveBeenCalledTimes(1)
+    expect(credits.reconcileSpend).toHaveBeenCalledWith(
+      fakeDb,
+      'user_1',
+      { ledgerId: 'ledger_1', reserved: 5 },
+      {
+        credits: 83,
+        promptTokens: 773,
+        completionTokens: 59,
+        modelId: 'test/model',
+      },
+      'explain_1',
+    )
+    expect(credits.refundReservation).not.toHaveBeenCalled()
+  })
+
+  it('answers 402 without generating when a Free user cannot cover the hold', async () => {
+    const users = await import('../_lib/users')
+    vi.mocked(users.getOrCreateUser).mockResolvedValueOnce({
+      tier: 'free',
+    } as Awaited<ReturnType<typeof users.getOrCreateUser>>)
+    vi.mocked(credits.reserveCredits).mockResolvedValueOnce(null)
+    answer = (sql) =>
+      sql.startsWith('select credits_balance')
+        ? { rows: [{ credits_balance: 3 }] }
+        : segmentAnswers(sql)
+    const res = await call(`/api/segments/${SEGMENT}/explain`)
+    expect(res.status).toBe(402)
+    expect(await res.json()).toMatchObject({
+      error: {
+        details: {
+          code: 'insufficient_credits',
+          balance: 3,
+          requiredCredits: 221,
+        },
+      },
+    })
+    const explain = await import('../_lib/explain')
+    expect(explain.generateExplain).not.toHaveBeenCalled()
+    expect(queries.some((q) => q.startsWith('insert into explains'))).toBe(
+      false,
+    )
+    expect(credits.reconcileSpend).not.toHaveBeenCalled()
+    expect(credits.refundReservation).not.toHaveBeenCalled()
+  })
+
+  it('refunds before caching when reported usage is malformed', async () => {
+    const explain = await import('../_lib/explain')
+    vi.mocked(explain.generateExplain).mockResolvedValueOnce({
+      version: 1,
+      body: {},
+      tokenUsage: {
+        modelId: 'test/model',
+        promptTokens: 0.5,
+        completionTokens: 0.5,
+      },
+    })
+    answer = segmentAnswers
+    const res = await call(`/api/segments/${SEGMENT}/explain`)
+    expect(res.status).toBe(500)
+    expect(credits.refundReservation).toHaveBeenCalledWith(fakeDb, 'user_1', {
+      ledgerId: 'ledger_1',
+      reserved: 5,
+    })
+    expect(credits.reconcileSpend).not.toHaveBeenCalled()
+    expect(queries.some((q) => q.startsWith('insert into explains'))).toBe(
+      false,
+    )
+  })
+})
+
+describe('in-app dictation', () => {
+  it('refunds the hold when reported usage is malformed', async () => {
+    const ai = await import('../_lib/ai')
+    vi.mocked(ai.draftCharacterFromDictation).mockResolvedValueOnce({
+      draft: { ok: false },
+      tokenUsage: {
+        modelId: 'test/model',
+        promptTokens: -1,
+        completionTokens: 10,
+      },
+    })
+    const res = await postJson('/api/ai/dictation', {
+      prompt: 'Tomoko in Tokyo, casual Japanese',
+    })
+    expect(res.status).toBe(500)
+    expect(credits.refundReservation).toHaveBeenCalledWith(fakeDb, 'user_1', {
+      ledgerId: 'ledger_1',
+      reserved: 5,
+    })
+    expect(credits.reconcileSpend).not.toHaveBeenCalled()
   })
 })
 

@@ -177,8 +177,10 @@ export function CreditsPage({ orderId }: { orderId?: string }) {
                   <span>credits</span>
                 </p>
                 <p>
-                  Credits are charged from actual model token usage. Saved and
-                  cached translations are free.
+                  Credits use the model’s input and output token counts: ten
+                  tokens per credit, rounded to a whole credit, with a minimum
+                  of one credit per request. An 832-token translation costs 83
+                  credits. Saved and cached translations are free.
                 </p>
                 {data.me.byok.configured && (
                   <p>
@@ -195,7 +197,10 @@ export function CreditsPage({ orderId }: { orderId?: string }) {
                   ACCOUNT
                 </span>
                 <p>
-                  {data.me.limits.credits.toLocaleString()} credits in your plan
+                  {data.me.limits.credits.toLocaleString()}{' '}
+                  {data.me.tier === 'free'
+                    ? 'one-time welcome credits'
+                    : `credits per ${data.me.billingPeriod === 'annual' ? 'year' : 'month'}`}
                   allowance.
                 </p>
                 {data.me.tier === 'free' && (
@@ -213,7 +218,8 @@ export function CreditsPage({ orderId }: { orderId?: string }) {
                 <span className="vt-eyebrow">ONE-TIME TOP-UP</span>
                 <h2 id="topup-title">A little more room.</h2>
                 <p>
-                  Add credits to your current account. No subscription change.
+                  Top-ups add to your balance without changing your
+                  subscription.
                 </p>
               </div>
               <div className="credits-page__purchase">

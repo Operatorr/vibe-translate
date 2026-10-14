@@ -249,6 +249,32 @@ describe('checkout return polling', () => {
 })
 
 describe('top-up packs and checkout', () => {
+  it('shows the 50,000 welcome allowance and the larger token-based packs', async () => {
+    const account = me(50_000)
+    account.limits.credits = 50_000
+    stubApi({
+      history: () =>
+        json(
+          history({
+            me: account,
+            packs: PACKS.map((pack, index) => ({
+              ...pack,
+              credits: [1_000_000, 5_000_000, 10_000_000][index],
+            })),
+          }),
+        ),
+    })
+    renderPage()
+    await screen.findByText('Choose your top-up')
+    expect(screen.getByText(/50,000 one-time welcome credits/)).toBeTruthy()
+    expect(radio(/^1,000,000 credits/).checked).toBe(true)
+    expect(radio(/^5,000,000 credits/)).toBeTruthy()
+    expect(radio(/^10,000,000 credits/)).toBeTruthy()
+    expect(
+      screen.getByText(/An 832-token translation costs 83 credits/),
+    ).toBeTruthy()
+  })
+
   it('falls back from an unavailable pack to the first available one', async () => {
     const { fetchMock } = stubApi({
       history: () =>

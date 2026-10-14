@@ -1,3 +1,4 @@
+import { toCredits } from './credit-units'
 import { HTTPException } from 'hono/http-exception'
 import { ZodError } from 'zod'
 
@@ -24,8 +25,8 @@ export function formatError(error: unknown): FormattedApiError {
       status: 402,
       details: {
         code: 'insufficient_credits',
-        balance: error.balance,
-        requiredCredits: error.requiredCredits,
+        balance: toCredits(error.balance),
+        requiredCredits: toCredits(error.requiredCredits),
       },
     }
   }

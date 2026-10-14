@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen } from '@testing-library/react'
+import { fireEvent, cleanup, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { VibePricingPage } from '@/components/vibe-design/pricing-page'
@@ -53,14 +53,14 @@ describe('pricing copy', () => {
     expect(card('Free')).toContain('All 5 languages')
     expect(row('Languages')).toEqual(['Languages', '5', '5', '5'])
 
-    expect(card('Free')).toContain('10,000 credits')
-    expect(card('Pro')).toContain('25,000 credits per billing renewal')
-    expect(card('Linguist')).toContain('250,000 credits per billing renewal')
+    expect(card('Free')).toContain('50,000 credits')
+    expect(card('Pro')).toContain('42,000,000 credits per year')
+    expect(card('Linguist')).toContain('168,000,000 credits per year')
     expect(row('Credits')).toEqual([
       'Credits',
-      '10,000 welcome',
-      '25,000 per renewal',
-      '250,000 per renewal',
+      '50,000 welcome',
+      '42,000,000 per year',
+      '168,000,000 per year',
     ])
     expect(card('Free')).toContain('3 saved characters')
     expect(card('Pro')).toContain('100 saved characters')
@@ -71,6 +71,11 @@ describe('pricing copy', () => {
       '100',
       '1,000',
     ])
+    fireEvent.click(screen.getByRole('button', { name: 'Monthly' }))
+    expect(card('Pro')).toContain('3,500,000 credits per month')
+    expect(card('Linguist')).toContain('14,000,000 credits per month')
+    expect(card('Pro')).toContain('$18')
+    expect(card('Linguist')).toContain('$64')
     // Explain is on every tier and spends credits.
     expect(card('Free')).toContain('Grammar explanations, charged from credits')
     expect(row('Inline Explain')).toEqual([
