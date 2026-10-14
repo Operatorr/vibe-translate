@@ -4773,6 +4773,16 @@ body,
   padding: 0;
   border: 0;
 }
+@media (max-width: 900px) {
+  /* The whole footer row is the tap target; the home-indicator inset stays below it. */
+  .chars__foot {
+    padding: 0 0 env(safe-area-inset-bottom);
+  }
+  .chars__status.vt-side-foot {
+    min-height: 44px;
+    padding: 0 12px;
+  }
+}
 .threads__empty--pane {
   padding: 24px;
 }
