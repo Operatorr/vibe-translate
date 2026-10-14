@@ -270,12 +270,17 @@ these larger packs. The worker pack cache expires within five minutes of deploy.
 | Pro      | $18           | $168 (22.2% saving) | 3,500,000       | 42,000,000     |
 | Linguist | $64           | $588 (23.4% saving) | 14,000,000      | 168,000,000    |
 
-Free receives 50,000 welcome Credits once. Each billable platform translation,
-Explain or in-app dictation request costs one Credit per ten model tokens,
-rounded to a whole Credit, minimum one. Onboarding dictation, cached results and
-BYOK calls are free; embeddings add no separate user debit. Credits do not have a fixed
-USD exchange rate; the paid allowances approximate the agreed $5/$20 monthly Luna
-cost budgets. Existing subscriptions whose renewal omits product and period need
-`users.billing_period` backfilled from Dodo; new checkouts record it. Explicit
-`TRANSLATE_MODEL` overrides should point to `openai/gpt-6-luna` or be unset for the
-advertised translation examples.
+Free receives 50,000 welcome Credits once. Current billing converts the provider's
+reported USD cost at 700,000 Credits per dollar, adds `CREDIT_MARKUP_PERCENT`
+(default 30%), and rounds up to a whole Credit with a minimum of one. A missing
+cost report settles at the already marked-up reservation estimate. The markup
+applies to platform translations, Explain and in-app dictation. Set it locally
+in `.dev.vars` or as a production dashboard Text variable (`keep_vars` preserves
+it on deploy). Onboarding dictation, cached results and BYOK calls are free;
+embeddings add no separate user debit. Dodo manages retail prices independently
+of this internal conversion rate. This billing update keeps the 0014 units and
+requires no new migration; existing balances, purchase snapshots and historical
+charges are unchanged.
+
+Existing subscriptions whose renewal omits product and period need
+`users.billing_period` backfilled from Dodo; new checkouts record it.

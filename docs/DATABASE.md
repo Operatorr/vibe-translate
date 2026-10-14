@@ -61,8 +61,8 @@ The app-side profile. `api/_lib/users.ts → getOrCreateUser` creates it lazily 
 | `tier`                            | text check (`free`/`pro`/`team`)                    | gates feature access in `api/_lib/tier.ts`                                                                                                                              |
 | `subscription_id`                 | text nullable                                       | Dodo Payments subscription id; partial-unique (`where subscription_id is not null`) so lifecycle webhooks can resolve the owning user. Set/cleared by the Dodo webhook. |
 | `onboarding_complete`             | boolean                                             | gates the `/app` shell                                                                                                                                                  |
-| `credits_balance`                 | int                                                 | whole Credits on the platform-key path; ten model tokens per Credit                                                                                                             |
-| `credits_refilled_at`             | timestamptz                                         | last subscription grant                                                                                                                         |
+| `credits_balance`                 | int                                                 | whole Credits on the platform-key path; provider cost plus configured markup                                                                                            |
+| `credits_refilled_at`             | timestamptz                                         | last subscription grant                                                                                                                                                 |
 | `openrouter_api_key_cipher`       | text nullable                                       | AES-GCM ciphertext of the user's BYOK key                                                                                                                               |
 | `openrouter_api_key_last4`        | text nullable                                       | last 4 chars for UI display; safe to expose                                                                                                                             |
 | `byok_translate_model_id`         | text nullable                                       | OpenRouter slug override; `null` = use default                                                                                                                          |
@@ -165,7 +165,7 @@ The model registry. One default row per task. Operators can flip the default wit
 | `display_name`             | text                                                     | for admin UI / logs                                                           |
 | `is_default`               | boolean                                                  | unique-by-task while true (partial index)                                     |
 | `embedding_dimensions`     | int nullable                                             | set only for `task='embed'`; must match `segments.source_embedding vector(…)` |
-| `credit_cost_multiplier`   | numeric(6,3) default 1.000                               | legacy compatibility field; token-based billing no longer uses it         |
+| `credit_cost_multiplier`   | numeric(6,3) default 1.000                               | legacy compatibility field; cost-based billing uses the global markup instead |
 | `notes`                    | text                                                     |                                                                               |
 | `created_at`, `updated_at` | timestamptz                                              |                                                                               |
 
@@ -207,7 +207,7 @@ One-time credit top-up orders (`0009_credit_purchases.sql`, lifecycle columns in
 | `id`                     | uuid pk                                          | the checkout's `metadata.order_id`; `reference_id` of the order's ledger rows                    |
 | `user_id`                | text fk → `users.auth_user_id` on delete cascade | owner; every read filters on it                                                                  |
 | `product_id`, `quantity` | text, int (1–10)                                 | snapshotted Dodo product; a payment must match both                                              |
-| `credits`                | int (> 0)                                        | snapshotted grant in whole Credits; exactly this amount is granted and, on reversal, taken back               |
+| `credits`                | int (> 0)                                        | snapshotted grant in whole Credits; exactly this amount is granted and, on reversal, taken back  |
 | `payment_id`             | text unique, nullable                            | Dodo payment that fulfilled the order; unique so one payment can never fund two orders           |
 | `created_at`             | timestamptz                                      |                                                                                                  |
 | `fulfilled_at`           | timestamptz nullable                             | set with `payment_id` when the `grant.purchase` row is written                                   |

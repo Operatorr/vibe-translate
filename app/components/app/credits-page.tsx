@@ -177,10 +177,8 @@ export function CreditsPage({ orderId }: { orderId?: string }) {
                   <span>credits</span>
                 </p>
                 <p>
-                  Credits use the model’s input and output token counts: ten
-                  tokens per credit, rounded to a whole credit, with a minimum
-                  of one credit per request. An 832-token translation costs 83
-                  credits. Saved and cached translations are free.
+                  Use credits for translations, grammar explanations, and AI
+                  character creation. Saved and cached translations are free.
                 </p>
                 {data.me.byok.configured && (
                   <p>
@@ -201,7 +199,7 @@ export function CreditsPage({ orderId }: { orderId?: string }) {
                   {data.me.tier === 'free'
                     ? 'one-time welcome credits'
                     : `credits per ${data.me.billingPeriod === 'annual' ? 'year' : 'month'}`}
-                  allowance.
+                  .
                 </p>
                 {data.me.tier === 'free' && (
                   <Link className="vt-btn vt-btn--primary" to="/pricing">

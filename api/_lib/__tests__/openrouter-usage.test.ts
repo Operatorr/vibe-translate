@@ -9,6 +9,7 @@ vi.mock('openai', () => ({
   },
 }))
 import { chatJson } from '../openrouter'
+import { computeCredits } from '../credits'
 
 beforeEach(() => create.mockReset())
 const reply = (
@@ -39,19 +40,22 @@ describe('provider cost accounting', () => {
     create
       .mockResolvedValueOnce(reply('bad json', 0.0001068))
       .mockResolvedValueOnce(reply('{"text":"ok"}', 0.000125))
-    expect((await chatJson(args)).tokenUsage).toMatchObject({
+    const usage = (await chatJson(args)).tokenUsage
+    expect(computeCredits(usage, 287).credits).toBe(211)
+    expect(usage).toMatchObject({
       promptTokens: 1546,
       completionTokens: 118,
       requests: 2,
       costUsd: 0.0002318,
     })
   })
-  it('leaves cost absent when any attempt omits it, so all usage can be priced', async () => {
+  it('settles at the hold if any retry omitted cost', async () => {
     create
       .mockResolvedValueOnce(reply('bad json', null))
       .mockResolvedValueOnce(reply('{"text":"ok"}', 0.000125))
     const usage = (await chatJson(args)).tokenUsage
     expect(usage.costUsd).toBeUndefined()
+    expect(computeCredits(usage, 287).credits).toBe(287)
     expect(usage.promptTokens).toBe(1546)
   })
 })

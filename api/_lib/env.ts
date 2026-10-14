@@ -26,6 +26,8 @@ export type Bindings = {
   DODO_PRODUCT_CREDITS_MEDIUM?: string
   DODO_PRODUCT_CREDITS_LARGE?: string
   OPENROUTER_API_KEY?: string
+  // Percentage added to reported provider USD cost; defaults to 30.
+  CREDIT_MARKUP_PERCENT?: string
   // Optional per-task model + reasoning overrides (see adr/0003). `*_MODEL`
   // pins an OpenRouter slug; `*_REASONING` sets reasoning effort
   // (low|medium|high). When unset, the `models` registry default applies. These

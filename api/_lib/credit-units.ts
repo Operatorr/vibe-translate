@@ -1,5 +1,7 @@
 // Balances, ledger deltas, purchase snapshots and API payloads use whole Credits.
-// One Credit represents ten model tokens, rounded per completed request.
-export const TOKENS_PER_CREDIT = 10
+// Keep the allowance/purchase scale established by migration 0014. Provider
+// cost is converted at this rate before the platform markup is added.
+export const CREDITS_PER_USD = 700_000
+export const DEFAULT_CREDIT_MARKUP_PERCENT = 30
 export const toCredits = (credits: number): number => credits
 export const fromCredits = (credits: number): number => credits

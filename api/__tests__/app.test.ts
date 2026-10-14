@@ -65,7 +65,12 @@ vi.mock('../_lib/ai', () => ({
   translateSegment: vi.fn(async () => ({
     targetText: 'やあ',
     tokenAlignment: [{ t: 'やあ', src: 'hi' }],
-    tokenUsage: { modelId: 'test/model', promptTokens: 5, completionTokens: 3 },
+    tokenUsage: {
+      modelId: 'test/model',
+      promptTokens: 5,
+      completionTokens: 3,
+      costUsd: 0.000001,
+    },
   })),
   draftCharacterFromDictation: vi.fn(),
 }))
@@ -84,6 +89,7 @@ vi.mock('../_lib/explain', async (importOriginal) => ({
       modelId: 'test/model',
       promptTokens: 773,
       completionTokens: 59,
+      costUsd: 0.0001068,
     },
   })),
 }))
@@ -339,6 +345,45 @@ describe('translate credit ordering', () => {
     },
   )
 
+  it('applies configured markup to both the translation hold and settled charge', async () => {
+    const ai = await import('../_lib/ai')
+    vi.mocked(ai.translateSegment).mockResolvedValueOnce({
+      targetText: 'やあ',
+      tokenAlignment: [],
+      tokenUsage: {
+        modelId: 'test/model',
+        promptTokens: 800,
+        completionTokens: 0,
+        costUsd: 0.001,
+      },
+    })
+    answer = createAnswers
+    const res = await app.request(
+      '/api/segments',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          threadId: THREAD,
+          sourceText: 'hi',
+          vibe: 'casual',
+        }),
+      },
+      { ...env, CREDIT_MARKUP_PERCENT: '50' },
+    )
+    expect(res.status).toBe(201)
+    expect(credits.reserveCredits).toHaveBeenCalledWith(
+      fakeDb,
+      'user_1',
+      331,
+      'spend.translate',
+    )
+    expect(vi.mocked(credits.reconcileSpend).mock.calls[0][3]).toMatchObject({
+      credits: 1050,
+      markupPercent: 50,
+    })
+  })
+
   it('charges and keeps the Segment when a post-insert step fails', async () => {
     vi.mocked(cache.upsertCache).mockRejectedValueOnce(new Error('cache down'))
     const errors = vi
@@ -358,6 +403,8 @@ describe('translate credit ordering', () => {
       { ledgerId: 'ledger_1', reserved: 5 },
       {
         credits: 1,
+        costUsd: 0.000001,
+        markupPercent: 30,
         promptTokens: 5,
         completionTokens: 3,
         modelId: 'test/model',
@@ -440,7 +487,7 @@ describe('translate credit ordering', () => {
         details: {
           code: 'insufficient_credits',
           balance: 198,
-          requiredCredits: 221,
+          requiredCredits: 287,
         },
       },
     })
@@ -494,7 +541,7 @@ describe('translate credit ordering', () => {
     )
   })
 
-  it('settles at the hold when the provider left token counts unreported', async () => {
+  it('charges reported provider cost when token counts are unreported', async () => {
     const ai = await import('../_lib/ai')
     vi.mocked(ai.translateSegment).mockResolvedValueOnce({
       targetText: 'やあ',
@@ -520,9 +567,9 @@ describe('translate credit ordering', () => {
       vibe: 'casual',
     })
     expect(res.status).toBe(201)
-    expect(usage).toMatchObject({ promptTokens: null, creditsCharged: 5 })
+    expect(usage).toMatchObject({ promptTokens: null, creditsCharged: 9100 })
     const [, , , cost] = vi.mocked(credits.reconcileSpend).mock.calls[0]
-    expect(cost.credits).toBe(5)
+    expect(cost.credits).toBe(9100)
     expect(credits.refundReservation).not.toHaveBeenCalled()
   })
 
@@ -921,6 +968,26 @@ describe('explain', () => {
     return { rows: [] }
   }
 
+  it('applies configured markup to Explain holds and charges', async () => {
+    answer = segmentAnswers
+    const res = await app.request(
+      `/api/segments/${SEGMENT}/explain`,
+      undefined,
+      { ...env, CREDIT_MARKUP_PERCENT: '50' },
+    )
+    expect(res.status).toBe(200)
+    expect(credits.reserveCredits).toHaveBeenCalledWith(
+      fakeDb,
+      'user_1',
+      331,
+      'spend.explain',
+    )
+    expect(vi.mocked(credits.reconcileSpend).mock.calls[0][3]).toMatchObject({
+      credits: 113,
+      markupPercent: 50,
+    })
+  })
+
   it('generates for a Free user and charges it as an Explain spend', async () => {
     const users = await import('../_lib/users')
     vi.mocked(users.getOrCreateUser).mockResolvedValueOnce({
@@ -933,17 +1000,19 @@ describe('explain', () => {
     expect(credits.reserveCredits).toHaveBeenCalledWith(
       fakeDb,
       'user_1',
-      221,
+      287,
       'spend.explain',
     )
-    // 773 + 59 tokens from the generateExplain mock → 83 Credits.
+    // Reported $0.0001068 provider cost plus 30% markup → 98 Credits.
     expect(credits.reconcileSpend).toHaveBeenCalledTimes(1)
     expect(credits.reconcileSpend).toHaveBeenCalledWith(
       fakeDb,
       'user_1',
       { ledgerId: 'ledger_1', reserved: 5 },
       {
-        credits: 83,
+        credits: 98,
+        costUsd: 0.0001068,
+        markupPercent: 30,
         promptTokens: 773,
         completionTokens: 59,
         modelId: 'test/model',
@@ -970,7 +1039,7 @@ describe('explain', () => {
         details: {
           code: 'insufficient_credits',
           balance: 3,
-          requiredCredits: 221,
+          requiredCredits: 287,
         },
       },
     })
@@ -1009,6 +1078,39 @@ describe('explain', () => {
 })
 
 describe('in-app dictation', () => {
+  it('applies configured markup to dictation charges', async () => {
+    const ai = await import('../_lib/ai')
+    vi.mocked(ai.draftCharacterFromDictation).mockResolvedValueOnce({
+      draft: { ok: true, name: 'Tomoko' },
+      tokenUsage: {
+        modelId: 'test/model',
+        promptTokens: 800,
+        completionTokens: 0,
+        costUsd: 0.001,
+      },
+    })
+    const res = await app.request(
+      '/api/ai/dictation',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ prompt: 'hey' }),
+      },
+      { ...env, CREDIT_MARKUP_PERCENT: '50' },
+    )
+    expect(res.status).toBe(200)
+    expect(credits.reserveCredits).toHaveBeenCalledWith(
+      fakeDb,
+      'user_1',
+      331,
+      'spend.dictation',
+    )
+    expect(vi.mocked(credits.reconcileSpend).mock.calls[0][3]).toMatchObject({
+      credits: 1050,
+      markupPercent: 50,
+    })
+  })
+
   it('refunds the hold when reported usage is malformed', async () => {
     const ai = await import('../_lib/ai')
     vi.mocked(ai.draftCharacterFromDictation).mockResolvedValueOnce({

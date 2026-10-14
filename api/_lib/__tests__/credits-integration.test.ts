@@ -29,7 +29,7 @@ async function state(db: Client, id: string) {
 describe.runIf(process.env.RUN_LOCAL_DB_PERF === '1')(
   'local database credits',
   () => {
-    it('charges total usage once per translation and does not spend credits for a rejected third request', async () => {
+    it('charges provider cost plus markup once per translation and does not spend credits for a rejected third request', async () => {
       const [db] = localClients(1)
       const id = fixtureId('two-translations')
       const email = `${id}@example.invalid`
@@ -44,14 +44,14 @@ describe.runIf(process.env.RUN_LOCAL_DB_PERF === '1')(
           await getOrCreateUser(db, id, email)
           // Hold half the welcome grant. Two provider calls fit; a third does not.
           const estimate = 25_000
-          // Illustrative recorded provider usage: 99 output tokens is only one
-          // part of the charge. The reservation is replaced, never added to it.
+          // Provider cost replaces the reservation, never adds to it; the
+          // token counts remain available for audit without setting the price.
           const cost = computeCredits(
             {
               promptTokens: 249_391,
               completionTokens: 99,
               modelId: 'test/model',
-              costUsd: 0.049949,
+              costUsd: 0.027416,
             },
             estimate,
           )

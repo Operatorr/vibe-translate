@@ -5,6 +5,7 @@ import { toCredits } from '../credit-units'
 
 import {
   computeCredits,
+  creditMarkupPercent,
   estimateCredits,
   reconcileSpend,
   refundReservation,
@@ -45,41 +46,53 @@ const usage = (
   completionTokens: number | null,
   costUsd?: number,
 ) => ({ promptTokens, completionTokens, modelId: 'openai/gpt-6-luna', costUsd })
-const HOLD = 221
+const HOLD = 287
 
 describe('computeCredits', () => {
-  it('charges 83 whole Credits for the screenshot’s 773 input + 59 output tokens', () => {
+  it('converts provider cost to credits and adds the default 30% markup', () => {
     expect(
       toCredits(computeCredits(usage(773, 59, 0.0001068), HOLD).credits),
-    ).toBe(83)
-    expect(computeCredits(usage(796, 91), HOLD).credits).toBe(89)
-    expect(computeCredits(usage(788, 127), HOLD).credits).toBe(92)
+    ).toBe(98)
+    expect(computeCredits(usage(800, 0, 0.001), HOLD).credits).toBe(910)
   })
-  it('keeps USD cost for audit without using it to set the token charge', () => {
+  it('prices the provider cost rather than token volume', () => {
     expect(computeCredits(usage(773, 59, 0.00004), HOLD)).toMatchObject({
-      credits: 83,
+      credits: 37,
       costUsd: 0.00004,
+      markupPercent: 30,
     })
-    expect(computeCredits(usage(773, 59), HOLD).credits).toBe(83)
+    expect(computeCredits(usage(1, 0, 0.001), HOLD).credits).toBe(910)
+    expect(computeCredits(usage(773, 59, 0.001), HOLD, 50).credits).toBe(1050)
+    expect(computeCredits(usage(773, 59, 0.001), HOLD, 0).credits).toBe(700)
   })
-  it('rounds half credits upward and has a minimum one-credit call charge', () => {
-    expect(computeCredits(usage(10, 15), HOLD).credits).toBe(3)
-    expect(computeCredits(usage(1, 0), HOLD).credits).toBe(1)
-    expect(computeCredits(usage(0, 0), HOLD).credits).toBe(1)
+  it('rounds up and has a minimum one-credit charge', () => {
+    expect(computeCredits(usage(10, 15, 0.000025), HOLD).credits).toBe(23)
+    expect(computeCredits(usage(1, 0, 0.0000001), HOLD).credits).toBe(1)
+    expect(computeCredits(usage(0, 0, 0), HOLD).credits).toBe(1)
   })
   it.each([
     ['input', usage(null, 59, 0.01)],
     ['output', usage(773, null, 0.01)],
     ['both', usage(null, null, 0.01)],
   ])(
-    'settles at the hold when %s token counts are unreported',
+    'uses a complete provider cost even when %s token counts are absent',
     (_, unreported) => {
       expect(computeCredits(unreported, HOLD)).toMatchObject({
-        credits: HOLD,
+        credits: 9100,
         promptTokens: unreported.promptTokens,
         completionTokens: unreported.completionTokens,
         costUsd: 0.01,
       })
+    },
+  )
+  it('settles at the already marked-up hold when cost is absent', () => {
+    expect(computeCredits(usage(773, 59), HOLD).credits).toBe(HOLD)
+    expect(computeCredits(usage(null, null), HOLD).credits).toBe(HOLD)
+  })
+  it.each([-1, Number.NaN, Number.POSITIVE_INFINITY, 1e10])(
+    'rejects invalid or unrepresentable provider cost %s',
+    (cost) => {
+      expect(() => computeCredits(usage(773, 59, cost), HOLD)).toThrow()
     },
   )
   it.each([
@@ -89,15 +102,33 @@ describe('computeCredits', () => {
     [Number.NaN, 10],
     [Number.MAX_SAFE_INTEGER, 1],
   ])('rejects malformed counts (%s input, %s output)', (input, output) => {
-    expect(() => computeCredits(usage(input, output), HOLD)).toThrow(
+    expect(() => computeCredits(usage(input, output, 0.001), HOLD)).toThrow(
       'Invalid token usage',
     )
   })
 })
 
+describe('creditMarkupPercent', () => {
+  it('defaults to 30 and accepts configured percentages', () => {
+    expect(creditMarkupPercent({})).toBe(30)
+    expect(creditMarkupPercent({ CREDIT_MARKUP_PERCENT: '' })).toBe(30)
+    expect(creditMarkupPercent({ CREDIT_MARKUP_PERCENT: '50' })).toBe(50)
+    expect(creditMarkupPercent({ CREDIT_MARKUP_PERCENT: '0' })).toBe(0)
+  })
+  it.each(['oops', '-1', 'Infinity'])(
+    'rejects invalid configuration %s',
+    (value) => {
+      expect(() =>
+        creditMarkupPercent({ CREDIT_MARKUP_PERCENT: value }),
+      ).toThrow('Invalid credit markup percentage')
+    },
+  )
+})
+
 describe('estimateCredits', () => {
   it('includes prompt and structured output overhead and grows with input length', () => {
-    expect(estimateCredits('hi')).toBe(221)
+    expect(estimateCredits('hi')).toBe(287)
+    expect(estimateCredits('hi', 50)).toBe(331)
     expect(estimateCredits('x'.repeat(4000))).toBeGreaterThan(
       estimateCredits('hi'),
     )
@@ -139,7 +170,7 @@ describe('reserveCredits', () => {
 describe('reconcileSpend', () => {
   it('rewrites the pending ledger row to the actual cost', async () => {
     const { db, calls } = fakeClient({}, 58)
-    const cost = computeCredits(usage(10, 10), 42)
+    const cost = computeCredits(usage(10, 10, 0.000002), 42)
     const balance = await reconcileSpend(
       db,
       'user-1',
@@ -156,6 +187,11 @@ describe('reconcileSpend', () => {
     )
     expect(ledgerUpdate?.params).toContain(-cost.credits)
     expect(ledgerUpdate?.params).toContain('seg-1')
+    expect(JSON.parse(ledgerUpdate?.params?.[3] as string)).toMatchObject({
+      costUsd: 0.000002,
+      markupPercent: 30,
+      creditsPerUsd: 700_000,
+    })
   })
 })
 
