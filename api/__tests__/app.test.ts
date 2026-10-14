@@ -61,13 +61,6 @@ vi.mock('../_lib/openrouter', () => ({
     reasoning: undefined,
   })),
 }))
-vi.mock('../_lib/model-pricing', () => ({
-  getModelPricing: vi.fn(async () => ({
-    prompt: 0.000001,
-    completion: 0.000001,
-    request: 0,
-  })),
-}))
 vi.mock('../_lib/ai', () => ({
   translateSegment: vi.fn(async () => ({
     targetText: 'やあ',
@@ -75,6 +68,20 @@ vi.mock('../_lib/ai', () => ({
     tokenUsage: { modelId: 'test/model', promptTokens: 5, completionTokens: 3 },
   })),
   draftCharacterFromDictation: vi.fn(),
+}))
+vi.mock('../_lib/explain', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../_lib/explain')>()),
+  generateExplain: vi.fn(async () => ({
+    version: 1,
+    body: {
+      romaji: 'yaa',
+      literalGloss: [],
+      morphemes: [],
+      kanji: [],
+      grammarPatterns: [],
+    },
+    tokenUsage: { modelId: 'test/model', promptTokens: 7, completionTokens: 4 },
+  })),
 }))
 vi.mock('../_lib/credits', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../_lib/credits')>()),
@@ -346,8 +353,7 @@ describe('translate credit ordering', () => {
       'user_1',
       { ledgerId: 'ledger_1', reserved: 5 },
       {
-        credits: 8,
-        costUsd: 0.000008,
+        credits: 1,
         promptTokens: 5,
         completionTokens: 3,
         modelId: 'test/model',
@@ -360,12 +366,12 @@ describe('translate credit ordering', () => {
 
   // 5 prompt + 3 completion tokens from the translateSegment mock.
   it.each([
-    { label: 'platform at 1x', isByok: false, multiplier: 1, charged: 8 },
+    { label: 'platform at 1x', isByok: false, multiplier: 1, charged: 1 },
     {
       label: 'platform with legacy multiplier 2',
       isByok: false,
       multiplier: 2,
-      charged: 8,
+      charged: 1,
     },
     { label: 'BYOK', isByok: true, multiplier: 2, charged: 0 },
   ])(
@@ -395,7 +401,7 @@ describe('translate credit ordering', () => {
       })
       expect(res.status).toBe(201)
       expect(await res.json()).toMatchObject({
-        tokenUsage: { creditsCharged: charged / 10 },
+        tokenUsage: { creditsCharged: charged },
       })
       expect(usage).toMatchObject({
         promptTokens: 5,
@@ -429,8 +435,8 @@ describe('translate credit ordering', () => {
       error: {
         details: {
           code: 'insufficient_credits',
-          balance: 19.8,
-          requiredCredits: 220.3,
+          balance: 198,
+          requiredCredits: 221,
         },
       },
     })
@@ -454,6 +460,66 @@ describe('translate credit ordering', () => {
     expect(res.status).toBe(500)
     expect(credits.refundReservation).toHaveBeenCalledTimes(1)
     expect(credits.reconcileSpend).not.toHaveBeenCalled()
+  })
+
+  it('refunds without storing a Segment when reported usage is malformed', async () => {
+    const ai = await import('../_lib/ai')
+    vi.mocked(ai.translateSegment).mockResolvedValueOnce({
+      targetText: 'やあ',
+      tokenAlignment: [],
+      tokenUsage: {
+        modelId: 'test/model',
+        promptTokens: -100,
+        completionTokens: 100,
+      },
+    })
+    answer = createAnswers
+    const res = await postJson('/api/segments', {
+      threadId: THREAD,
+      sourceText: 'hi',
+      vibe: 'casual',
+    })
+    expect(res.status).toBe(500)
+    expect(credits.refundReservation).toHaveBeenCalledWith(fakeDb, 'user_1', {
+      ledgerId: 'ledger_1',
+      reserved: 5,
+    })
+    expect(credits.reconcileSpend).not.toHaveBeenCalled()
+    expect(queries.some((q) => q.startsWith('insert into segments'))).toBe(
+      false,
+    )
+  })
+
+  it('settles at the hold when the provider left token counts unreported', async () => {
+    const ai = await import('../_lib/ai')
+    vi.mocked(ai.translateSegment).mockResolvedValueOnce({
+      targetText: 'やあ',
+      tokenAlignment: [],
+      tokenUsage: {
+        modelId: 'test/model',
+        promptTokens: null,
+        completionTokens: 3,
+        costUsd: 0.01,
+      },
+    })
+    let usage: Record<string, unknown> | undefined
+    answer = (sql, params) => {
+      if (sql.startsWith('insert into segments')) {
+        usage = JSON.parse(params[7] as string)
+        return { rows: [{ ...segmentRow(), token_usage: usage }] }
+      }
+      return createAnswers(sql, params)
+    }
+    const res = await postJson('/api/segments', {
+      threadId: THREAD,
+      sourceText: 'hi',
+      vibe: 'casual',
+    })
+    expect(res.status).toBe(201)
+    expect(usage).toMatchObject({ promptTokens: null, creditsCharged: 5 })
+    const [, , , cost] = vi.mocked(credits.reconcileSpend).mock.calls[0]
+    expect(cost.credits).toBe(5)
+    expect(credits.refundReservation).not.toHaveBeenCalled()
   })
 
   it('marks a shared-cache hit as cached', async () => {
@@ -828,6 +894,74 @@ describe('translate credit ordering', () => {
     expect(credits.reconcileSpend).not.toHaveBeenCalled()
     const update = queries.find((q) => q.startsWith('with updated as'))
     expect(update).toContain('where id = $1 and user_id = $5')
+  })
+})
+
+describe('explain', () => {
+  const segmentAnswers = (sql: string): Answer => {
+    if (sql.startsWith('select s.user_id, s.source_text'))
+      return {
+        rows: [
+          {
+            user_id: 'user_1',
+            source_text: 'hi',
+            target_text: 'やあ',
+            source_language: 'en-US',
+            target_language: 'ja-JP',
+            persona: { traits: [] },
+          },
+        ],
+      }
+    if (sql.startsWith('insert into explains'))
+      return { rows: [{ id: 'explain_1' }] }
+    return { rows: [] }
+  }
+
+  it('refunds before caching when reported usage is malformed', async () => {
+    const explain = await import('../_lib/explain')
+    vi.mocked(explain.generateExplain).mockResolvedValueOnce({
+      version: 1,
+      body: {},
+      tokenUsage: {
+        modelId: 'test/model',
+        promptTokens: 0.5,
+        completionTokens: 0.5,
+      },
+    })
+    answer = segmentAnswers
+    const res = await call(`/api/segments/${SEGMENT}/explain`)
+    expect(res.status).toBe(500)
+    expect(credits.refundReservation).toHaveBeenCalledWith(fakeDb, 'user_1', {
+      ledgerId: 'ledger_1',
+      reserved: 5,
+    })
+    expect(credits.reconcileSpend).not.toHaveBeenCalled()
+    expect(queries.some((q) => q.startsWith('insert into explains'))).toBe(
+      false,
+    )
+  })
+})
+
+describe('in-app dictation', () => {
+  it('refunds the hold when reported usage is malformed', async () => {
+    const ai = await import('../_lib/ai')
+    vi.mocked(ai.draftCharacterFromDictation).mockResolvedValueOnce({
+      draft: { ok: false },
+      tokenUsage: {
+        modelId: 'test/model',
+        promptTokens: -1,
+        completionTokens: 10,
+      },
+    })
+    const res = await postJson('/api/ai/dictation', {
+      prompt: 'Tomoko in Tokyo, casual Japanese',
+    })
+    expect(res.status).toBe(500)
+    expect(credits.refundReservation).toHaveBeenCalledWith(fakeDb, 'user_1', {
+      ledgerId: 'ledger_1',
+      reserved: 5,
+    })
+    expect(credits.reconcileSpend).not.toHaveBeenCalled()
   })
 })
 
@@ -1323,21 +1457,21 @@ describe('credit history', () => {
     expect(body.ledger).toEqual([
       {
         id: 'ledger_hold',
-        delta: -41.2,
+        delta: -412,
         reason: 'spend.translate',
         pending: true,
         createdAt: '2026-10-01T10:00:02.000Z',
       },
       {
         id: 'ledger_spend',
-        delta: -0.8,
+        delta: -8,
         reason: 'spend.translate',
         pending: false,
         createdAt: '2026-10-01T10:00:01.000Z',
       },
       {
         id: 'ledger_grant',
-        delta: 2500,
+        delta: 25000,
         reason: 'grant.purchase',
         pending: false,
         createdAt: '2026-10-01T10:00:00.000Z',
@@ -1381,7 +1515,7 @@ describe('credit history', () => {
       const body = await expectSnapshotResponse(
         await call(`/api/users/me/credits?orderId=${ORDER}`),
       )
-      expect(body.order).toEqual({ credits: 2500, fulfilled })
+      expect(body.order).toEqual({ credits: 25000, fulfilled })
       expect(statements()).toEqual([
         SNAPSHOT,
         'users',

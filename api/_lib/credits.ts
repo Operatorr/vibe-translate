@@ -1,18 +1,17 @@
 import type { Client } from 'pg'
-import { dollarUnits } from './credit-units'
-import type { ModelPricing } from './model-pricing'
+import { TOKENS_PER_CREDIT } from './credit-units'
 import type { TokenUsage } from './openrouter'
 
 // Credit accounting for the platform key path. BYOK requests skip this
 // module entirely — see docs/adr/0003.
 
 export type CreditCost = {
-  // Integer accounting units ($0.000001 each), converted to Credits by the API.
+  // Whole Credits: total model tokens divided by ten, rounded per request.
   credits: number
   costUsd?: number
-  // Underlying token breakdown for the credit_ledger row.
-  promptTokens: number
-  completionTokens: number
+  // Underlying token breakdown for the credit_ledger row; null when unreported.
+  promptTokens: number | null
+  completionTokens: number | null
   modelId: string
 }
 
@@ -202,28 +201,32 @@ export async function recordGrant(
   }
 }
 
-export function computeCredits(
-  usage: TokenUsage,
-  pricing: ModelPricing,
-): CreditCost {
-  const costUsd =
-    usage.costUsd ??
-    usage.promptTokens * pricing.prompt +
-      usage.completionTokens * pricing.completion +
-      (usage.requests ?? 1) * pricing.request
-  return { ...usage, costUsd, credits: dollarUnits(costUsd) }
+const isTokenCount = (value: number) =>
+  Number.isSafeInteger(value) && value >= 0
+
+// The settled charge for a completed platform call. When the provider left a
+// token count unreported, the request settles at its hold rather than as a
+// one-Credit call. Malformed counts throw; callers refund the hold.
+export function computeCredits(usage: TokenUsage, hold: number): CreditCost {
+  const { promptTokens, completionTokens } = usage
+  if (promptTokens === null || completionTokens === null)
+    return { ...usage, credits: hold }
+  const tokens = promptTokens + completionTokens
+  if (
+    !isTokenCount(promptTokens) ||
+    !isTokenCount(completionTokens) ||
+    !Number.isSafeInteger(tokens)
+  )
+    throw new Error('Invalid token usage')
+  return {
+    ...usage,
+    credits: Math.max(1, Math.round(tokens / TOKENS_PER_CREDIT)),
+  }
 }
 
-// A temporary concurrency hold, settled to reported USD cost after the call.
-// Includes system/schema overhead and room for structured output.
-export function estimateCredits(text: string, pricing: ModelPricing): number {
+// Temporary hold including prompt/schema overhead and structured output.
+// Replaced by the actual token-derived charge when the request completes.
+export function estimateCredits(text: string): number {
   const inputTokens = Math.ceil(text.length / 4)
-  return Math.max(
-    1,
-    dollarUnits(
-      (1200 + inputTokens) * pricing.prompt +
-        (1000 + inputTokens * 2) * pricing.completion +
-        pricing.request,
-    ),
-  )
+  return Math.max(1, Math.ceil((2200 + inputTokens * 3) / TOKENS_PER_CREDIT))
 }

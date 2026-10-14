@@ -83,7 +83,8 @@ The user's subscription level — `free`, `pro`, or `team` — granting a **Cred
 _Avoid_: plan (used only at billing checkout), subscription level
 
 **Credits**:
-The platform-key budget unit. One Credit covers $0.00001 of model usage; charges follow provider-reported USD cost, with input/output prices as a fallback. Free receives 10,000 welcome credits once ($0.10); Pro receives 500,000/month ($5), and Linguist (`team`) receives 2,000,000/month ($20). Annual renewals grant 12× the monthly amount at once. Credits can also be bought as one-time top-up packs. A fully refunded or charged-back top-up is reversed in full, which can leave the balance negative until later grants cover it. Stored as integer microdollars on `users.credits_balance` (10 units per displayed Credit); every spend and grant is recorded in `credit_ledger`. **BYOK** users bypass credits.
+The platform-key budget unit. One Credit represents ten model tokens; each request’s input and output tokens are added, divided by ten, and rounded to a whole Credit (minimum one). Free receives 50,000 welcome credits once; Pro receives 3,500,000/month and Linguist (`team`) receives 14,000,000/month. Annual billing grants twelve months at once. Paid allowances approximate the agreed $5/$20 monthly Luna cost budgets; Credits have no fixed dollar exchange rate. One-time top-ups add 1,000,000, 5,000,000 or 10,000,000 Credits. Fully refunded or charged-back purchases are reversed using their snapshotted grant, which may leave the balance negative. Balances and ledger deltas are whole Credits in `users.credits_balance` and `credit_ledger`. **BYOK** users bypass credits.
+
 _Avoid_: tokens (confusable with model tokens), quota, allowance
 
 **BYOK** (Bring Your Own Key):

@@ -13,10 +13,10 @@ import {
   reconcileSpend,
   refundReservation,
   reserveCredits,
+  type CreditCost,
   type Reservation,
 } from './_lib/credits'
 import { toCredits } from './_lib/credit-units'
-import { getModelPricing } from './_lib/model-pricing'
 import { createDbClient, withDb } from './_lib/db'
 import {
   embedText,
@@ -880,12 +880,9 @@ async function translateWithCredits(
 ) {
   const target =
     resolvedTarget ?? (await resolveCallTarget(db, env, userId, 'translate'))
-  const pricing = target.isByok
-    ? { prompt: 0, completion: 0, request: 0 }
-    : await getModelPricing(target.modelId)
   let reservation: Reservation | null = null
   if (!target.isByok) {
-    const estimate = estimateCredits(sourceText, pricing)
+    const estimate = estimateCredits(sourceText)
     reservation = await reserveCredits(db, userId, estimate, 'spend.translate')
     if (!reservation) {
       throw new InsufficientCreditsError(await getBalance(db, userId), estimate)
@@ -910,6 +907,7 @@ async function translateWithCredits(
     }
   }
   let result
+  let cost: CreditCost | null = null
   try {
     result = await translateSegment(
       {
@@ -929,23 +927,26 @@ async function translateWithCredits(
         reasoning: target.reasoning,
       },
     )
+    // Price the reported usage before anything is persisted, so a rejected
+    // usage report still releases the hold.
+    if (reservation)
+      cost = computeCredits(result.tokenUsage, reservation.reserved)
   } catch (error) {
     // refund() logs its own failure; surface the model error, not the refund's.
     await refund().catch(() => undefined)
     throw error
   }
-  const cost = computeCredits(result.tokenUsage, pricing)
   // Persist the generation-time charge alongside usage; later registry changes
   // must not change the amount a card displays. BYOK has no platform charge.
   const billedResult = {
     ...result,
     tokenUsage: {
       ...result.tokenUsage,
-      creditsCharged: target.isByok ? 0 : cost.credits,
+      creditsCharged: cost?.credits ?? 0,
     },
   }
   const settle = async (referenceId: string | null) => {
-    if (!reservation) return
+    if (!reservation || !cost) return
     await reconcileSpend(db, userId, reservation, cost, referenceId)
     reservation = null
   }
@@ -1444,14 +1445,10 @@ app.get('/api/segments/:segmentId/explain', (c) => {
     // reconcile. The atomic reservation gates concurrency; it is refunded if the
     // model call fails.
     const target = await resolveCallTarget(db, c.env, userId, 'explain')
-    const pricing = target.isByok
-      ? { prompt: 0, completion: 0, request: 0 }
-      : await getModelPricing(target.modelId)
     let reservation: Reservation | null = null
     if (!target.isByok) {
       const estimate = estimateCredits(
         `${segment.source_text}\n${segment.target_text}`,
-        pricing,
       )
       reservation = await reserveCredits(db, userId, estimate, 'spend.explain')
       if (!reservation) {
@@ -1464,6 +1461,7 @@ app.get('/api/segments/:segmentId/explain', (c) => {
 
     let result: Awaited<ReturnType<typeof generateExplain>>
     let explainId: string
+    let cost: CreditCost | null = null
     try {
       result = await generateExplain(
         {
@@ -1480,6 +1478,10 @@ app.get('/api/segments/:segmentId/explain', (c) => {
           reasoning: target.reasoning,
         },
       )
+      // Price the usage before the Explain is cached, so a rejected usage
+      // report refunds the hold instead of leaving it pending.
+      if (reservation)
+        cost = computeCredits(result.tokenUsage, reservation.reserved)
       const inserted = await db.query<{ id: string }>(
         `insert into explains
            (segment_id, user_id, target_language, target_text, target_text_hash, version, body, token_usage)
@@ -1509,10 +1511,8 @@ app.get('/api/segments/:segmentId/explain', (c) => {
       throw error
     }
     // Stored (and cached for next time) → charge; never refund after this.
-    if (reservation) {
-      const cost = computeCredits(result.tokenUsage, pricing)
+    if (reservation && cost)
       await reconcileSpend(db, userId, reservation, cost, explainId)
-    }
     return c.json({
       segmentId,
       version: result.version,
@@ -1661,8 +1661,7 @@ app.post(
       // read, then reconcile to the real cost — or refund when the parse degrades
       // to the empty-form fallback and there's nothing billable.
       const target = await resolveCallTarget(db, c.env, userId, 'dictation')
-      const pricing = await getModelPricing(target.modelId)
-      const estimate = estimateCredits(prompt, pricing)
+      const estimate = estimateCredits(prompt)
       const reservation = await reserveCredits(
         db,
         userId,
@@ -1682,12 +1681,24 @@ app.post(
         appUrl: c.env.APP_URL,
         reasoning: target.reasoning,
       })
-      if (tokenUsage) {
-        const cost = computeCredits(tokenUsage, pricing)
-        await reconcileSpend(db, userId, reservation, cost, null)
-      } else {
+      if (!tokenUsage) {
         await refundReservation(db, userId, reservation)
+        return c.json({ ...draft, prompt })
       }
+      let cost: CreditCost
+      try {
+        cost = computeCredits(tokenUsage, reservation.reserved)
+      } catch (error) {
+        await refundReservation(db, userId, reservation).catch((refundError) =>
+          console.error('credit refund failed', {
+            userId,
+            ledgerId: reservation.ledgerId,
+            refundError,
+          }),
+        )
+        throw error
+      }
+      await reconcileSpend(db, userId, reservation, cost, null)
       return c.json({ ...draft, prompt })
     })
   },

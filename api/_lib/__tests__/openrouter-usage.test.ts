@@ -11,10 +11,17 @@ vi.mock('openai', () => ({
 import { chatJson } from '../openrouter'
 
 beforeEach(() => create.mockReset())
-const reply = (content: string, cost: number | null) => ({
+const reply = (
+  content: string,
+  cost: number | null,
+  tokens: { prompt_tokens?: unknown; completion_tokens?: unknown } = {
+    prompt_tokens: 773,
+    completion_tokens: 59,
+  },
+) => ({
   model: 'openai/gpt-6-luna',
   choices: [{ message: { content } }],
-  usage: { prompt_tokens: 773, completion_tokens: 59, cost },
+  usage: { ...tokens, cost },
 })
 const args = {
   apiKey: 'test',
@@ -47,4 +54,44 @@ describe('provider cost accounting', () => {
     expect(usage.costUsd).toBeUndefined()
     expect(usage.promptTokens).toBe(1546)
   })
+})
+
+describe('provider token counts', () => {
+  it.each([
+    ['input', { completion_tokens: 59 }, null, 59],
+    ['output', { prompt_tokens: 773 }, 773, null],
+    ['both', {}, null, null],
+  ])(
+    'reports a missing %s count as unknown, not zero',
+    async (_, tokens, promptTokens, completionTokens) => {
+      create.mockResolvedValue(reply('{"text":"ok"}', 0.01, tokens))
+      expect((await chatJson(args)).tokenUsage).toMatchObject({
+        promptTokens,
+        completionTokens,
+        costUsd: 0.01,
+      })
+    },
+  )
+  it('keeps a count unknown when only the failed first attempt omitted it', async () => {
+    create
+      .mockResolvedValueOnce(reply('bad json', 0.01, { completion_tokens: 59 }))
+      .mockResolvedValueOnce(reply('{"text":"ok"}', 0.01))
+    expect((await chatJson(args)).tokenUsage).toMatchObject({
+      promptTokens: null,
+      completionTokens: 118,
+      requests: 2,
+    })
+  })
+  it.each([-100, 0.5, '773', Number.NaN])(
+    'treats a malformed reported count (%s) as unknown',
+    async (count) => {
+      create.mockResolvedValue(
+        reply('{"text":"ok"}', 0.01, {
+          prompt_tokens: count,
+          completion_tokens: 59,
+        }),
+      )
+      expect((await chatJson(args)).tokenUsage.promptTokens).toBeNull()
+    },
+  )
 })

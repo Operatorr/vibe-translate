@@ -849,7 +849,7 @@ const LandingContent = ({ onNavigate }: { onNavigate: NavigateFn }) => {
             />
             <FAQItem
               q="Do you have a free tier?"
-              a="Yes — 10,000 welcome credits, 3 saved characters, no API access. Enough to try every vibe; top up or upgrade when you need more."
+              a="Yes — 50,000 welcome credits, 3 saved characters, no API access. Enough to try every vibe; top up or upgrade when you need more."
             />
           </div>
         </div>
@@ -866,7 +866,7 @@ const LandingContent = ({ onNavigate }: { onNavigate: NavigateFn }) => {
             Translate something nobody else can.
           </RevealHeading>
           <p className="cta-strip__sub">
-            Free to start. No credit card. Your first 10,000 credits are on us.
+            Free to start. No credit card. Your first 50,000 credits are on us.
           </p>
           <div className="hero__ctas">
             <button

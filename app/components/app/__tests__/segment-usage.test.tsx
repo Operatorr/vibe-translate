@@ -54,7 +54,7 @@ describe('translation usage on a segment card', () => {
     expect(valueFor('Total tokens')).toBe('449')
     expect(valueFor('Credits charged')).toBe(NR)
     expect(
-      screen.getByText(/credits are charged from the model’s actual cost/i),
+      screen.getByText(/one credit per ten input and output tokens/i),
     ).toBeTruthy()
   })
   it('shows the actual stored credit charge separately from provider token usage', async () => {

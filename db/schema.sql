@@ -93,7 +93,7 @@ create table if not exists users (
   billing_period text not null default 'monthly' check (billing_period in ('monthly', 'annual')),
   onboarding_complete boolean not null default false,
   locale text,
-  -- Integer microdollars; 10 units = 1 displayed Credit. See adr/0003.
+  -- Whole Credits: total model tokens divided by ten, rounded per request. See adr/0003.
   credits_balance integer not null default 0,
   credits_refilled_at timestamptz,
   -- BYOK: optional per-user OpenRouter key, encrypted at rest (AES-GCM).

@@ -24,14 +24,14 @@ const UPGRADES: Record<UserTier | 'unknown', Upgrade | null> = {
   free: {
     eyebrow: 'MORE ROOM TO EXPLORE',
     title: 'Upgrade to Pro',
-    body: '500,000 credits monthly or 6,000,000 annually, up from 10,000 welcome credits.',
+    body: '3,500,000 credits monthly or 42,000,000 annually, up from 50,000 welcome credits.',
     cta: 'Explore Pro',
     plan: 'Pro',
   },
   pro: {
     eyebrow: 'NEED A BIGGER ALLOWANCE?',
     title: 'Upgrade to Linguist',
-    body: '2,000,000 credits monthly or 24,000,000 annually, four times Pro’s allowance.',
+    body: '14,000,000 credits monthly or 168,000,000 annually, four times Pro’s allowance.',
     cta: 'Explore Linguist',
     plan: 'Linguist',
   },

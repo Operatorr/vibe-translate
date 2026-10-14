@@ -67,8 +67,10 @@ function reasoningParam(
 
 export type TokenUsage = {
   modelId: string
-  promptTokens: number
-  completionTokens: number
+  // Summed across attempts. Null when any attempt omitted the count or reported
+  // a malformed one, so billing never mistakes unknown usage for zero tokens.
+  promptTokens: number | null
+  completionTokens: number | null
   // OpenRouter reports USD; retain sub-cent precision for credit accounting.
   costUsd?: number
   requests?: number
@@ -117,6 +119,13 @@ function buildErrorMessage(label: string, error: unknown): string {
   return `${label} provider request failed`
 }
 
+// A summed count stays known only while every attempt reports a whole number.
+function addTokenCount(total: number | null, count: unknown): number | null {
+  return total !== null && Number.isSafeInteger(count) && (count as number) >= 0
+    ? total + (count as number)
+    : null
+}
+
 // One model call with strict structured output + a single corrective retry on
 // malformed/invalid JSON. Maps SDK failures onto Hono HTTPExceptions; following
 // the convention in api/_lib/ai.ts, timeouts and unreachable providers both
@@ -142,8 +151,8 @@ export async function chatJson<T>(
     : undefined
 
   let lastError = ''
-  let totalPromptTokens = 0
-  let totalCompletionTokens = 0
+  let totalPromptTokens: number | null = 0
+  let totalCompletionTokens: number | null = 0
   let totalCostUsd = 0
   let allCostsReported = true
 
@@ -185,8 +194,11 @@ export async function chatJson<T>(
     const usage = completion.usage as
       | (OpenAI.Completions.CompletionUsage & { cost?: number })
       | undefined
-    totalPromptTokens += usage?.prompt_tokens ?? 0
-    totalCompletionTokens += usage?.completion_tokens ?? 0
+    totalPromptTokens = addTokenCount(totalPromptTokens, usage?.prompt_tokens)
+    totalCompletionTokens = addTokenCount(
+      totalCompletionTokens,
+      usage?.completion_tokens,
+    )
     if (
       typeof usage?.cost === 'number' &&
       Number.isFinite(usage.cost) &&

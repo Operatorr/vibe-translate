@@ -114,8 +114,8 @@ async function runTask(task: Task, config: ProviderConfig): Promise<RunMetrics> 
   if (task === 'translate') {
     const r = await translateSegment(TRANSLATE_INPUT, config)
     return {
-      promptTokens: r.tokenUsage.promptTokens,
-      completionTokens: r.tokenUsage.completionTokens,
+      promptTokens: r.tokenUsage.promptTokens ?? 0,
+      completionTokens: r.tokenUsage.completionTokens ?? 0,
       ok: r.targetText.trim().length > 0,
       note: r.targetText.slice(0, 32),
     }
@@ -123,8 +123,8 @@ async function runTask(task: Task, config: ProviderConfig): Promise<RunMetrics> 
   if (task === 'explain') {
     const r = await generateExplain(EXPLAIN_INPUT, config)
     return {
-      promptTokens: r.tokenUsage.promptTokens,
-      completionTokens: r.tokenUsage.completionTokens,
+      promptTokens: r.tokenUsage.promptTokens ?? 0,
+      completionTokens: r.tokenUsage.completionTokens ?? 0,
       ok: typeof (r.body as { romaji?: unknown }).romaji === 'string',
       note: Object.keys(r.body).join(','),
     }

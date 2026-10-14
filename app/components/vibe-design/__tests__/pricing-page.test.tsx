@@ -53,14 +53,14 @@ describe('pricing copy', () => {
     expect(card('Free')).toContain('All 5 languages')
     expect(row('Languages')).toEqual(['Languages', '5', '5', '5'])
 
-    expect(card('Free')).toContain('10,000 credits')
-    expect(card('Pro')).toContain('6,000,000 credits per year')
-    expect(card('Linguist')).toContain('24,000,000 credits per year')
+    expect(card('Free')).toContain('50,000 credits')
+    expect(card('Pro')).toContain('42,000,000 credits per year')
+    expect(card('Linguist')).toContain('168,000,000 credits per year')
     expect(row('Credits')).toEqual([
       'Credits',
-      '10,000 welcome',
-      '6,000,000 per year',
-      '24,000,000 per year',
+      '50,000 welcome',
+      '42,000,000 per year',
+      '168,000,000 per year',
     ])
     expect(card('Free')).toContain('3 saved characters')
     expect(card('Pro')).toContain('100 saved characters')
@@ -72,8 +72,8 @@ describe('pricing copy', () => {
       '1,000',
     ])
     fireEvent.click(screen.getByRole('button', { name: 'Monthly' }))
-    expect(card('Pro')).toContain('500,000 credits per month')
-    expect(card('Linguist')).toContain('2,000,000 credits per month')
+    expect(card('Pro')).toContain('3,500,000 credits per month')
+    expect(card('Linguist')).toContain('14,000,000 credits per month')
     expect(card('Pro')).toContain('$18')
     expect(card('Linguist')).toContain('$64')
     // Explain is Pro+ (the API returns 403 on Free) and spends credits.
