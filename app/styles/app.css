@@ -4371,24 +4371,6 @@ body,
   width: 16px;
   height: 16px;
 }
-.explain__state--gate {
-  justify-content: space-between;
-  gap: 24px;
-  flex-wrap: wrap;
-  border: 1px dashed var(--border-strong);
-  padding: 16px;
-  margin-top: 8px;
-}
-.explain__state--gate strong {
-  color: var(--fg);
-}
-.explain__state--gate p {
-  margin: 4px 0 0;
-  max-width: 480px;
-}
-.explain__state--gate .vt-btn {
-  text-decoration: none;
-}
 .explain__state--error {
   color: var(--red-400);
   justify-content: space-between;

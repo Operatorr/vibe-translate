@@ -24,7 +24,7 @@ Self-hosted **Better Auth** ([adr/0008](./adr/0008-better-auth-replaces-clerk.md
 - **Every per-user table** (`characters`, `threads`, `segments`, `explains`, `credit_ledger`, `activity_log`) is scoped by `user_id = users.auth_user_id`, which is the Better Auth user id (`c.get('userId')`). All reads and writes must filter on it.
 - `assertUserOwnsResource(row.user_id, c.get('userId'))` is the explicit guard after any single-row fetch before mutate/return. On a mismatch it raises **404** (not 403), so the API never reveals that a resource id exists but belongs to another user — matching the scoped `where id = $1 and user_id = $2` deletes/updates.
 - Cascade deletes flow `auth_users` → `users` → character → thread → segment → explain (plus sessions and linked accounts). Deleting the identity removes all owned data and embeddings.
-- Tier feature gates (`explain`, `translationMemory`, `aiDictation`, `customVibeStops`) are enforced server-side via `canUseFeature`; the client UI gate is cosmetic only.
+- Tier feature gates (`translationMemory`, `aiDictation`, `customVibeStops`, `elevenLabsTts`) are enforced server-side via `canUseFeature`; the client UI gate is cosmetic only.
 
 ## The unauthenticated surface
 

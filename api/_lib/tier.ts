@@ -8,7 +8,6 @@ export const tierLimits = {
     credits: 10000,
     retentionDays: 30,
     aiDictation: false,
-    explain: false,
     translationMemory: false,
     customVibeStops: false,
     // Per-vibe ElevenLabs voices. Free tier reads back with the browser's
@@ -21,7 +20,6 @@ export const tierLimits = {
     credits: 25000,
     retentionDays: 365,
     aiDictation: true,
-    explain: true,
     translationMemory: true,
     customVibeStops: false,
     elevenLabsTts: true,
@@ -32,7 +30,6 @@ export const tierLimits = {
     credits: 250000,
     retentionDays: 1095,
     aiDictation: true,
-    explain: true,
     translationMemory: true,
     customVibeStops: true,
     elevenLabsTts: true,

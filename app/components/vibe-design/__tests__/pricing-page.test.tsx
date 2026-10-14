@@ -71,10 +71,11 @@ describe('pricing copy', () => {
       '100',
       '1,000',
     ])
-    // Explain is Pro+ (the API returns 403 on Free) and spends credits.
+    // Explain is on every tier and spends credits.
+    expect(card('Free')).toContain('Grammar explanations, charged from credits')
     expect(row('Inline Explain')).toEqual([
       'Inline Explain',
-      '',
+      'Charged from credits',
       'Charged from credits',
       'Charged from credits',
     ])

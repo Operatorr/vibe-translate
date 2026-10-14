@@ -118,9 +118,9 @@ const PricingContent = ({ onNavigate }: { onNavigate: NavigateFn }) => {
                   <Icon name="check" />
                   <span>6-stop vibe slider</span>
                 </div>
-                <div className="tier__feat tier__feat--off">
-                  <Icon name="x" />
-                  <span>Inline Explain</span>
+                <div className="tier__feat">
+                  <Icon name="check" />
+                  <span>Grammar explanations, charged from credits</span>
                 </div>
                 <div className="tier__feat tier__feat--off">
                   <Icon name="x" />
@@ -144,8 +144,7 @@ const PricingContent = ({ onNavigate }: { onNavigate: NavigateFn }) => {
               </span>
               <h3 className="tier__name">Pro</h3>
               <p className="tier__pitch">
-                For technical writers and devs shipping in 2+ languages. Unlocks
-                the Explain panel.
+                For technical writers and devs shipping in 2+ languages.
               </p>
               <div className="tier__price">
                 <span className="tier__price-num">{price(18, 14)}</span>
@@ -176,10 +175,6 @@ const PricingContent = ({ onNavigate }: { onNavigate: NavigateFn }) => {
                   <span>
                     <strong>100</strong> saved characters
                   </span>
-                </div>
-                <div className="tier__feat">
-                  <Icon name="check" />
-                  <span>Grammar explanations, charged from credits</span>
                 </div>
                 <div className="tier__feat">
                   <Icon name="check" />
@@ -382,9 +377,7 @@ const PricingContent = ({ onNavigate }: { onNavigate: NavigateFn }) => {
                 </tr>
                 <tr>
                   <td>Inline Explain</td>
-                  <td>
-                    <Icon name="minus" className="matrix__dash" />
-                  </td>
+                  <td>Charged from credits</td>
                   <td>Charged from credits</td>
                   <td>Charged from credits</td>
                 </tr>

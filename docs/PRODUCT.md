@@ -70,7 +70,7 @@ Tapping **Explain** on a target segment opens a structured analysis. For a Japan
 
 Explain is **language-aware**: the schema for "what an Explain looks like" varies per target language. Japanese gets kanji + JLPT; other languages get their equivalent scaffolding.
 
-Explain payloads are stored as **Explain memory** — one row per `(segment, version)`, deduped cross-segment by `(target_language, target_text_hash, version)`. The same Japanese sentence explained in two different threads reuses one row. Pro+ only.
+Explain payloads are stored as **Explain memory** — one row per `(segment, version)`, deduped cross-segment by `(target_language, target_text_hash, version)`. The same Japanese sentence explained in two different threads reuses one row. Available on every tier; a fresh generation spends **Credits** (a cache hit is free).
 
 ### Listen at the chosen Vibe
 
@@ -96,10 +96,10 @@ Why dictation-first despite the cost and failure risk: it produces a richer Char
 
 ## Tiers and Credits
 
-Tiers are `free`, `pro`, `team`, defined in `api/_lib/tier.ts`. The differentiator between tiers is the signup or billing-renewal **Credits** allowance, plus a feature flag matrix (Explain, Translation memory, AI dictation, custom Vibe stops). All tiers share the **same models** for translate, explain, and embed; the upgrade path is *more capacity*, not *better output*.
+Tiers are `free`, `pro`, `team`, defined in `api/_lib/tier.ts`. The differentiator between tiers is the signup or billing-renewal **Credits** allowance, plus a feature flag matrix (Translation memory, AI dictation, custom Vibe stops). All tiers share the **same models** for translate, explain, and embed; the upgrade path is *more capacity*, not *better output*.
 
-- **Free** — 10,000 one-time welcome credits, with no time-limited trial. Read-only access to past Segments stays unlimited.
-- **Pro** — 25,000 credits per billing renewal, unlocks Explain + Translation memory + AI dictation.
+- **Free** — 10,000 one-time welcome credits, with no time-limited trial. Explain is included and charged from credits. Read-only access to past Segments stays unlimited.
+- **Pro** — 25,000 credits per billing renewal, unlocks Translation memory + AI dictation.
 - **Team** — 250,000 credits per billing renewal, adds custom Vibe stops.
 
 The exact gate matrix lives in [BACKEND.md](./BACKEND.md#tiers).

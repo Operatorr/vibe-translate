@@ -1377,7 +1377,8 @@ app.delete('/api/segments/:segmentId', (c) => {
   })
 })
 
-// Generate-on-miss, cache-in-DB Explain (Pro+). Lookup order:
+// Generate-on-miss, cache-in-DB Explain (every tier; a generation spends
+// credits like a translation). Lookup order:
 //   1) explains where (segment_id, version = EXPLAIN_PAYLOAD_VERSION)
 //   2) explains where (user_id, target_language, target_text_hash, version)
 //      — cross-segment reuse for repeated target text
@@ -1386,8 +1387,7 @@ app.get('/api/segments/:segmentId/explain', (c) => {
   const userId = c.get('userId')
   const segmentId = uuidParam(c.req.param('segmentId'), 'Segment')
   return withDb(c.env, async (db) => {
-    const user = await getOrCreateUser(db, userId, c.get('email'))
-    canUseFeature(tierLimits[user.tier].explain)
+    await getOrCreateUser(db, userId, c.get('email'))
 
     const segRes = await db.query<{
       user_id: string

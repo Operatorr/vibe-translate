@@ -69,6 +69,14 @@ vi.mock('../_lib/ai', () => ({
   })),
   draftCharacterFromDictation: vi.fn(),
 }))
+vi.mock('../_lib/explain', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../_lib/explain')>()),
+  generateExplain: vi.fn(async () => ({
+    version: 1,
+    body: { romaji: 'yaa', literalGloss: [], grammarPatterns: [] },
+    tokenUsage: { modelId: 'test/model', promptTokens: 7, completionTokens: 4 },
+  })),
+}))
 vi.mock('../_lib/credits', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../_lib/credits')>()),
   reserveCredits: vi.fn(async () => ({ ledgerId: 'ledger_1', reserved: 5 })),
@@ -810,6 +818,48 @@ describe('translate credit ordering', () => {
     expect(credits.reconcileSpend).not.toHaveBeenCalled()
     const update = queries.find((q) => q.startsWith('with updated as'))
     expect(update).toContain('where id = $1 and user_id = $5')
+  })
+})
+
+describe('explain', () => {
+  const segmentAnswers = (sql: string): Answer => {
+    if (sql.startsWith('select s.user_id, s.source_text'))
+      return {
+        rows: [
+          {
+            user_id: 'user_1',
+            source_text: 'hi',
+            target_text: 'やあ',
+            source_language: 'en-US',
+            target_language: 'ja-JP',
+            persona: { traits: [] },
+          },
+        ],
+      }
+    if (sql.startsWith('insert into explains'))
+      return { rows: [{ id: 'explain_1' }] }
+    return { rows: [] }
+  }
+
+  it('generates for a Free user and charges it as an Explain spend', async () => {
+    const users = await import('../_lib/users')
+    vi.mocked(users.getOrCreateUser).mockResolvedValueOnce({
+      tier: 'free',
+    } as Awaited<ReturnType<typeof users.getOrCreateUser>>)
+    answer = segmentAnswers
+    const res = await call(`/api/segments/${SEGMENT}/explain`)
+    expect(res.status).toBe(200)
+    expect(await res.json()).toMatchObject({ cached: false })
+    expect(credits.reserveCredits).toHaveBeenCalledWith(
+      fakeDb,
+      'user_1',
+      expect.any(Number),
+      'spend.explain',
+    )
+    const [, , , cost, referenceId] = vi.mocked(credits.reconcileSpend).mock
+      .calls[0]
+    expect(cost).toMatchObject({ promptTokens: 7, completionTokens: 4 })
+    expect(referenceId).toBe('explain_1')
   })
 })
 
