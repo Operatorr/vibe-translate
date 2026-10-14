@@ -178,9 +178,9 @@ export function CreditsPage({ orderId }: { orderId?: string }) {
                 </p>
                 <p>
                   Credits use the model’s input and output token counts: ten
-                  tokens per credit, rounded to a whole credit. An 832-token
-                  translation costs 83 credits. Saved and cached translations
-                  are free.
+                  tokens per credit, rounded to a whole credit, with a minimum
+                  of one credit per request. An 832-token translation costs 83
+                  credits. Saved and cached translations are free.
                 </p>
                 {data.me.byok.configured && (
                   <p>
@@ -218,8 +218,8 @@ export function CreditsPage({ orderId }: { orderId?: string }) {
                 <span className="vt-eyebrow">ONE-TIME TOP-UP</span>
                 <h2 id="topup-title">A little more room.</h2>
                 <p>
-                  Choose 1,000,000, 5,000,000 or 10,000,000 credits. Top-ups add
-                  to your balance without changing your subscription.
+                  Top-ups add to your balance without changing your
+                  subscription.
                 </p>
               </div>
               <div className="credits-page__purchase">

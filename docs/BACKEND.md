@@ -60,20 +60,21 @@
 
 Defined in [`api/_lib/tier.ts`](../api/_lib/tier.ts):
 
-|                       | `free`          | `pro`            | `team`            |
-| --------------------- | --------------- | ---------------- | ----------------- |
-| `characters`          | 3               | 100              | 1000              |
-| `threadsPerCharacter` | 20              | 200              | 2000              |
-| `credits`             | 10 000 (signup) | 25 000 (renewal) | 250 000 (renewal) |
-| `retentionDays`       | 30              | 365              | 1095              |
-| `aiDictation`         | ❌              | ✅               | ✅                |
-| `explain`             | ❌              | ✅               | ✅                |
-| `translationMemory`   | ❌              | ✅               | ✅                |
-| `customVibeStops`     | ❌              | ❌               | ✅                |
-| `elevenLabsTts`       | ❌              | ✅               | ✅                |
+|                       | `free`          | `pro`                 | `team`                 |
+| --------------------- | --------------- | --------------------- | ---------------------- |
+| `characters`          | 3               | 100                   | 1000                   |
+| `threadsPerCharacter` | 20              | 200                   | 2000                   |
+| `credits`             | 50 000 (signup) | 3 500 000 (per month) | 14 000 000 (per month) |
+| `retentionDays`       | 30              | 365                   | 1095                   |
+| `aiDictation`         | ❌              | ✅                    | ✅                     |
+| `explain`             | ❌              | ✅                    | ✅                     |
+| `translationMemory`   | ❌              | ✅                    | ✅                     |
+| `customVibeStops`     | ❌              | ❌                    | ✅                     |
+| `elevenLabsTts`       | ❌              | ✅                    | ✅                     |
 
 Notes:
 
+- `credits` is in whole Credits. Free is a one-time welcome grant; paid amounts are monthly, and annual billing grants twelve months at once.
 - All three tiers use the **same models** (see [DATABASE.md → models](./DATABASE.md#models)). Upgrades buy capacity and features, not output quality.
 - `customVibeStops` is the team-tier extension hinted at in the pricing prototype ("6 + custom registers"). Free and Pro are pinned to the canonical six.
 - `elevenLabsTts` gates the per-vibe ElevenLabs voices on `/api/ai/text-to-speech` (Japanese targets only today). The free tier — and every non-Japanese target — reads back with the browser's speech synthesis on the client, which never reaches the worker.
@@ -128,9 +129,9 @@ client POST /api/segments { threadId, sourceText, vibe?, perspective? }
 
 "Commit-to-translate" (the UI fires one call per intended translation, not per slider move — see [DESIGN.md](./DESIGN.md#the-vibe-slider)) plus the two pre-checks means sliding between already-generated stops is instant and free.
 
-The pre-call **reservation** (`reserveCredits`) is an atomic conditional decrement: it is the concurrency gate that stops a near-zero-balance user from fanning out many simultaneous paid calls past a single stale balance read. It is settled by `reconcileSpend` to the token-derived charge (or `refundReservation` if the call fails), and writes a pending `credit_ledger` row up front so the `balance == sum(ledger)` invariant holds throughout.
+The pre-call **reservation** (`reserveCredits`) is an atomic conditional decrement: it is the concurrency gate that stops a near-zero-balance user from fanning out many simultaneous paid calls past a single stale balance read. It is settled by `reconcileSpend` to the token-derived charge (or `refundReservation` if the call fails), and writes a pending `credit_ledger` row up front so the `balance == sum(ledger)` invariant holds throughout. `chatJson` records a token count as `null` when any attempt omitted it or reported a non-integer, and `computeCredits` then settles at the hold instead of treating unknown usage as zero tokens.
 
-**Refund vs. settle ordering.** A hold is refunded only when the model call or the row insert fails. Once the Segment (or Explain) row is stored the hold is reconciled, and nothing afterwards refunds — a flaky post-commit write would otherwise hand out a free translation that in-thread dedupe then serves at 0 credits. Post-commit steps go through `bestEffort()` in `app.ts`. A refund that itself fails is logged with the ledger id and rethrown, never swallowed. Retry overwrites the row owner-scoped (`where id and user_id`) in the same statement that drops stale Explains; zero rows → refund + `404`.
+**Refund vs. settle ordering.** A hold is refunded only when the model call fails, `computeCredits` rejects the reported usage, or the row insert fails. The charge is computed before anything is stored, so a rejected usage report never leaves a cached result behind a pending hold. Once the Segment (or Explain) row is stored the hold is reconciled, and nothing afterwards refunds — a flaky post-commit write would otherwise hand out a free translation that in-thread dedupe then serves at 0 credits. Post-commit steps go through `bestEffort()` in `app.ts`. A refund that itself fails is logged with the ledger id and rethrown, never swallowed. Retry overwrites the row owner-scoped (`where id and user_id`) in the same statement that drops stale Explains; zero rows → refund + `404`.
 
 ## Explain request flow
 

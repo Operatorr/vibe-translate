@@ -99,9 +99,9 @@ export function SegmentUsage({
         </p>
         <p>
           Platform charges use one credit per ten input and output tokens,
-          rounded to the nearest whole credit. The credits page shows the actual
-          charge. Cached translations and your own OpenRouter key use no
-          credits.
+          rounded to the nearest whole credit, with a minimum of one credit per
+          request. The credits page shows the actual charge. Cached translations
+          and your own OpenRouter key use no credits.
         </p>
       </div>
     </Popover>

@@ -9,9 +9,9 @@ export type CreditCost = {
   // Whole Credits: total model tokens divided by ten, rounded per request.
   credits: number
   costUsd?: number
-  // Underlying token breakdown for the credit_ledger row.
-  promptTokens: number
-  completionTokens: number
+  // Underlying token breakdown for the credit_ledger row; null when unreported.
+  promptTokens: number | null
+  completionTokens: number | null
   modelId: string
 }
 
@@ -201,9 +201,22 @@ export async function recordGrant(
   }
 }
 
-export function computeCredits(usage: TokenUsage): CreditCost {
-  const tokens = usage.promptTokens + usage.completionTokens
-  if (!Number.isSafeInteger(tokens) || tokens < 0)
+const isTokenCount = (value: number) =>
+  Number.isSafeInteger(value) && value >= 0
+
+// The settled charge for a completed platform call. When the provider left a
+// token count unreported, the request settles at its hold rather than as a
+// one-Credit call. Malformed counts throw; callers refund the hold.
+export function computeCredits(usage: TokenUsage, hold: number): CreditCost {
+  const { promptTokens, completionTokens } = usage
+  if (promptTokens === null || completionTokens === null)
+    return { ...usage, credits: hold }
+  const tokens = promptTokens + completionTokens
+  if (
+    !isTokenCount(promptTokens) ||
+    !isTokenCount(completionTokens) ||
+    !Number.isSafeInteger(tokens)
+  )
     throw new Error('Invalid token usage')
   return {
     ...usage,

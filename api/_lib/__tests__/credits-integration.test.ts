@@ -46,12 +46,15 @@ describe.runIf(process.env.RUN_LOCAL_DB_PERF === '1')(
           const estimate = 25_000
           // Illustrative recorded provider usage: 99 output tokens is only one
           // part of the charge. The reservation is replaced, never added to it.
-          const cost = computeCredits({
-            promptTokens: 249_391,
-            completionTokens: 99,
-            modelId: 'test/model',
-            costUsd: 0.049949,
-          })
+          const cost = computeCredits(
+            {
+              promptTokens: 249_391,
+              completionTokens: 99,
+              modelId: 'test/model',
+              costUsd: 0.049949,
+            },
+            estimate,
+          )
           for (let n = 0; n < 2; n++) {
             const held = await reserveCredits(
               db,
@@ -104,12 +107,15 @@ describe.runIf(process.env.RUN_LOCAL_DB_PERF === '1')(
             rows: 2,
           })
 
-          const cost = computeCredits({
-            promptTokens: 10,
-            completionTokens: 15,
-            modelId: 'model-x',
-            costUsd: 0.000025,
-          })
+          const cost = computeCredits(
+            {
+              promptTokens: 10,
+              completionTokens: 15,
+              modelId: 'model-x',
+              costUsd: 0.000025,
+            },
+            held!.reserved,
+          )
           const balance = await reconcileSpend(
             db,
             id,

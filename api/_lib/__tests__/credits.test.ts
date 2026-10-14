@@ -41,31 +41,57 @@ function fakeClient(rowCounts: Record<string, number> = {}, balance = 100) {
 }
 
 const usage = (
-  promptTokens: number,
-  completionTokens: number,
+  promptTokens: number | null,
+  completionTokens: number | null,
   costUsd?: number,
 ) => ({ promptTokens, completionTokens, modelId: 'openai/gpt-6-luna', costUsd })
+const HOLD = 221
 
 describe('computeCredits', () => {
   it('charges 83 whole Credits for the screenshot’s 773 input + 59 output tokens', () => {
-    expect(toCredits(computeCredits(usage(773, 59, 0.0001068)).credits)).toBe(
-      83,
-    )
-    expect(computeCredits(usage(796, 91)).credits).toBe(89)
-    expect(computeCredits(usage(788, 127)).credits).toBe(92)
+    expect(
+      toCredits(computeCredits(usage(773, 59, 0.0001068), HOLD).credits),
+    ).toBe(83)
+    expect(computeCredits(usage(796, 91), HOLD).credits).toBe(89)
+    expect(computeCredits(usage(788, 127), HOLD).credits).toBe(92)
   })
   it('keeps USD cost for audit without using it to set the token charge', () => {
-    expect(computeCredits(usage(773, 59, 0.00004))).toMatchObject({
+    expect(computeCredits(usage(773, 59, 0.00004), HOLD)).toMatchObject({
       credits: 83,
       costUsd: 0.00004,
     })
-    expect(computeCredits(usage(773, 59)).credits).toBe(83)
+    expect(computeCredits(usage(773, 59), HOLD).credits).toBe(83)
   })
   it('rounds half credits upward and has a minimum one-credit call charge', () => {
-    expect(computeCredits(usage(10, 15)).credits).toBe(3)
-    expect(computeCredits(usage(1, 0)).credits).toBe(1)
-    expect(computeCredits(usage(0, 0)).credits).toBe(1)
-    expect(() => computeCredits(usage(-10, 0))).toThrow()
+    expect(computeCredits(usage(10, 15), HOLD).credits).toBe(3)
+    expect(computeCredits(usage(1, 0), HOLD).credits).toBe(1)
+    expect(computeCredits(usage(0, 0), HOLD).credits).toBe(1)
+  })
+  it.each([
+    ['input', usage(null, 59, 0.01)],
+    ['output', usage(773, null, 0.01)],
+    ['both', usage(null, null, 0.01)],
+  ])(
+    'settles at the hold when %s token counts are unreported',
+    (_, unreported) => {
+      expect(computeCredits(unreported, HOLD)).toMatchObject({
+        credits: HOLD,
+        promptTokens: unreported.promptTokens,
+        completionTokens: unreported.completionTokens,
+        costUsd: 0.01,
+      })
+    },
+  )
+  it.each([
+    [-10, 0],
+    [-100, 100],
+    [0.5, 0.5],
+    [Number.NaN, 10],
+    [Number.MAX_SAFE_INTEGER, 1],
+  ])('rejects malformed counts (%s input, %s output)', (input, output) => {
+    expect(() => computeCredits(usage(input, output), HOLD)).toThrow(
+      'Invalid token usage',
+    )
   })
 })
 
@@ -113,7 +139,7 @@ describe('reserveCredits', () => {
 describe('reconcileSpend', () => {
   it('rewrites the pending ledger row to the actual cost', async () => {
     const { db, calls } = fakeClient({}, 58)
-    const cost = computeCredits(usage(10, 10))
+    const cost = computeCredits(usage(10, 10), 42)
     const balance = await reconcileSpend(
       db,
       'user-1',

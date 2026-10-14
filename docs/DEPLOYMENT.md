@@ -190,8 +190,8 @@ Apply migrations `0009_credit_purchases.sql` and `0010_credit_purchase_lifecycle
 in each environment before enabling purchases.
 Create three **one-time, fixed-price** products in Dodo (not recurring or pay-what-you-want):
 
-| Credits | Worker binding                | Dodo product       |
-| ------- | ----------------------------- | ------------------ |
+| Credits    | Worker binding                | Dodo product       |
+| ---------- | ----------------------------- | ------------------ |
 | 1,000,000  | `DODO_PRODUCT_CREDITS_SMALL`  | Small credit pack  |
 | 5,000,000  | `DODO_PRODUCT_CREDITS_MEDIUM` | Medium credit pack |
 | 10,000,000 | `DODO_PRODUCT_CREDITS_LARGE`  | Large credit pack  |
@@ -265,13 +265,15 @@ orders snapshot the new pack catalog: 1,000,000 / 5,000,000 / 10,000,000 Credits
 Dodo product prices continue to come from Dodo; keep those prices aligned with
 these larger packs. The worker pack cache expires within five minutes of deploy.
 
-| Tier | Monthly price | Annual price | Monthly credits | Annual credits |
-| --- | --- | --- | --- | --- |
-| Pro | $18 | $168 (22.2% saving) | 3,500,000 | 42,000,000 |
-| Linguist | $64 | $588 (23.4% saving) | 14,000,000 | 168,000,000 |
+| Tier     | Monthly price | Annual price        | Monthly credits | Annual credits |
+| -------- | ------------- | ------------------- | --------------- | -------------- |
+| Pro      | $18           | $168 (22.2% saving) | 3,500,000       | 42,000,000     |
+| Linguist | $64           | $588 (23.4% saving) | 14,000,000      | 168,000,000    |
 
-Free receives 50,000 welcome Credits once. Each request costs one Credit per ten
-model tokens, rounded to a whole Credit, minimum one. Credits do not have a fixed
+Free receives 50,000 welcome Credits once. Each billable platform translation,
+Explain or in-app dictation request costs one Credit per ten model tokens,
+rounded to a whole Credit, minimum one. Onboarding dictation, cached results and
+BYOK calls are free; embeddings add no separate user debit. Credits do not have a fixed
 USD exchange rate; the paid allowances approximate the agreed $5/$20 monthly Luna
 cost budgets. Existing subscriptions whose renewal omits product and period need
 `users.billing_period` backfilled from Dodo; new checkouts record it. Explicit

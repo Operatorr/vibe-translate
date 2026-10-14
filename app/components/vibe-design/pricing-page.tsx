@@ -551,13 +551,14 @@ const PricingContent = ({ onNavigate }: { onNavigate: NavigateFn }) => {
               </h3>
               <p className="faq__a">
                 Each request uses one credit per ten model tokens, rounded to
-                the nearest whole credit. Input includes character settings;
-                output includes the translation and word alignment. A short
-                translation like an 832-token request costs 83 credits. Free
-                includes 50,000 welcome credits once. Annual plans include
-                twelve months of credits at each renewal. Saved and cached
-                translations are free, and your own OpenRouter key skips credits
-                for translations and explanations.
+                the nearest whole credit, with a minimum of one credit per
+                request. Input includes character settings; output includes the
+                translation and word alignment. A short translation like an
+                832-token request costs 83 credits. Free includes 50,000 welcome
+                credits once. Annual plans include twelve months of credits at
+                each renewal. Saved and cached translations are free, and your
+                own OpenRouter key skips credits for translations and
+                explanations.
               </p>
             </div>
             <div className="faq__item">
