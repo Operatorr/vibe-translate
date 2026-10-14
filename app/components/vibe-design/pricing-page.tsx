@@ -88,7 +88,7 @@ const PricingContent = ({ onNavigate }: { onNavigate: NavigateFn }) => {
                 <span className="tier__price-unit">/ forever</span>
               </div>
               <div className="tier__price-meta">
-                no credit card · 10,000 welcome credits
+                no credit card · 50,000 welcome credits
               </div>
               <button
                 className="vt-btn vt-btn--ghost vt-btn--block"
@@ -101,7 +101,7 @@ const PricingContent = ({ onNavigate }: { onNavigate: NavigateFn }) => {
                 <div className="tier__feat">
                   <Icon name="check" />
                   <span>
-                    <strong>10,000 credits</strong> to get started
+                    <strong>50,000 credits</strong> to get started
                   </span>
                 </div>
                 <div className="tier__feat">
@@ -168,7 +168,9 @@ const PricingContent = ({ onNavigate }: { onNavigate: NavigateFn }) => {
                 <div className="tier__feat">
                   <Icon name="check" />
                   <span>
-                    <strong>{annual ? '6,000,000' : '500,000'} credits</strong>{' '}
+                    <strong>
+                      {annual ? '42,000,000' : '3,500,000'} credits
+                    </strong>{' '}
                     per {annual ? 'year' : 'month'}
                   </span>
                 </div>
@@ -234,7 +236,7 @@ const PricingContent = ({ onNavigate }: { onNavigate: NavigateFn }) => {
                   <Icon name="check" />
                   <span>
                     <strong>
-                      {annual ? '24,000,000' : '2,000,000'} credits
+                      {annual ? '168,000,000' : '14,000,000'} credits
                     </strong>{' '}
                     per {annual ? 'year' : 'month'}
                   </span>
@@ -316,10 +318,12 @@ const PricingContent = ({ onNavigate }: { onNavigate: NavigateFn }) => {
                 </tr>
                 <tr>
                   <td>Credits</td>
-                  <td>10,000 welcome</td>
-                  <td>{annual ? '6,000,000 per year' : '500,000 per month'}</td>
+                  <td>50,000 welcome</td>
                   <td>
-                    {annual ? '24,000,000 per year' : '2,000,000 per month'}
+                    {annual ? '42,000,000 per year' : '3,500,000 per month'}
+                  </td>
+                  <td>
+                    {annual ? '168,000,000 per year' : '14,000,000 per month'}
                   </td>
                 </tr>
                 <tr>
@@ -546,15 +550,14 @@ const PricingContent = ({ onNavigate }: { onNavigate: NavigateFn }) => {
                 <Icon name="plus" />
               </h3>
               <p className="faq__a">
-                One credit covers $0.00001 of model usage. A short Luna
-                translation typically uses about 10–20 credits, including
-                character settings and word alignment. Free includes 10,000
-                welcome credits once. Annual plans include twelve months of
-                credits at each renewal. Charges follow the provider’s actual
-                cost, including any prompt caching discount, and are recorded to
-                0.1 credit. Saved and cached translations are free, and using
-                your own OpenRouter key skips credits for translations and
-                explanations.
+                Each request uses one credit per ten model tokens, rounded to
+                the nearest whole credit. Input includes character settings;
+                output includes the translation and word alignment. A short
+                translation like an 832-token request costs 83 credits. Free
+                includes 50,000 welcome credits once. Annual plans include
+                twelve months of credits at each renewal. Saved and cached
+                translations are free, and your own OpenRouter key skips credits
+                for translations and explanations.
               </p>
             </div>
             <div className="faq__item">
@@ -624,7 +627,7 @@ const PricingContent = ({ onNavigate }: { onNavigate: NavigateFn }) => {
           </span>
           <h2 className="cta-strip__title">Try it before you pay for it.</h2>
           <p className="cta-strip__sub">
-            Start free with 10,000 welcome credits, no card required. Subscribe
+            Start free with 50,000 welcome credits, no card required. Subscribe
             to Pro or Linguist when you need more.
           </p>
           <div className="hero__ctas">

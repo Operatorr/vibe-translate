@@ -40,7 +40,6 @@ function fakeClient(rowCounts: Record<string, number> = {}, balance = 100) {
   return { db: { query } as unknown as Client, calls }
 }
 
-const luna = { prompt: 0.0000001, completion: 0.0000005, request: 0 }
 const usage = (
   promptTokens: number,
   completionTokens: number,
@@ -48,38 +47,34 @@ const usage = (
 ) => ({ promptTokens, completionTokens, modelId: 'openai/gpt-6-luna', costUsd })
 
 describe('computeCredits', () => {
-  it('matches the screenshot: 773 input + 59 output tokens cost 10.7 Credits', () => {
-    expect(computeCredits(usage(773, 59, 0.0001068), luna).credits).toBe(107)
-    expect(computeCredits(usage(773, 59), luna).credits).toBe(107)
-    expect(toCredits(computeCredits(usage(773, 59), luna).credits)).toBe(10.7)
+  it('charges 83 whole Credits for the screenshot’s 773 input + 59 output tokens', () => {
+    expect(toCredits(computeCredits(usage(773, 59, 0.0001068)).credits)).toBe(
+      83,
+    )
+    expect(computeCredits(usage(796, 91)).credits).toBe(89)
+    expect(computeCredits(usage(788, 127)).credits).toBe(92)
   })
-  it('uses actual provider cost including caching discounts over catalog estimates', () => {
-    expect(computeCredits(usage(773, 59, 0.00004), luna).credits).toBe(40)
-    expect(computeCredits(usage(773, 59, 0), luna).credits).toBe(0)
+  it('keeps USD cost for audit without using it to set the token charge', () => {
+    expect(computeCredits(usage(773, 59, 0.00004))).toMatchObject({
+      credits: 83,
+      costUsd: 0.00004,
+    })
+    expect(computeCredits(usage(773, 59)).credits).toBe(83)
   })
-  it('preserves sub-cent precision and avoids rounding exact boundaries twice', () => {
-    expect(computeCredits(usage(780, 90, 0.000123), luna).credits).toBe(123)
-    expect(computeCredits(usage(10, 10, 0.0000002), luna).credits).toBe(1)
-    expect(() => computeCredits(usage(0, 0, -1), luna)).toThrow()
-  })
-  it('accounts for per-request prices when cost reporting is absent', () => {
-    expect(
-      computeCredits(
-        { ...usage(0, 0), requests: 2 },
-        { ...luna, request: 0.001 },
-      ).credits,
-    ).toBe(2000)
+  it('rounds half credits upward and has a minimum one-credit call charge', () => {
+    expect(computeCredits(usage(10, 15)).credits).toBe(3)
+    expect(computeCredits(usage(1, 0)).credits).toBe(1)
+    expect(computeCredits(usage(0, 0)).credits).toBe(1)
+    expect(() => computeCredits(usage(-10, 0))).toThrow()
   })
 })
 
 describe('estimateCredits', () => {
-  it('grows with input length and uses the chosen model’s input/output rates', () => {
-    expect(estimateCredits('x'.repeat(4000), luna)).toBeGreaterThan(
-      estimateCredits('hi', luna),
+  it('includes prompt and structured output overhead and grows with input length', () => {
+    expect(estimateCredits('hi')).toBe(221)
+    expect(estimateCredits('x'.repeat(4000))).toBeGreaterThan(
+      estimateCredits('hi'),
     )
-    expect(
-      estimateCredits('hi', { prompt: 0, completion: 0, request: 0 }),
-    ).toBe(1)
   })
 })
 
@@ -118,7 +113,7 @@ describe('reserveCredits', () => {
 describe('reconcileSpend', () => {
   it('rewrites the pending ledger row to the actual cost', async () => {
     const { db, calls } = fakeClient({}, 58)
-    const cost = computeCredits(usage(10, 10), luna)
+    const cost = computeCredits(usage(10, 10))
     const balance = await reconcileSpend(
       db,
       'user-1',

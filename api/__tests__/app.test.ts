@@ -61,13 +61,6 @@ vi.mock('../_lib/openrouter', () => ({
     reasoning: undefined,
   })),
 }))
-vi.mock('../_lib/model-pricing', () => ({
-  getModelPricing: vi.fn(async () => ({
-    prompt: 0.000001,
-    completion: 0.000001,
-    request: 0,
-  })),
-}))
 vi.mock('../_lib/ai', () => ({
   translateSegment: vi.fn(async () => ({
     targetText: 'やあ',
@@ -346,8 +339,7 @@ describe('translate credit ordering', () => {
       'user_1',
       { ledgerId: 'ledger_1', reserved: 5 },
       {
-        credits: 8,
-        costUsd: 0.000008,
+        credits: 1,
         promptTokens: 5,
         completionTokens: 3,
         modelId: 'test/model',
@@ -360,12 +352,12 @@ describe('translate credit ordering', () => {
 
   // 5 prompt + 3 completion tokens from the translateSegment mock.
   it.each([
-    { label: 'platform at 1x', isByok: false, multiplier: 1, charged: 8 },
+    { label: 'platform at 1x', isByok: false, multiplier: 1, charged: 1 },
     {
       label: 'platform with legacy multiplier 2',
       isByok: false,
       multiplier: 2,
-      charged: 8,
+      charged: 1,
     },
     { label: 'BYOK', isByok: true, multiplier: 2, charged: 0 },
   ])(
@@ -395,7 +387,7 @@ describe('translate credit ordering', () => {
       })
       expect(res.status).toBe(201)
       expect(await res.json()).toMatchObject({
-        tokenUsage: { creditsCharged: charged / 10 },
+        tokenUsage: { creditsCharged: charged },
       })
       expect(usage).toMatchObject({
         promptTokens: 5,
@@ -429,8 +421,8 @@ describe('translate credit ordering', () => {
       error: {
         details: {
           code: 'insufficient_credits',
-          balance: 19.8,
-          requiredCredits: 220.3,
+          balance: 198,
+          requiredCredits: 221,
         },
       },
     })
@@ -1323,21 +1315,21 @@ describe('credit history', () => {
     expect(body.ledger).toEqual([
       {
         id: 'ledger_hold',
-        delta: -41.2,
+        delta: -412,
         reason: 'spend.translate',
         pending: true,
         createdAt: '2026-10-01T10:00:02.000Z',
       },
       {
         id: 'ledger_spend',
-        delta: -0.8,
+        delta: -8,
         reason: 'spend.translate',
         pending: false,
         createdAt: '2026-10-01T10:00:01.000Z',
       },
       {
         id: 'ledger_grant',
-        delta: 2500,
+        delta: 25000,
         reason: 'grant.purchase',
         pending: false,
         createdAt: '2026-10-01T10:00:00.000Z',
@@ -1381,7 +1373,7 @@ describe('credit history', () => {
       const body = await expectSnapshotResponse(
         await call(`/api/users/me/credits?orderId=${ORDER}`),
       )
-      expect(body.order).toEqual({ credits: 2500, fulfilled })
+      expect(body.order).toEqual({ credits: 25000, fulfilled })
       expect(statements()).toEqual([
         SNAPSHOT,
         'users',

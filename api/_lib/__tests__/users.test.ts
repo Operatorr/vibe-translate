@@ -73,7 +73,7 @@ describe('user provisioning reads', () => {
       row.email,
     )
     expect(user.userId).toBe('a')
-    expect(query.mock.calls[1][1]).toEqual(['a', row.email, 100000])
+    expect(query.mock.calls[1][1]).toEqual(['a', row.email, 50000])
     expect(query.mock.calls[1][0]).toContain('insert into credit_ledger')
     expect(query.mock.calls[1][0]).toContain(
       'on conflict (auth_user_id) do nothing',
@@ -100,9 +100,9 @@ describe('user provisioning reads', () => {
 })
 
 describe('public credit units', () => {
-  it('exposes fractional Credits and the current billing period allowance', async () => {
+  it('exposes whole Credits and the current billing period allowance', async () => {
     const query = vi.fn(async () => ({
-      rows: [{ ...row, credits_balance: 99893 }],
+      rows: [{ ...row, credits_balance: 49917 }],
     }))
     const user = await getOrCreateUser(
       { query } as unknown as Client,
@@ -110,20 +110,20 @@ describe('public credit units', () => {
       row.email,
     )
     expect(toMeResponse(user)).toMatchObject({
-      credits: { balance: 9989.3 },
-      limits: { credits: 10000 },
+      credits: { balance: 49917 },
+      limits: { credits: 50000 },
     })
     expect(
       toMeResponse({ ...user, tier: 'pro', billingPeriod: 'monthly' }).limits
         .credits,
-    ).toBe(500000)
+    ).toBe(3500000)
     expect(
       toMeResponse({ ...user, tier: 'pro', billingPeriod: 'annual' }).limits
         .credits,
-    ).toBe(6000000)
+    ).toBe(42000000)
     expect(
       toMeResponse({ ...user, tier: 'team', billingPeriod: 'annual' }).limits
         .credits,
-    ).toBe(24000000)
+    ).toBe(168000000)
   })
 })

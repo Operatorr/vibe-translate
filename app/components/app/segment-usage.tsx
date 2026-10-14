@@ -98,8 +98,8 @@ export function SegmentUsage({
           settings. Output includes the translation and word alignment.
         </p>
         <p>
-          Platform credits are charged from the model’s actual cost. One credit
-          covers $0.00001 of model usage. The credits page shows the actual
+          Platform charges use one credit per ten input and output tokens,
+          rounded to the nearest whole credit. The credits page shows the actual
           charge. Cached translations and your own OpenRouter key use no
           credits.
         </p>

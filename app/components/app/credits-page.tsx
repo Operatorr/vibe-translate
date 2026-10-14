@@ -177,9 +177,10 @@ export function CreditsPage({ orderId }: { orderId?: string }) {
                   <span>credits</span>
                 </p>
                 <p>
-                  One credit covers $0.00001 of model usage. A short Luna
-                  translation typically uses about 10–20 credits. Saved and
-                  cached translations are free.
+                  Credits use the model’s input and output token counts: ten
+                  tokens per credit, rounded to a whole credit. An 832-token
+                  translation costs 83 credits. Saved and cached translations
+                  are free.
                 </p>
                 {data.me.byok.configured && (
                   <p>
@@ -217,7 +218,8 @@ export function CreditsPage({ orderId }: { orderId?: string }) {
                 <span className="vt-eyebrow">ONE-TIME TOP-UP</span>
                 <h2 id="topup-title">A little more room.</h2>
                 <p>
-                  Add credits to your current account. No subscription change.
+                  Choose 1,000,000, 5,000,000 or 10,000,000 credits. Top-ups add
+                  to your balance without changing your subscription.
                 </p>
               </div>
               <div className="credits-page__purchase">

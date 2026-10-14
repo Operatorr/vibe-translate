@@ -3,9 +3,9 @@ import { describe, expect, it } from 'vitest'
 import { localClients, withLocalFixtures } from './local-db'
 
 describe.runIf(process.env.RUN_LOCAL_DB_PERF === '1')(
-  'cost-unit migration',
+  'credit-unit migrations',
   () => {
-    it('converts legacy balances, grants, Luna charges and refund snapshots together', async () => {
+    it('converts balances, token charges and refund snapshots to whole Credits', async () => {
       const [db] = localClients(1)
       await withLocalFixtures(
         [db],
@@ -43,6 +43,15 @@ describe.runIf(process.env.RUN_LOCAL_DB_PERF === '1')(
             'utf8',
           )
           await db.query(migration)
+          await db.query(
+            await readFile(
+              new URL(
+                '../../../db/migrations/0014_token_based_credits.sql',
+                import.meta.url,
+              ),
+              'utf8',
+            ),
+          )
           const state =
             await db.query(`select u.auth_user_id, u.credits_balance, u.billing_period,
         (select sum(delta)::int from credit_ledger l where l.user_id = u.auth_user_id) as ledger
@@ -50,21 +59,21 @@ describe.runIf(process.env.RUN_LOCAL_DB_PERF === '1')(
           expect(state.rows).toEqual([
             {
               auth_user_id: 'free',
-              credits_balance: 99893,
-              ledger: 99893,
+              credits_balance: 49917,
+              ledger: 49917,
               billing_period: 'monthly',
             },
             {
               auth_user_id: 'paid',
-              credits_balance: 2455800,
-              ledger: 2455800,
+              credits_balance: 1719060,
+              ledger: 1719060,
               billing_period: 'monthly',
             },
           ])
           expect(
             (await db.query('select credits from credit_purchases')).rows[0]
               .credits,
-          ).toBe(2500000)
+          ).toBe(1750000)
           expect(
             (
               await db.query(
@@ -72,13 +81,17 @@ describe.runIf(process.env.RUN_LOCAL_DB_PERF === '1')(
               )
             ).rows[0],
           ).toMatchObject({
-            delta: -4200,
-            metadata: { estimate: 4200, legacyCredits: -42 },
+            delta: -2940,
+            metadata: {
+              estimate: 2940,
+              legacyCredits: -42,
+              previousAccountingUnits: -4200,
+            },
           })
           const segments = (await db.query('select token_usage from segments'))
             .rows
           expect(segments.map((row) => row.token_usage.creditsCharged)).toEqual(
-            [107, 0],
+            [83, 0],
           )
           expect(
             (

@@ -23,13 +23,16 @@ export type BillingPeriod = 'monthly' | 'annual'
 
 // Credits and product binding per pack. Prices live in Dodo.
 const CREDIT_PACKS = {
-  small: { credits: fromCredits(250000), envKey: 'DODO_PRODUCT_CREDITS_SMALL' },
+  small: {
+    credits: fromCredits(1000000),
+    envKey: 'DODO_PRODUCT_CREDITS_SMALL',
+  },
   medium: {
-    credits: fromCredits(500000),
+    credits: fromCredits(5000000),
     envKey: 'DODO_PRODUCT_CREDITS_MEDIUM',
   },
   large: {
-    credits: fromCredits(1000000),
+    credits: fromCredits(10000000),
     envKey: 'DODO_PRODUCT_CREDITS_LARGE',
   },
 } as const satisfies Record<

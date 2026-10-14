@@ -10,12 +10,12 @@ const env = {
 }
 describe('subscription credit budgets', () => {
   it.each([
-    ['pro', 'monthly', 5_000_000],
-    ['pro', 'annual', 60_000_000],
-    ['team', 'monthly', 20_000_000],
-    ['team', 'annual', 240_000_000],
+    ['pro', 'monthly', 3_500_000],
+    ['pro', 'annual', 42_000_000],
+    ['team', 'monthly', 14_000_000],
+    ['team', 'annual', 168_000_000],
   ] as const)(
-    'grants %s / %s the full provider budget',
+    'grants %s / %s the token allowance',
     async (plan, period, amount) => {
       const query = vi.fn(async () => ({ rows: [], rowCount: 1 }))
       await processDodoWebhook({ query } as unknown as Client, env, 'event-1', {
@@ -52,6 +52,6 @@ describe('subscription credit budgets', () => {
     const calls = query.mock.calls as unknown as [string, unknown[]][]
     expect(
       calls.find(([sql]) => sql.includes('insert into credit_ledger'))?.[1][1],
-    ).toBe(60_000_000)
+    ).toBe(42_000_000)
   })
 })
