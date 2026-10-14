@@ -49,7 +49,7 @@ describe('provider cost accounting', () => {
       costUsd: 0.0002318,
     })
   })
-  it('settles at the hold if any retry omitted cost', async () => {
+  it('settles at the hold if any attempt omitted cost', async () => {
     create
       .mockResolvedValueOnce(reply('bad json', null))
       .mockResolvedValueOnce(reply('{"text":"ok"}', 0.000125))

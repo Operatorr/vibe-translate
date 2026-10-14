@@ -178,7 +178,8 @@ export function CreditsPage({ orderId }: { orderId?: string }) {
                 </p>
                 <p>
                   Use credits for translations, grammar explanations, and AI
-                  character creation. Saved and cached translations are free.
+                  character creation on Pro and Linguist. Saved and cached
+                  translations are free.
                 </p>
                 {data.me.byok.configured && (
                   <p>

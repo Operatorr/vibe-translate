@@ -573,6 +573,59 @@ describe('translate credit ordering', () => {
     expect(credits.refundReservation).not.toHaveBeenCalled()
   })
 
+  it('settles a missing provider cost at the marked-up hold without marking it up again', async () => {
+    const ai = await import('../_lib/ai')
+    vi.mocked(ai.translateSegment).mockResolvedValueOnce({
+      targetText: 'やあ',
+      tokenAlignment: [],
+      tokenUsage: {
+        modelId: 'test/model',
+        promptTokens: 5,
+        completionTokens: 3,
+      },
+    })
+    vi.mocked(credits.reserveCredits).mockImplementationOnce(
+      async (_db, _user, amount) => ({
+        ledgerId: 'ledger_1',
+        reserved: amount,
+      }),
+    )
+    let usage: Record<string, unknown> | undefined
+    answer = (sql, params) => {
+      if (sql.startsWith('insert into segments')) {
+        usage = JSON.parse(params[7] as string)
+        return { rows: [{ ...segmentRow(), token_usage: usage }] }
+      }
+      return createAnswers(sql, params)
+    }
+    const res = await app.request(
+      '/api/segments',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          threadId: THREAD,
+          sourceText: 'hi',
+          vibe: 'casual',
+        }),
+      },
+      { ...env, CREDIT_MARKUP_PERCENT: '50' },
+    )
+    expect(res.status).toBe(201)
+    expect(credits.reserveCredits).toHaveBeenCalledWith(
+      fakeDb,
+      'user_1',
+      331,
+      'spend.translate',
+    )
+    expect(usage).toMatchObject({ creditsCharged: 331 })
+    const [, , reservation, cost] = vi.mocked(credits.reconcileSpend).mock
+      .calls[0]
+    expect(reservation).toEqual({ ledgerId: 'ledger_1', reserved: 331 })
+    expect(cost).toMatchObject({ credits: 331, markupPercent: 50 })
+    expect(cost.costUsd).toBeUndefined()
+  })
+
   it('marks a shared-cache hit as cached', async () => {
     vi.mocked(cache.lookupCache).mockResolvedValueOnce({
       targetText: 'やあ',
@@ -988,6 +1041,49 @@ describe('explain', () => {
     })
   })
 
+  it('settles a missing Explain provider cost at the marked-up hold', async () => {
+    const explain = await import('../_lib/explain')
+    vi.mocked(explain.generateExplain).mockResolvedValueOnce({
+      version: 1,
+      body: {
+        romaji: 'yaa',
+        literalGloss: [],
+        morphemes: [],
+        kanji: [],
+        grammarPatterns: [],
+      },
+      tokenUsage: {
+        modelId: 'test/model',
+        promptTokens: 773,
+        completionTokens: 59,
+      },
+    })
+    vi.mocked(credits.reserveCredits).mockImplementationOnce(
+      async (_db, _user, amount) => ({
+        ledgerId: 'ledger_1',
+        reserved: amount,
+      }),
+    )
+    answer = segmentAnswers
+    const res = await app.request(
+      `/api/segments/${SEGMENT}/explain`,
+      undefined,
+      { ...env, CREDIT_MARKUP_PERCENT: '50' },
+    )
+    expect(res.status).toBe(200)
+    expect(credits.reserveCredits).toHaveBeenCalledWith(
+      fakeDb,
+      'user_1',
+      331,
+      'spend.explain',
+    )
+    const [, , reservation, cost] = vi.mocked(credits.reconcileSpend).mock
+      .calls[0]
+    expect(reservation).toEqual({ ledgerId: 'ledger_1', reserved: 331 })
+    expect(cost).toMatchObject({ credits: 331, markupPercent: 50 })
+    expect(cost.costUsd).toBeUndefined()
+  })
+
   it('generates for a Free user and charges it as an Explain spend', async () => {
     const users = await import('../_lib/users')
     vi.mocked(users.getOrCreateUser).mockResolvedValueOnce({
@@ -1109,6 +1205,45 @@ describe('in-app dictation', () => {
       credits: 1050,
       markupPercent: 50,
     })
+  })
+
+  it('settles a missing dictation provider cost at the marked-up hold', async () => {
+    const ai = await import('../_lib/ai')
+    vi.mocked(ai.draftCharacterFromDictation).mockResolvedValueOnce({
+      draft: { ok: true, name: 'Tomoko' },
+      tokenUsage: {
+        modelId: 'test/model',
+        promptTokens: 800,
+        completionTokens: 0,
+      },
+    })
+    vi.mocked(credits.reserveCredits).mockImplementationOnce(
+      async (_db, _user, amount) => ({
+        ledgerId: 'ledger_1',
+        reserved: amount,
+      }),
+    )
+    const res = await app.request(
+      '/api/ai/dictation',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ prompt: 'hey' }),
+      },
+      { ...env, CREDIT_MARKUP_PERCENT: '50' },
+    )
+    expect(res.status).toBe(200)
+    expect(credits.reserveCredits).toHaveBeenCalledWith(
+      fakeDb,
+      'user_1',
+      331,
+      'spend.dictation',
+    )
+    const [, , reservation, cost] = vi.mocked(credits.reconcileSpend).mock
+      .calls[0]
+    expect(reservation).toEqual({ ledgerId: 'ledger_1', reserved: 331 })
+    expect(cost).toMatchObject({ credits: 331, markupPercent: 50 })
+    expect(cost.costUsd).toBeUndefined()
   })
 
   it('refunds the hold when reported usage is malformed', async () => {

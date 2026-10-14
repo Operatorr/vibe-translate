@@ -544,10 +544,11 @@ const PricingContent = ({ onNavigate }: { onNavigate: NavigateFn }) => {
               </h3>
               <p className="faq__a">
                 Credits cover translations, grammar explanations, and AI
-                character creation. Free includes 50,000 welcome credits once.
-                Annual plans include twelve months of credits at each renewal.
-                Saved and cached translations are free, and your own OpenRouter
-                key skips credits for translations and explanations.
+                character creation on Pro and Linguist. Free includes 50,000
+                welcome credits once. Annual plans include twelve months of
+                credits at each renewal. Saved and cached translations are free,
+                and your own OpenRouter key skips credits for translations and
+                explanations.
               </p>
             </div>
             <div className="faq__item">

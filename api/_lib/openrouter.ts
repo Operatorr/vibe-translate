@@ -3,6 +3,7 @@ import OpenAI from 'openai'
 import type { Client } from 'pg'
 import * as z from 'zod'
 
+import { addDecimals } from './decimal'
 import type { Bindings } from './env'
 import { getDefaultModel, type ModelTask } from './models'
 import { decryptSecret } from './secrets'
@@ -204,7 +205,7 @@ export async function chatJson<T>(
       Number.isFinite(usage.cost) &&
       usage.cost >= 0
     )
-      totalCostUsd += usage.cost
+      totalCostUsd = addDecimals(totalCostUsd, usage.cost)
     else allCostsReported = false
     const tokenUsage: TokenUsage = {
       modelId: completion.model || args.model,

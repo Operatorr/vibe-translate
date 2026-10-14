@@ -70,6 +70,22 @@ describe('computeCredits', () => {
     expect(computeCredits(usage(1, 0, 0.0000001), HOLD).credits).toBe(1)
     expect(computeCredits(usage(0, 0, 0), HOLD).credits).toBe(1)
   })
+  it('does not bill an extra credit for floating-point noise at an exact boundary', () => {
+    // 0.0041 × 700,000 × 1.3 is 3731 exactly but 3731.000000000001 in floats.
+    expect(
+      computeCredits(
+        {
+          modelId: 'test',
+          promptTokens: 1,
+          completionTokens: 0,
+          costUsd: 0.0041,
+        },
+        HOLD,
+      ).credits,
+    ).toBe(3731)
+    expect(computeCredits(usage(1, 0, 0.001), HOLD, 12.5).credits).toBe(788)
+    expect(computeCredits(usage(1, 0, 0.00000100001), HOLD, 0).credits).toBe(1)
+  })
   it.each([
     ['input', usage(null, 59, 0.01)],
     ['output', usage(773, null, 0.01)],

@@ -27,10 +27,15 @@ const platformModel = {
   creditCostMultiplier: 1.5,
 }
 
-const env = { OPENROUTER_API_KEY: 'sk-platform', CREDENTIALS_ENCRYPTION_KEY: 'enc-key' } as Bindings
+const env = {
+  OPENROUTER_API_KEY: 'sk-platform',
+  CREDENTIALS_ENCRYPTION_KEY: 'enc-key',
+} as Bindings
 
 function fakeDb(row: Record<string, unknown> | undefined) {
-  return { query: vi.fn().mockResolvedValue({ rows: row ? [row] : [] }) } as unknown as Client
+  return {
+    query: vi.fn().mockResolvedValue({ rows: row ? [row] : [] }),
+  } as unknown as Client
 }
 
 beforeEach(() => {
@@ -41,7 +46,12 @@ beforeEach(() => {
 
 describe('resolveCallTarget', () => {
   it('uses the platform key + default model when the user has no BYOK key', async () => {
-    const target = await resolveCallTarget(fakeDb({ openrouter_api_key_cipher: null }), env, 'u1', 'translate')
+    const target = await resolveCallTarget(
+      fakeDb({ openrouter_api_key_cipher: null }),
+      env,
+      'u1',
+      'translate',
+    )
     expect(target).toEqual({
       apiKey: 'sk-platform',
       modelId: 'deepseek/deepseek-v4-pro',
@@ -78,7 +88,10 @@ describe('resolveCallTarget', () => {
 
   it('falls back to the platform default model under BYOK when no override is set', async () => {
     mockDecryptSecret.mockResolvedValue('sk-user-byok')
-    const db = fakeDb({ openrouter_api_key_cipher: 'cipher', byok_translate_model_id: null })
+    const db = fakeDb({
+      openrouter_api_key_cipher: 'cipher',
+      byok_translate_model_id: null,
+    })
     const target = await resolveCallTarget(db, env, 'u1', 'translate')
     expect(target.isByok).toBe(true)
     expect(target.modelId).toBe('deepseek/deepseek-v4-pro')
@@ -86,7 +99,12 @@ describe('resolveCallTarget', () => {
 
   it('falls back to the platform path (not a 500) when decryption fails', async () => {
     mockDecryptSecret.mockRejectedValue(new Error('bad cipher'))
-    const target = await resolveCallTarget(fakeDb({ openrouter_api_key_cipher: 'cipher' }), env, 'u1', 'explain')
+    const target = await resolveCallTarget(
+      fakeDb({ openrouter_api_key_cipher: 'cipher' }),
+      env,
+      'u1',
+      'explain',
+    )
     expect(target.isByok).toBe(false)
     expect(target.apiKey).toBe('sk-platform')
   })
@@ -94,13 +112,27 @@ describe('resolveCallTarget', () => {
   it('throws 503 when the platform key is missing', async () => {
     const noKeyEnv = { CREDENTIALS_ENCRYPTION_KEY: 'enc-key' } as Bindings
     await expect(
-      resolveCallTarget(fakeDb({ openrouter_api_key_cipher: null }), noKeyEnv, 'u1', 'translate'),
+      resolveCallTarget(
+        fakeDb({ openrouter_api_key_cipher: null }),
+        noKeyEnv,
+        'u1',
+        'translate',
+      ),
     ).rejects.toMatchObject({ status: 503 })
   })
 
   it('applies the env model + reasoning override on the platform path', async () => {
-    const env2 = { ...env, TRANSLATE_MODEL: 'x-ai/grok-4.3', TRANSLATE_REASONING: 'low' } as Bindings
-    const target = await resolveCallTarget(fakeDb({ openrouter_api_key_cipher: null }), env2, 'u1', 'translate')
+    const env2 = {
+      ...env,
+      TRANSLATE_MODEL: 'x-ai/grok-4.3',
+      TRANSLATE_REASONING: 'low',
+    } as Bindings
+    const target = await resolveCallTarget(
+      fakeDb({ openrouter_api_key_cipher: null }),
+      env2,
+      'u1',
+      'translate',
+    )
     expect(target.modelId).toBe('x-ai/grok-4.3')
     expect(target.reasoning).toBe('low')
     // still the registry row, so the credit multiplier is preserved
@@ -109,9 +141,16 @@ describe('resolveCallTarget', () => {
 
   it('lets a BYOK model win over the env override, but still applies reasoning', async () => {
     mockDecryptSecret.mockResolvedValue('sk-user-byok')
-    const env2 = { ...env, TRANSLATE_MODEL: 'x-ai/grok-4.3', TRANSLATE_REASONING: 'medium' } as Bindings
+    const env2 = {
+      ...env,
+      TRANSLATE_MODEL: 'x-ai/grok-4.3',
+      TRANSLATE_REASONING: 'medium',
+    } as Bindings
     const target = await resolveCallTarget(
-      fakeDb({ openrouter_api_key_cipher: 'cipher', byok_translate_model_id: 'anthropic/claude-opus-4.7' }),
+      fakeDb({
+        openrouter_api_key_cipher: 'cipher',
+        byok_translate_model_id: 'anthropic/claude-opus-4.7',
+      }),
       env2,
       'u1',
       'translate',
@@ -123,7 +162,12 @@ describe('resolveCallTarget', () => {
 
   it('ignores an invalid reasoning effort value', async () => {
     const env2 = { ...env, EXPLAIN_REASONING: 'turbo' } as Bindings
-    const target = await resolveCallTarget(fakeDb({ openrouter_api_key_cipher: null }), env2, 'u1', 'explain')
+    const target = await resolveCallTarget(
+      fakeDb({ openrouter_api_key_cipher: null }),
+      env2,
+      'u1',
+      'explain',
+    )
     expect(target.reasoning).toBeUndefined()
   })
 })

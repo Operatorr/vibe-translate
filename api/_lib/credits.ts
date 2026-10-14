@@ -1,5 +1,6 @@
 import type { Client } from 'pg'
 import { CREDITS_PER_USD, DEFAULT_CREDIT_MARKUP_PERCENT } from './credit-units'
+import { ceilScaledWithPercent } from './decimal'
 import type { Bindings } from './env'
 import type { TokenUsage } from './openrouter'
 
@@ -205,6 +206,9 @@ export async function recordGrant(
   }
 }
 
+// users.credits_balance and credit_ledger.delta are Postgres `int` columns.
+const MAX_POSTGRES_INT = 2_147_483_647
+
 const isTokenCount = (value: number) =>
   Number.isSafeInteger(value) && value >= 0
 
@@ -225,13 +229,10 @@ function creditsForCost(costUsd: number, markupPercent: number): number {
     throw new Error('Invalid provider cost')
   if (!Number.isFinite(markupPercent) || markupPercent < 0)
     throw new Error('Invalid credit markup percentage')
-  const credits = Math.max(
-    1,
-    Math.ceil(costUsd * CREDITS_PER_USD * (1 + markupPercent / 100)),
-  )
-  if (!Number.isSafeInteger(credits) || credits > 2_147_483_647)
+  const credits = ceilScaledWithPercent(costUsd, CREDITS_PER_USD, markupPercent)
+  if (credits > BigInt(MAX_POSTGRES_INT))
     throw new Error('Credit charge exceeds supported range')
-  return credits
+  return Math.max(1, Number(credits))
 }
 
 // Provider cost includes all attempts and is authoritative even when token
