@@ -85,4 +85,18 @@ describe('pricing copy', () => {
       'Charged from credits',
     ])
   })
+
+  it('answers what credits are for without the retired token formula', () => {
+    render(<VibePricingPage />)
+    const text = document.body.textContent ?? ''
+    const faq = screen
+      .getByRole('heading', { level: 3, name: 'What can I use credits for?' })
+      .closest('.faq__item')?.textContent
+    expect(faq).toContain(
+      'Credits cover translations, grammar explanations, and AI character creation on Pro and Linguist.',
+    )
+    expect(faq).toContain('Saved and cached translations are free')
+    expect(text).not.toContain('How are credits calculated?')
+    expect(text).not.toMatch(/one credit per ten model tokens|832-token/i)
+  })
 })

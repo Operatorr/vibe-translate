@@ -29,7 +29,7 @@ async function state(db: Client, id: string) {
 describe.runIf(process.env.RUN_LOCAL_DB_PERF === '1')(
   'local database credits',
   () => {
-    it('charges total usage once per translation and does not spend credits for a rejected third request', async () => {
+    it('charges provider cost plus markup once per translation and does not spend credits for a rejected third request', async () => {
       const [db] = localClients(1)
       const id = fixtureId('two-translations')
       const email = `${id}@example.invalid`
@@ -44,14 +44,14 @@ describe.runIf(process.env.RUN_LOCAL_DB_PERF === '1')(
           await getOrCreateUser(db, id, email)
           // Hold half the welcome grant. Two provider calls fit; a third does not.
           const estimate = 25_000
-          // Illustrative recorded provider usage: 99 output tokens is only one
-          // part of the charge. The reservation is replaced, never added to it.
+          // Provider cost replaces the reservation, never adds to it; the
+          // token counts remain available for audit without setting the price.
           const cost = computeCredits(
             {
               promptTokens: 249_391,
               completionTokens: 99,
               modelId: 'test/model',
-              costUsd: 0.049949,
+              costUsd: 0.027416,
             },
             estimate,
           )
@@ -80,6 +80,86 @@ describe.runIf(process.env.RUN_LOCAL_DB_PERF === '1')(
             ledger: remaining,
             rows: 3,
           })
+        },
+        () => db.query('delete from auth_users where id=$1', [id]),
+      )
+    }, 20_000)
+    it('debits the excess when provider cost exceeds the hold, even past zero', async () => {
+      const [db] = localClients(1)
+      const id = fixtureId('over-hold')
+      const email = `${id}@example.invalid`
+      await withLocalFixtures(
+        [db],
+        async () => {
+          await db.connect()
+          await db.query(
+            'insert into auth_users(id,name,email,email_verified) values($1,$2,$3,true)',
+            [id, 'Over-hold settlement fixture', email],
+          )
+          await getOrCreateUser(db, id, email)
+          const start = tierLimits.free.credits
+
+          // A small hold settled at a larger reported cost debits the excess.
+          const held = await reserveCredits(db, id, 287, 'spend.translate')
+          expect(held).not.toBeNull()
+          const cost = computeCredits(
+            {
+              promptTokens: 800,
+              completionTokens: 0,
+              modelId: 'test/model',
+              costUsd: 0.001,
+            },
+            held!.reserved,
+          )
+          expect(cost.credits).toBe(910)
+          const balance = await reconcileSpend(
+            db,
+            id,
+            held!,
+            cost,
+            randomUUID(),
+          )
+          expect(balance).toBe(start - 910)
+          const ledger = await db.query<{ delta: number }>(
+            'select delta from credit_ledger where id = $1',
+            [held!.ledgerId],
+          )
+          expect(ledger.rows[0].delta).toBe(-910)
+          expect(await state(db, id)).toEqual({
+            balance,
+            ledger: balance,
+            rows: 2,
+          })
+
+          // When the remaining balance cannot cover the excess, the completed
+          // request is still charged in full and the balance goes negative.
+          const last = await reserveCredits(db, id, balance, 'spend.translate')
+          expect(last).not.toBeNull()
+          const overdraft = computeCredits(
+            {
+              promptTokens: 800,
+              completionTokens: 0,
+              modelId: 'test/model',
+              costUsd: 0.06,
+            },
+            last!.reserved,
+          )
+          expect(overdraft.credits).toBe(54_600)
+          const negative = await reconcileSpend(
+            db,
+            id,
+            last!,
+            overdraft,
+            randomUUID(),
+          )
+          expect(negative).toBe(balance - 54_600)
+          expect(negative).toBeLessThan(0)
+          expect(await state(db, id)).toEqual({
+            balance: negative,
+            ledger: negative,
+            rows: 3,
+          })
+          expect(await reserveCredits(db, id, 1, 'spend.translate')).toBeNull()
         },
         () => db.query('delete from auth_users where id=$1', [id]),
       )

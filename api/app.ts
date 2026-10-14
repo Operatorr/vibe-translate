@@ -8,6 +8,7 @@ import { logActivity } from './_lib/activity'
 import { auth, authBaseURL, authHandler } from './_lib/auth'
 import {
   computeCredits,
+  creditMarkupPercent,
   estimateCredits,
   getBalance,
   reconcileSpend,
@@ -880,9 +881,10 @@ async function translateWithCredits(
 ) {
   const target =
     resolvedTarget ?? (await resolveCallTarget(db, env, userId, 'translate'))
+  const markupPercent = target.isByok ? 0 : creditMarkupPercent(env)
   let reservation: Reservation | null = null
   if (!target.isByok) {
-    const estimate = estimateCredits(sourceText)
+    const estimate = estimateCredits(sourceText, markupPercent)
     reservation = await reserveCredits(db, userId, estimate, 'spend.translate')
     if (!reservation) {
       throw new InsufficientCreditsError(await getBalance(db, userId), estimate)
@@ -930,7 +932,11 @@ async function translateWithCredits(
     // Price the reported usage before anything is persisted, so a rejected
     // usage report still releases the hold.
     if (reservation)
-      cost = computeCredits(result.tokenUsage, reservation.reserved)
+      cost = computeCredits(
+        result.tokenUsage,
+        reservation.reserved,
+        markupPercent,
+      )
   } catch (error) {
     // refund() logs its own failure; surface the model error, not the refund's.
     await refund().catch(() => undefined)
@@ -1445,10 +1451,12 @@ app.get('/api/segments/:segmentId/explain', (c) => {
     // reconcile. The atomic reservation gates concurrency; it is refunded if the
     // model call fails.
     const target = await resolveCallTarget(db, c.env, userId, 'explain')
+    const markupPercent = target.isByok ? 0 : creditMarkupPercent(c.env)
     let reservation: Reservation | null = null
     if (!target.isByok) {
       const estimate = estimateCredits(
         `${segment.source_text}\n${segment.target_text}`,
+        markupPercent,
       )
       reservation = await reserveCredits(db, userId, estimate, 'spend.explain')
       if (!reservation) {
@@ -1481,7 +1489,11 @@ app.get('/api/segments/:segmentId/explain', (c) => {
       // Price the usage before the Explain is cached, so a rejected usage
       // report refunds the hold instead of leaving it pending.
       if (reservation)
-        cost = computeCredits(result.tokenUsage, reservation.reserved)
+        cost = computeCredits(
+          result.tokenUsage,
+          reservation.reserved,
+          markupPercent,
+        )
       const inserted = await db.query<{ id: string }>(
         `insert into explains
            (segment_id, user_id, target_language, target_text, target_text_hash, version, body, token_usage)
@@ -1661,7 +1673,8 @@ app.post(
       // read, then reconcile to the real cost — or refund when the parse degrades
       // to the empty-form fallback and there's nothing billable.
       const target = await resolveCallTarget(db, c.env, userId, 'dictation')
-      const estimate = estimateCredits(prompt)
+      const markupPercent = creditMarkupPercent(c.env)
+      const estimate = estimateCredits(prompt, markupPercent)
       const reservation = await reserveCredits(
         db,
         userId,
@@ -1687,7 +1700,7 @@ app.post(
       }
       let cost: CreditCost
       try {
-        cost = computeCredits(tokenUsage, reservation.reserved)
+        cost = computeCredits(tokenUsage, reservation.reserved, markupPercent)
       } catch (error) {
         await refundReservation(db, userId, reservation).catch((refundError) =>
           console.error('credit refund failed', {

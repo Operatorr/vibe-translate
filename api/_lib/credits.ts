@@ -1,14 +1,17 @@
 import type { Client } from 'pg'
-import { TOKENS_PER_CREDIT } from './credit-units'
+import { CREDITS_PER_USD, DEFAULT_CREDIT_MARKUP_PERCENT } from './credit-units'
+import { ceilScaledWithPercent } from './decimal'
+import type { Bindings } from './env'
 import type { TokenUsage } from './openrouter'
 
 // Credit accounting for the platform key path. BYOK requests skip this
 // module entirely — see docs/adr/0003.
 
 export type CreditCost = {
-  // Whole Credits: total model tokens divided by ten, rounded per request.
+  // Whole Credits: provider USD cost plus markup, rounded up per request.
   credits: number
   costUsd?: number
+  markupPercent?: number
   // Underlying token breakdown for the credit_ledger row; null when unreported.
   promptTokens: number | null
   completionTokens: number | null
@@ -122,6 +125,8 @@ export async function reconcileSpend(
           promptTokens: cost.promptTokens,
           completionTokens: cost.completionTokens,
           costUsd: cost.costUsd,
+          markupPercent: cost.markupPercent,
+          creditsPerUsd: CREDITS_PER_USD,
         }),
       ],
     )
@@ -201,32 +206,69 @@ export async function recordGrant(
   }
 }
 
+// users.credits_balance and credit_ledger.delta are Postgres `int` columns.
+const MAX_POSTGRES_INT = 2_147_483_647
+
 const isTokenCount = (value: number) =>
   Number.isSafeInteger(value) && value >= 0
 
-// The settled charge for a completed platform call. When the provider left a
-// token count unreported, the request settles at its hold rather than as a
-// one-Credit call. Malformed counts throw; callers refund the hold.
-export function computeCredits(usage: TokenUsage, hold: number): CreditCost {
+export function creditMarkupPercent(
+  env: Pick<Bindings, 'CREDIT_MARKUP_PERCENT'>,
+): number {
+  const configured = env.CREDIT_MARKUP_PERCENT?.trim()
+  const percent = configured
+    ? Number(configured)
+    : DEFAULT_CREDIT_MARKUP_PERCENT
+  if (!Number.isFinite(percent) || percent < 0)
+    throw new Error('Invalid credit markup percentage')
+  return percent
+}
+
+function creditsForCost(costUsd: number, markupPercent: number): number {
+  if (!Number.isFinite(costUsd) || costUsd < 0)
+    throw new Error('Invalid provider cost')
+  if (!Number.isFinite(markupPercent) || markupPercent < 0)
+    throw new Error('Invalid credit markup percentage')
+  const credits = ceilScaledWithPercent(costUsd, CREDITS_PER_USD, markupPercent)
+  if (credits > BigInt(MAX_POSTGRES_INT))
+    throw new Error('Credit charge exceeds supported range')
+  return Math.max(1, Number(credits))
+}
+
+// Provider cost includes all attempts and is authoritative even when token
+// counts are absent. Without a complete cost report, settle at the marked-up
+// hold rather than guessing a price from tokens or charging a partial cost.
+export function computeCredits(
+  usage: TokenUsage,
+  hold: number,
+  markupPercent = DEFAULT_CREDIT_MARKUP_PERCENT,
+): CreditCost {
   const { promptTokens, completionTokens } = usage
-  if (promptTokens === null || completionTokens === null)
-    return { ...usage, credits: hold }
-  const tokens = promptTokens + completionTokens
   if (
-    !isTokenCount(promptTokens) ||
-    !isTokenCount(completionTokens) ||
-    !Number.isSafeInteger(tokens)
+    (promptTokens !== null && !isTokenCount(promptTokens)) ||
+    (completionTokens !== null && !isTokenCount(completionTokens)) ||
+    (promptTokens !== null &&
+      completionTokens !== null &&
+      !Number.isSafeInteger(promptTokens + completionTokens))
   )
     throw new Error('Invalid token usage')
   return {
     ...usage,
-    credits: Math.max(1, Math.round(tokens / TOKENS_PER_CREDIT)),
+    markupPercent,
+    credits:
+      usage.costUsd === undefined
+        ? hold
+        : creditsForCost(usage.costUsd, markupPercent),
   }
 }
 
 // Temporary hold including prompt/schema overhead and structured output.
-// Replaced by the actual token-derived charge when the request completes.
-export function estimateCredits(text: string): number {
+// The legacy Luna sample approximates seven million tokens per USD; this is
+// only a reservation heuristic, never the settled price when cost is reported.
+export function estimateCredits(
+  text: string,
+  markupPercent = DEFAULT_CREDIT_MARKUP_PERCENT,
+): number {
   const inputTokens = Math.ceil(text.length / 4)
-  return Math.max(1, Math.ceil((2200 + inputTokens * 3) / TOKENS_PER_CREDIT))
+  return creditsForCost((2200 + inputTokens * 3) / 7_000_000, markupPercent)
 }
