@@ -1,11 +1,15 @@
 import type { Client } from 'pg'
+import { dollarUnits } from './credit-units'
+import type { ModelPricing } from './model-pricing'
+import type { TokenUsage } from './openrouter'
 
 // Credit accounting for the platform key path. BYOK requests skip this
 // module entirely — see docs/adr/0003.
 
 export type CreditCost = {
-  // Cost in credits, derived from token usage × the model's credit_cost_multiplier.
+  // Integer accounting units ($0.000001 each), converted to Credits by the API.
   credits: number
+  costUsd?: number
   // Underlying token breakdown for the credit_ledger row.
   promptTokens: number
   completionTokens: number
@@ -118,6 +122,7 @@ export async function reconcileSpend(
           modelId: cost.modelId,
           promptTokens: cost.promptTokens,
           completionTokens: cost.completionTokens,
+          costUsd: cost.costUsd,
         }),
       ],
     )
@@ -198,30 +203,27 @@ export async function recordGrant(
 }
 
 export function computeCredits(
-  promptTokens: number,
-  completionTokens: number,
-  modelId: string,
-  multiplier: number,
+  usage: TokenUsage,
+  pricing: ModelPricing,
 ): CreditCost {
-  const credits = tokenCredits(promptTokens + completionTokens, multiplier)
-  return { credits, promptTokens, completionTokens, modelId }
+  const costUsd =
+    usage.costUsd ??
+    usage.promptTokens * pricing.prompt +
+      usage.completionTokens * pricing.completion +
+      (usage.requests ?? 1) * pricing.request
+  return { ...usage, costUsd, credits: dollarUnits(costUsd) }
 }
 
-// Pre-call estimate for a credit hold, shaped like computeCredits so it scales
-// with the same per-model multiplier. Deliberately generous (system prompt +
-// input + a comparable output) so the reservation is a meaningful fraction of
-// the real cost — the hold is reconciled to the true token usage afterwards, so
-// over-estimating only tightens the concurrency gate, it does not over-charge.
-const PROMPT_OVERHEAD_TOKENS = 400
-
-// Registry multipliers are NUMERIC(6,3). Multiply integers first so e.g.
-// 100 × 1.1 cannot become 110.00000000000001 and charge 111 credits.
-function tokenCredits(tokens: number, multiplier: number): number {
-  return Math.max(1, Math.ceil((tokens * Math.round(multiplier * 1000)) / 1000))
-}
-
-export function estimateCredits(text: string, multiplier: number): number {
+// A temporary concurrency hold, settled to reported USD cost after the call.
+// Includes system/schema overhead and room for structured output.
+export function estimateCredits(text: string, pricing: ModelPricing): number {
   const inputTokens = Math.ceil(text.length / 4)
-  const estimatedTokens = PROMPT_OVERHEAD_TOKENS + inputTokens * 2
-  return tokenCredits(estimatedTokens, multiplier)
+  return Math.max(
+    1,
+    dollarUnits(
+      (1200 + inputTokens) * pricing.prompt +
+        (1000 + inputTokens * 2) * pricing.completion +
+        pricing.request,
+    ),
+  )
 }

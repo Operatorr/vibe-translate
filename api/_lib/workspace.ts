@@ -1,3 +1,4 @@
+import { toCredits } from './credit-units'
 import type { Client } from 'pg'
 
 import type { Perspective, Persona, SegmentToken, VibeStop } from './schemas'
@@ -106,7 +107,12 @@ export function mapSegment(r: SegmentDbRow) {
     vibe: r.vibe,
     perspective: r.perspective,
     tokenAlignment: r.token_alignment,
-    tokenUsage: r.token_usage,
+    tokenUsage: {
+      ...r.token_usage,
+      ...(typeof r.token_usage.creditsCharged === 'number'
+        ? { creditsCharged: toCredits(r.token_usage.creditsCharged) }
+        : {}),
+    },
     createdAt: new Date(r.created_at).toISOString(),
     updatedAt: new Date(r.updated_at).toISOString(),
   }

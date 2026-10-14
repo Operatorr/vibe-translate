@@ -90,9 +90,10 @@ create table if not exists users (
   display_name text,
   tier text not null default 'free' check (tier in ('free', 'pro', 'team')),
   subscription_id text,
+  billing_period text not null default 'monthly' check (billing_period in ('monthly', 'annual')),
   onboarding_complete boolean not null default false,
   locale text,
-  -- Credits: token-derived spend, refilled monthly per tier. See adr/0003.
+  -- Integer microdollars; 10 units = 1 displayed Credit. See adr/0003.
   credits_balance integer not null default 0,
   credits_refilled_at timestamptz,
   -- BYOK: optional per-user OpenRouter key, encrypted at rest (AES-GCM).
@@ -132,7 +133,7 @@ create unique index if not exists models_provider_model_uniq
 -- Seed defaults (idempotent).
 insert into models (task, provider, provider_model_id, display_name, is_default, embedding_dimensions)
 values
-  ('translate', 'openrouter', 'deepseek/deepseek-v4-pro', 'DeepSeek v4 Pro', true, null),
+  ('translate', 'openrouter', 'openai/gpt-6-luna', 'GPT-6 Luna', true, null),
   ('explain',   'openrouter', 'xiaomi/mimo-v2.5-pro',     'Xiaomi MiMo v2.5 Pro', true, null),
   ('dictation', 'openrouter', 'google/gemini-2.5-flash',  'Gemini 2.5 Flash', true, null),
   ('embed',     'openrouter', 'openai/text-embedding-3-small', 'OpenAI Embedding 3 Small (via OpenRouter)', true, 1536)

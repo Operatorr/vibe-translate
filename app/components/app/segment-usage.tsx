@@ -26,7 +26,17 @@ export function SegmentUsage({
     return <span className="segment__tgt-meta">cached · 0 credits</span>
   const input = count(usage.promptTokens)
   const output = count(usage.completionTokens)
-  const charged = count(usage.creditsCharged)
+  const creditValue =
+    typeof usage.creditsCharged === 'string' &&
+    /^\s*\d+(?:\.\d{1,2})?\s*$/.test(usage.creditsCharged)
+      ? Number(usage.creditsCharged)
+      : usage.creditsCharged
+  const charged =
+    typeof creditValue === 'number' &&
+    Number.isFinite(creditValue) &&
+    creditValue >= 0
+      ? creditValue
+      : null
   const total = input !== null && output !== null ? input + output : null
   if ((total ?? input ?? output ?? 0) === 0 && charged === null) return null
   const label =
@@ -88,9 +98,10 @@ export function SegmentUsage({
           settings. Output includes the translation and word alignment.
         </p>
         <p>
-          Platform credit charges use input and output tokens and the model’s
-          credit rate. The credits page shows the actual charge. Cached
-          translations and your own OpenRouter key use no credits.
+          Platform credits are charged from the model’s actual cost. One credit
+          covers $0.00001 of model usage. The credits page shows the actual
+          charge. Cached translations and your own OpenRouter key use no
+          credits.
         </p>
       </div>
     </Popover>

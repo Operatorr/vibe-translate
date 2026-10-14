@@ -177,7 +177,8 @@ export function CreditsPage({ orderId }: { orderId?: string }) {
                   <span>credits</span>
                 </p>
                 <p>
-                  Credits are charged from actual model token usage. Saved and
+                  One credit covers $0.00001 of model usage. A short Luna
+                  translation typically uses about 10–20 credits. Saved and
                   cached translations are free.
                 </p>
                 {data.me.byok.configured && (
@@ -195,7 +196,10 @@ export function CreditsPage({ orderId }: { orderId?: string }) {
                   ACCOUNT
                 </span>
                 <p>
-                  {data.me.limits.credits.toLocaleString()} credits in your plan
+                  {data.me.limits.credits.toLocaleString()}{' '}
+                  {data.me.tier === 'free'
+                    ? 'one-time welcome credits'
+                    : `credits per ${data.me.billingPeriod === 'annual' ? 'year' : 'month'}`}
                   allowance.
                 </p>
                 {data.me.tier === 'free' && (

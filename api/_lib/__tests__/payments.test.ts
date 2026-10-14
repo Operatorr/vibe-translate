@@ -201,19 +201,19 @@ describe('credit pack catalog', () => {
     ).toEqual([
       {
         id: 'small',
-        credits: 25000,
+        credits: 2500000,
         available: true,
         price: { amount: 900, currency: 'USD' },
       },
       {
         id: 'medium',
-        credits: 50000,
+        credits: 5000000,
         available: true,
         price: { amount: 1800, currency: 'USD' },
       },
       {
         id: 'large',
-        credits: 100000,
+        credits: 10000000,
         available: true,
         price: { amount: 3150, currency: 'USD' },
       },
@@ -384,7 +384,7 @@ describe('credit pack checkout', () => {
           email: 'a@test.com',
         }),
       ).toEqual({ checkoutUrl: 'https://checkout.test' })
-      const credits = { small: 25000, medium: 50000, large: 100000 }[pack]
+      const credits = { small: 2500000, medium: 5000000, large: 10000000 }[pack]
       expect(calls[0].params).toEqual(['user-1', `${pack}-product`, 1, credits])
       expect(
         find('update credit_purchases set checkout_session_id')?.params,

@@ -61,6 +61,13 @@ vi.mock('../_lib/openrouter', () => ({
     reasoning: undefined,
   })),
 }))
+vi.mock('../_lib/model-pricing', () => ({
+  getModelPricing: vi.fn(async () => ({
+    prompt: 0.000001,
+    completion: 0.000001,
+    request: 0,
+  })),
+}))
 vi.mock('../_lib/ai', () => ({
   translateSegment: vi.fn(async () => ({
     targetText: 'やあ',
@@ -340,6 +347,7 @@ describe('translate credit ordering', () => {
       { ledgerId: 'ledger_1', reserved: 5 },
       {
         credits: 8,
+        costUsd: 0.000008,
         promptTokens: 5,
         completionTokens: 3,
         modelId: 'test/model',
@@ -353,7 +361,12 @@ describe('translate credit ordering', () => {
   // 5 prompt + 3 completion tokens from the translateSegment mock.
   it.each([
     { label: 'platform at 1x', isByok: false, multiplier: 1, charged: 8 },
-    { label: 'platform at 2x', isByok: false, multiplier: 2, charged: 16 },
+    {
+      label: 'platform with legacy multiplier 2',
+      isByok: false,
+      multiplier: 2,
+      charged: 8,
+    },
     { label: 'BYOK', isByok: true, multiplier: 2, charged: 0 },
   ])(
     'persists the same credit charge that settlement applies ($label)',
@@ -369,8 +382,10 @@ describe('translate credit ordering', () => {
       })
       let usage: { creditsCharged?: unknown } | undefined
       answer = (sql, params) => {
-        if (sql.startsWith('insert into segments'))
+        if (sql.startsWith('insert into segments')) {
           usage = JSON.parse(params[7] as string)
+          return { rows: [{ ...segmentRow(), token_usage: usage }] }
+        }
         return createAnswers(sql, params)
       }
       const res = await postJson('/api/segments', {
@@ -379,6 +394,9 @@ describe('translate credit ordering', () => {
         vibe: 'casual',
       })
       expect(res.status).toBe(201)
+      expect(await res.json()).toMatchObject({
+        tokenUsage: { creditsCharged: charged / 10 },
+      })
       expect(usage).toMatchObject({
         promptTokens: 5,
         completionTokens: 3,
@@ -411,8 +429,8 @@ describe('translate credit ordering', () => {
       error: {
         details: {
           code: 'insufficient_credits',
-          balance: 198,
-          requiredCredits: 402,
+          balance: 19.8,
+          requiredCredits: 220.3,
         },
       },
     })
@@ -1305,21 +1323,21 @@ describe('credit history', () => {
     expect(body.ledger).toEqual([
       {
         id: 'ledger_hold',
-        delta: -412,
+        delta: -41.2,
         reason: 'spend.translate',
         pending: true,
         createdAt: '2026-10-01T10:00:02.000Z',
       },
       {
         id: 'ledger_spend',
-        delta: -8,
+        delta: -0.8,
         reason: 'spend.translate',
         pending: false,
         createdAt: '2026-10-01T10:00:01.000Z',
       },
       {
         id: 'ledger_grant',
-        delta: 25000,
+        delta: 2500,
         reason: 'grant.purchase',
         pending: false,
         createdAt: '2026-10-01T10:00:00.000Z',
@@ -1363,7 +1381,7 @@ describe('credit history', () => {
       const body = await expectSnapshotResponse(
         await call(`/api/users/me/credits?orderId=${ORDER}`),
       )
-      expect(body.order).toEqual({ credits: 25000, fulfilled })
+      expect(body.order).toEqual({ credits: 2500, fulfilled })
       expect(statements()).toEqual([
         SNAPSHOT,
         'users',

@@ -21,12 +21,7 @@ import type {
 export type TranslationProviderResult = {
   targetText: string
   tokenAlignment: SegmentToken[]
-  tokenUsage: {
-    modelId: string
-    promptTokens: number
-    completionTokens: number
-    costCents?: number
-  }
+  tokenUsage: TokenUsage
 }
 
 export type TranslateSegmentInput = {

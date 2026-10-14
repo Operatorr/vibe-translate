@@ -54,7 +54,7 @@ describe('translation usage on a segment card', () => {
     expect(valueFor('Total tokens')).toBe('449')
     expect(valueFor('Credits charged')).toBe(NR)
     expect(
-      screen.getByText(/credit charges use input and output tokens/i),
+      screen.getByText(/credits are charged from the model’s actual cost/i),
     ).toBeTruthy()
   })
   it('shows the actual stored credit charge separately from provider token usage', async () => {
@@ -120,11 +120,12 @@ describe('translation usage on a segment card', () => {
       values: [NR, '99', NR, NR],
     },
     {
-      name: 'rejects fractional counts',
+      name: 'rejects fractional token counts but accepts fractional Credits',
       usage: { promptTokens: 350, completionTokens: 99.5, creditsCharged: 1.5 },
-      trigger: '350 input tok',
-      label: 'Token usage: 350 input tokens, total not recorded',
-      values: ['350', NR, NR, NR],
+      trigger: '1.5 credits',
+      label:
+        'Token usage: 350 input tokens, total not recorded, 1.5 credits charged',
+      values: ['350', NR, NR, '1.5'],
     },
     {
       name: 'rejects Infinity and NaN',

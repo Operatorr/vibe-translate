@@ -2841,9 +2841,10 @@ body,
 }
 
 .workspace__scroll {
+  /* Keep absolute screen-reader labels inside the history's scroll bounds. */
+  position: relative;
   flex: 1;
   overflow-y: auto;
-  padding: 0 0 200px;
 }
 
 /* Translation segments — the "CAT tool" surface */
@@ -4680,9 +4681,6 @@ body,
   .workspace__pair {
     line-height: 1.5;
     overflow-wrap: anywhere;
-  }
-  .workspace__scroll {
-    padding: 0 0 140px;
   }
   .segment__actions {
     opacity: 1;

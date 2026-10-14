@@ -192,9 +192,9 @@ Create three **one-time, fixed-price** products in Dodo (not recurring or pay-wh
 
 | Credits | Worker binding                | Dodo product       |
 | ------- | ----------------------------- | ------------------ |
-| 25,000  | `DODO_PRODUCT_CREDITS_SMALL`  | Small credit pack  |
-| 50,000  | `DODO_PRODUCT_CREDITS_MEDIUM` | Medium credit pack |
-| 100,000 | `DODO_PRODUCT_CREDITS_LARGE`  | Large credit pack  |
+| 250,000  | `DODO_PRODUCT_CREDITS_SMALL`  | Small credit pack  |
+| 500,000  | `DODO_PRODUCT_CREDITS_MEDIUM` | Medium credit pack |
+| 1,000,000 | `DODO_PRODUCT_CREDITS_LARGE`  | Large credit pack  |
 
 Set each product's price/currency in Dodo. The credits page fetches current base prices
 and discounts from Dodo; final localized currency/taxes are shown at checkout. Each
@@ -247,3 +247,30 @@ order and are ignored.
 
 Unfulfilled orders are never cleaned up automatically; see
 [DATABASE.md](./DATABASE.md#credit_purchases) before deleting any.
+
+## Cost-based credits rollout (0012–0013)
+
+Stop/drain the old worker before applying `0012_cost_based_credits.sql`; deploy the
+matching worker and SPA before accepting new traffic. Apply `0013_credit_display_scale.sql`
+as well; it updates column descriptions for the 10× display scale without changing
+accounting balances. Old code interprets these
+balances in different units, so a code-only rollback is unsafe. Restore the pre-
+migration database snapshot and old deployment together if rollback is needed.
+The migration preserves paid grants and top-up monetary values, converts welcome
+grants to 10,000 Credits, and reprices recorded Luna spends. Existing subscriptions
+whose webhook omits the product and period need `users.billing_period` backfilled
+from their Dodo subscription before their next renewal; new checkouts record it.
+
+Keep Dodo fixed-price subscription products aligned with the page:
+
+| Tier | Monthly | Annual | Annual credits |
+| --- | --- | --- | --- |
+| Pro | $18 | $168 (22.2% saving) | 6,000,000 |
+| Linguist | $64 | $588 (23.4% saving) | 24,000,000 |
+
+Free receives 10,000 welcome credits ($0.10 of model usage). Pro receives 500,000
+monthly ($5); Linguist receives 2,000,000 monthly ($20). One displayed Credit buys
+$0.00001 of provider usage; charges are recorded in 0.1-Credit increments. Top-up
+products still grant 250,000 / 500,000 / 1,000,000 displayed Credits; stored order
+amounts are microdollars. Explicit `TRANSLATE_MODEL` overrides must be unset or
+point to `openai/gpt-6-luna` for the advertised short-translation examples.

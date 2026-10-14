@@ -40,16 +40,26 @@ export type ChatMessage = { role: 'system' | 'user'; content: string }
 // the model's floor) on models that always reason.
 export type ReasoningEffort = 'none' | 'minimal' | 'low' | 'medium' | 'high'
 
-const REASONING_EFFORTS: readonly string[] = ['none', 'minimal', 'low', 'medium', 'high']
+const REASONING_EFFORTS: readonly string[] = [
+  'none',
+  'minimal',
+  'low',
+  'medium',
+  'high',
+]
 
 // Validate a free-form value into a ReasoningEffort, or undefined.
-export function parseReasoningEffort(value: string | undefined): ReasoningEffort | undefined {
+export function parseReasoningEffort(
+  value: string | undefined,
+): ReasoningEffort | undefined {
   const v = value?.trim().toLowerCase()
   return v && REASONING_EFFORTS.includes(v) ? (v as ReasoningEffort) : undefined
 }
 
 // The OpenRouter request fragment for a reasoning setting.
-function reasoningParam(reasoning: ReasoningEffort | undefined): Record<string, unknown> {
+function reasoningParam(
+  reasoning: ReasoningEffort | undefined,
+): Record<string, unknown> {
   if (!reasoning) return {}
   if (reasoning === 'none') return { reasoning: { enabled: false } }
   return { reasoning: { effort: reasoning } }
@@ -59,8 +69,9 @@ export type TokenUsage = {
   modelId: string
   promptTokens: number
   completionTokens: number
-  // OpenRouter reports cost when `usage.include` is set; in cents when present.
-  costCents?: number
+  // OpenRouter reports USD; retain sub-cent precision for credit accounting.
+  costUsd?: number
+  requests?: number
 }
 
 export type ChatJsonArgs<T> = {
@@ -96,7 +107,10 @@ function buildErrorMessage(label: string, error: unknown): string {
     // Log the upstream detail server-side; the client gets status only, so
     // provider/model internals aren't leaked in error responses.
     if (error.message) {
-      console.error(`${label} provider error`, { status: error.status, detail: String(error.message).slice(0, 500) })
+      console.error(`${label} provider error`, {
+        status: error.status,
+        detail: String(error.message).slice(0, 500),
+      })
     }
     return `${label} provider request failed (${error.status ?? 'unknown'})`
   }
@@ -112,19 +126,26 @@ export async function chatJson<T>(
 ): Promise<{ data: T; tokenUsage: TokenUsage }> {
   const label = args.label ?? 'Model'
   const client = createOpenRouterClient(args.apiKey)
-  const jsonSchema = z.toJSONSchema(args.schema, { target: 'openai' }) as Record<string, unknown>
+  const jsonSchema = z.toJSONSchema(args.schema, {
+    target: 'openai',
+  }) as Record<string, unknown>
 
-  const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = args.messages.map((m) =>
-    m.role === 'system'
-      ? { role: 'system', content: m.content }
-      : { role: 'user', content: m.content },
-  )
+  const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] =
+    args.messages.map((m) =>
+      m.role === 'system'
+        ? { role: 'system', content: m.content }
+        : { role: 'user', content: m.content },
+    )
 
   const requestHeaders = args.appUrl
     ? { 'HTTP-Referer': args.appUrl, 'X-Title': 'Vibe Translate' }
     : undefined
 
   let lastError = ''
+  let totalPromptTokens = 0
+  let totalCompletionTokens = 0
+  let totalCostUsd = 0
+  let allCostsReported = true
 
   // Two attempts total: the original call plus one corrective retry.
   for (let attempt = 0; attempt < 2; attempt += 1) {
@@ -141,7 +162,11 @@ export async function chatJson<T>(
           messages,
           response_format: {
             type: 'json_schema',
-            json_schema: { name: args.schemaName, strict: true, schema: jsonSchema },
+            json_schema: {
+              name: args.schemaName,
+              strict: true,
+              schema: jsonSchema,
+            },
           },
           // OpenRouter-specific: only route to providers that honour
           // response_format json_schema, and return token counts + cost.
@@ -160,11 +185,21 @@ export async function chatJson<T>(
     const usage = completion.usage as
       | (OpenAI.Completions.CompletionUsage & { cost?: number })
       | undefined
+    totalPromptTokens += usage?.prompt_tokens ?? 0
+    totalCompletionTokens += usage?.completion_tokens ?? 0
+    if (
+      typeof usage?.cost === 'number' &&
+      Number.isFinite(usage.cost) &&
+      usage.cost >= 0
+    )
+      totalCostUsd += usage.cost
+    else allCostsReported = false
     const tokenUsage: TokenUsage = {
       modelId: completion.model || args.model,
-      promptTokens: usage?.prompt_tokens ?? 0,
-      completionTokens: usage?.completion_tokens ?? 0,
-      ...(Number.isFinite(usage?.cost) ? { costCents: Math.round((usage as { cost: number }).cost * 100) } : {}),
+      promptTokens: totalPromptTokens,
+      completionTokens: totalCompletionTokens,
+      requests: attempt + 1,
+      ...(allCostsReported ? { costUsd: totalCostUsd } : {}),
     }
 
     let parsed: unknown
@@ -176,7 +211,8 @@ export async function chatJson<T>(
         { role: 'assistant', content },
         {
           role: 'user',
-          content: 'Your previous reply was not valid JSON. Return ONLY a JSON object matching the schema.',
+          content:
+            'Your previous reply was not valid JSON. Return ONLY a JSON object matching the schema.',
         },
       )
       continue
@@ -187,7 +223,8 @@ export async function chatJson<T>(
       return { data: result.data, tokenUsage }
     }
 
-    lastError = result.error.issues[0]?.message ?? 'reply did not match the schema'
+    lastError =
+      result.error.issues[0]?.message ?? 'reply did not match the schema'
     messages.push(
       { role: 'assistant', content },
       {
@@ -205,7 +242,10 @@ export async function chatJson<T>(
 
 // Tasks that can route to OpenRouter. `embed` is an OpenAI-direct task and is
 // handled by api/_lib/embeddings.ts, not here.
-export type ProviderTask = Extract<ModelTask, 'translate' | 'explain' | 'dictation'>
+export type ProviderTask = Extract<
+  ModelTask,
+  'translate' | 'explain' | 'dictation'
+>
 
 // Resolved provider/runtime config handed to a provider function (translate,
 // explain, dictation): which key + model to call, plus optional app
@@ -225,7 +265,7 @@ export type CallTarget = {
   modelId: string
   // models.id for the platform default; null on a BYOK custom slug.
   modelRowId: string | null
-  // Used to derive credit cost on the platform path; irrelevant under BYOK.
+  // Legacy registry compatibility; provider-cost accounting ignores this.
   creditCostMultiplier: number
   // When true the caller skips all credit accounting (the user pays OpenRouter).
   isByok: boolean
@@ -236,7 +276,10 @@ export type CallTarget = {
 // Per-task env override var names. An operator can pin a model + reasoning
 // effort without touching the `models` registry (see adr/0003). The env model
 // overrides the platform default; a user's BYOK per-task model still wins.
-const ENV_OVERRIDES: Record<ProviderTask, { model: string; reasoning: string }> = {
+const ENV_OVERRIDES: Record<
+  ProviderTask,
+  { model: string; reasoning: string }
+> = {
   translate: { model: 'TRANSLATE_MODEL', reasoning: 'TRANSLATE_REASONING' },
   explain: { model: 'EXPLAIN_MODEL', reasoning: 'EXPLAIN_REASONING' },
   dictation: { model: 'DICTATION_MODEL', reasoning: 'DICTATION_REASONING' },
@@ -275,16 +318,30 @@ export async function resolveCallTarget(
       try {
         const apiKey = await decryptSecret(cipher, encryptionKey)
         const byokModelId =
-          task === 'translate' ? row?.byok_translate_model_id : row?.byok_explain_model_id
+          task === 'translate'
+            ? row?.byok_translate_model_id
+            : row?.byok_explain_model_id
         // BYOK model wins over the env override, which wins over the registry.
         const modelId =
-          byokModelId?.trim() || envModelId || (await getDefaultModel(db, task)).providerModelId
-        return { apiKey, modelId, modelRowId: null, creditCostMultiplier: 0, isByok: true, reasoning }
+          byokModelId?.trim() ||
+          envModelId ||
+          (await getDefaultModel(db, task)).providerModelId
+        return {
+          apiKey,
+          modelId,
+          modelRowId: null,
+          creditCostMultiplier: 0,
+          isByok: true,
+          reasoning,
+        }
       } catch {
         // Fall through to the platform path — never 500 on a bad cipher. Log it
         // (without the cipher/key) so a botched CREDENTIALS_ENCRYPTION_KEY
         // rotation is observable instead of silently charging the user credits.
-        console.warn('byok decrypt failed; falling back to platform path', { userId, task })
+        console.warn('byok decrypt failed; falling back to platform path', {
+          userId,
+          task,
+        })
       }
     }
   }

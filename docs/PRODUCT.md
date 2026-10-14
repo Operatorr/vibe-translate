@@ -98,9 +98,9 @@ Why dictation-first despite the cost and failure risk: it produces a richer Char
 
 Tiers are `free`, `pro`, `team`, defined in `api/_lib/tier.ts`. The differentiator between tiers is the signup or billing-renewal **Credits** allowance, plus a feature flag matrix (Explain, Translation memory, AI dictation, custom Vibe stops). All tiers share the **same models** for translate, explain, and embed; the upgrade path is *more capacity*, not *better output*.
 
-- **Free** — 10,000 one-time welcome credits, with no time-limited trial. Read-only access to past Segments stays unlimited.
-- **Pro** — 25,000 credits per billing renewal, unlocks Explain + Translation memory + AI dictation.
-- **Team** — 250,000 credits per billing renewal, adds custom Vibe stops.
+- **Free** — 10,000 one-time welcome credits ($0.10 of model usage), with no time-limited trial. Read-only access to past Segments stays unlimited.
+- **Pro** — 500,000 credits monthly or 6,000,000 annually, unlocks Explain + Translation memory + AI dictation.
+- **Team** — 2,000,000 credits monthly or 24,000,000 annually, adds custom Vibe stops.
 
 The exact gate matrix lives in [BACKEND.md](./BACKEND.md#tiers).
 

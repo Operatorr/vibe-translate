@@ -53,7 +53,7 @@ const PricingContent = ({ onNavigate }: { onNavigate: NavigateFn }) => {
           <h1 className="pricing-hero__title">Pay for what you ship.</h1>
           <p className="pricing-hero__sub">
             Three plans. No seats trick, no per-language nickel-and-diming.
-            Cancel any time. Annual saves 20%.
+            Cancel any time. Annual saves over 20%.
           </p>
 
           <div className="billing-toggle">
@@ -67,7 +67,7 @@ const PricingContent = ({ onNavigate }: { onNavigate: NavigateFn }) => {
               className={'billing-toggle__opt ' + (annual ? 'is-active' : '')}
               onClick={() => setAnnual(true)}
             >
-              Annual <span className="save">SAVE 20%</span>
+              Annual <span className="save">SAVE 20%+</span>
             </button>
           </div>
         </div>
@@ -168,7 +168,8 @@ const PricingContent = ({ onNavigate }: { onNavigate: NavigateFn }) => {
                 <div className="tier__feat">
                   <Icon name="check" />
                   <span>
-                    <strong>25,000 credits</strong> per billing renewal
+                    <strong>{annual ? '6,000,000' : '500,000'} credits</strong>{' '}
+                    per {annual ? 'year' : 'month'}
                   </span>
                 </div>
                 <div className="tier__feat">
@@ -208,7 +209,7 @@ const PricingContent = ({ onNavigate }: { onNavigate: NavigateFn }) => {
             <div className="tier">
               <h3 className="tier__name">Linguist</h3>
               <p className="tier__pitch">
-                For localization shops and full-time translators. Premium model,
+                For localization shops and full-time translators. More credits,
                 every feature on.
               </p>
               <div className="tier__price">
@@ -232,7 +233,10 @@ const PricingContent = ({ onNavigate }: { onNavigate: NavigateFn }) => {
                 <div className="tier__feat">
                   <Icon name="check" />
                   <span>
-                    <strong>250,000 credits</strong> per billing renewal
+                    <strong>
+                      {annual ? '24,000,000' : '2,000,000'} credits
+                    </strong>{' '}
+                    per {annual ? 'year' : 'month'}
                   </span>
                 </div>
                 <div className="tier__feat">
@@ -243,7 +247,7 @@ const PricingContent = ({ onNavigate }: { onNavigate: NavigateFn }) => {
                 </div>
                 <div className="tier__feat">
                   <Icon name="check" />
-                  <span>Premium model (Opus tier)</span>
+                  <span>Same translation quality on every plan</span>
                 </div>
                 <div className="tier__feat">
                   <Icon name="check" />
@@ -313,8 +317,10 @@ const PricingContent = ({ onNavigate }: { onNavigate: NavigateFn }) => {
                 <tr>
                   <td>Credits</td>
                   <td>10,000 welcome</td>
-                  <td>25,000 per renewal</td>
-                  <td>250,000 per renewal</td>
+                  <td>{annual ? '6,000,000 per year' : '500,000 per month'}</td>
+                  <td>
+                    {annual ? '24,000,000 per year' : '2,000,000 per month'}
+                  </td>
                 </tr>
                 <tr>
                   <td>One-time credit top-ups</td>
@@ -352,9 +358,9 @@ const PricingContent = ({ onNavigate }: { onNavigate: NavigateFn }) => {
                 </tr>
                 <tr>
                   <td>Default model</td>
-                  <td>vibe-translate-base</td>
-                  <td>vibe-translate-base</td>
-                  <td>vibe-translate-pro (Opus tier)</td>
+                  <td>GPT-6 Luna</td>
+                  <td>GPT-6 Luna</td>
+                  <td>GPT-6 Luna</td>
                 </tr>
                 <tr>
                   <td>Streaming output</td>
@@ -540,11 +546,15 @@ const PricingContent = ({ onNavigate }: { onNavigate: NavigateFn }) => {
                 <Icon name="plus" />
               </h3>
               <p className="faq__a">
-                Each request uses the model’s actual prompt and completion token
-                counts, multiplied by its credit rate and rounded up. The prompt
-                includes your character settings. Saved and cached translations
-                are free, and using your own OpenRouter key skips credits for
-                translations and explanations.
+                One credit covers $0.00001 of model usage. A short Luna
+                translation typically uses about 10–20 credits, including
+                character settings and word alignment. Free includes 10,000
+                welcome credits once. Annual plans include twelve months of
+                credits at each renewal. Charges follow the provider’s actual
+                cost, including any prompt caching discount, and are recorded to
+                0.1 credit. Saved and cached translations are free, and using
+                your own OpenRouter key skips credits for translations and
+                explanations.
               </p>
             </div>
             <div className="faq__item">

@@ -87,7 +87,7 @@ describe('translateSegment', () => {
         modelId: 'deepseek/deepseek-v4-pro',
         promptTokens: 10,
         completionTokens: 5,
-        costCents: 5,
+        costUsd: 0.05,
       },
     })
     const result = await translateSegment(input(), config)
@@ -99,7 +99,7 @@ describe('translateSegment', () => {
       modelId: 'deepseek/deepseek-v4-pro',
       promptTokens: 10,
       completionTokens: 5,
-      costCents: 5,
+      costUsd: 0.05,
     })
   })
 

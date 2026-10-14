@@ -866,7 +866,7 @@ const LandingContent = ({ onNavigate }: { onNavigate: NavigateFn }) => {
             Translate something nobody else can.
           </RevealHeading>
           <p className="cta-strip__sub">
-            Free to start. No credit card. The first 10,000 tokens are on us.
+            Free to start. No credit card. Your first 10,000 credits are on us.
           </p>
           <div className="hero__ctas">
             <button
