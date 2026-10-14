@@ -817,6 +817,21 @@ export function AppExperience() {
     : null
   const credits = me.data?.credits.balance
   const tier = me.data?.tier ?? 'free'
+  const accountStatus = (
+    <Link className="vt-side-foot chars__status" to="/app/credits">
+      <div
+        className="vt-status-dot"
+        style={{
+          background: tier === 'free' ? 'var(--amber-400)' : 'var(--turq-400)',
+        }}
+      ></div>
+      <div className="vt-status-text">
+        {tier === 'free' ? 'Free' : tier === 'pro' ? 'Pro' : 'Team'}
+        {credits !== undefined && ` · ${credits.toLocaleString()} credits`}
+      </div>
+      <Icon name="external-link" className="vt-status-ext" />
+    </Link>
+  )
   // Character reads wait for bootstrap, and a disabled query isn't isLoading.
   const loadingChars =
     !characters.data && (characters.isLoading || bootstrap.isFetching)
@@ -915,23 +930,7 @@ export function AppExperience() {
               </button>
             ))}
           </div>
-          <div className="chars__foot">
-            <Link className="vt-side-foot chars__status" to="/app/credits">
-              <div
-                className="vt-status-dot"
-                style={{
-                  background:
-                    tier === 'free' ? 'var(--amber-400)' : 'var(--turq-400)',
-                }}
-              ></div>
-              <div className="vt-status-text">
-                {tier === 'free' ? 'Free' : tier === 'pro' ? 'Pro' : 'Team'}
-                {credits !== undefined &&
-                  ` · ${credits.toLocaleString()} credits`}
-              </div>
-              <Icon name="external-link" className="vt-status-ext" />
-            </Link>
-          </div>
+          <div className="chars__foot">{accountStatus}</div>
         </aside>
 
         {/* THREADS sidebar */}
@@ -1033,6 +1032,9 @@ export function AppExperience() {
               Pick a character to see their threads.
             </div>
           )}
+          <div className="chars__foot threads__foot mobile-only">
+            {accountStatus}
+          </div>
         </aside>
 
         {/* WORKSPACE */}
