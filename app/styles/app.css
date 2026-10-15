@@ -608,33 +608,6 @@ body {
   padding-bottom: 6px;
 }
 
-.vt-cmdk {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  background: var(--bg-elev-1);
-  border: 1px solid var(--border);
-  padding: 6px 10px;
-  color: var(--fg-muted);
-  cursor: pointer;
-  font: 500 12px/1 var(--font-sans);
-  min-width: 220px;
-}
-.vt-cmdk:hover {
-  border-color: var(--border-strong);
-}
-.vt-cmdk kbd {
-  margin-left: auto;
-  font: 500 10px/1 var(--font-mono);
-  color: var(--fg-subtle);
-  border: 1px solid var(--border);
-  padding: 2px 5px;
-}
-.vt-cmdk i {
-  width: 14px;
-  height: 14px;
-}
-
 .vt-iconbtn {
   background: transparent;
   border: 1px solid transparent;
@@ -1313,8 +1286,7 @@ body,
 .vt-app,
 .vt-topnav,
 .vt-sidebar,
-.vt-composer,
-.vt-cmdk {
+.vt-composer {
   transition:
     background-color var(--dur-base) var(--ease-productive),
     color var(--dur-base) var(--ease-productive),
@@ -2786,6 +2758,12 @@ body,
   min-width: 0;
   background: var(--bg);
 }
+.workspace__toolbar {
+  flex-shrink: 0;
+}
+.workspace__toolbar-clip {
+  min-height: 0;
+}
 .workspace__head {
   display: flex;
   align-items: center;
@@ -3333,7 +3311,24 @@ body,
   font: 400 11px/1 var(--font-mono);
   color: var(--fg-subtle);
 }
+.composer__metadata {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  min-width: 0;
+}
+.composer__counter {
+  white-space: nowrap;
+}
+.composer__context {
+  display: none;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
 .composer__icons {
+  flex-shrink: 0;
   display: flex;
   gap: 4px;
 }
@@ -4078,14 +4073,6 @@ body,
   .vt-topnav__nav {
     display: none;
   }
-  .vt-cmdk {
-    min-width: 0;
-    width: 44px;
-  }
-  .vt-cmdk span,
-  .vt-cmdk kbd {
-    display: none;
-  }
   .container {
     padding: 0 20px;
   }
@@ -4655,19 +4642,89 @@ body,
   .threads__char-row {
     align-items: center;
   }
-  .workspace__head {
-    padding: 10px 12px;
+  .app-shell .vt-topnav {
+    padding: 0 12px;
     gap: 8px;
+  }
+  .app-shell .vt-topnav__left,
+  .app-shell .vt-topnav__right {
+    gap: 4px;
+  }
+  .app-shell .vt-topnav__nav {
+    display: none;
+  }
+  .app-shell .vt-mark {
+    white-space: nowrap;
+  }
+  .app-shell .vt-topnav__right > .vt-iconbtn {
+    display: grid;
+    place-items: center;
+    width: 36px;
+    height: 44px;
+    padding: 0;
+  }
+  .vt-topnav__toolbar-toggle i {
+    transition: transform var(--dur-base) var(--ease-productive);
+  }
+  .vt-topnav__toolbar-toggle[aria-expanded='false'] i {
+    transform: rotate(180deg);
+  }
+  .workspace__toolbar {
+    display: grid;
+    grid-template-rows: 1fr;
+    transition: grid-template-rows var(--dur-base) var(--ease-productive);
+  }
+  .workspace__toolbar[data-open='false'] {
+    grid-template-rows: 0fr;
+  }
+  .workspace__toolbar-clip {
+    overflow: hidden;
+  }
+  .workspace__head {
+    padding: 12px 10px;
+    gap: 6px;
+    transform: translateY(0);
+    transition: transform var(--dur-base) var(--ease-productive);
+  }
+  .workspace__toolbar[data-open='false'] .workspace__head {
+    transform: translateY(-100%);
   }
   .workspace__head-left {
-    gap: 8px;
+    flex: 1;
+    gap: 6px;
+  }
+  .workspace__head .mobile-back {
+    width: 32px;
+    height: 44px;
+    border-color: transparent;
+    background: transparent;
+  }
+  .workspace__head .mobile-back:hover {
+    background: var(--bg-elev-1);
+  }
+  .workspace__title {
+    font-size: 16px;
   }
   .workspace__head-right {
-    gap: 2px;
+    gap: 0;
+  }
+  .workspace__head-right .workspace__icon-btn {
+    height: 44px;
   }
   .workspace__pair {
-    line-height: 1.5;
-    overflow-wrap: anywhere;
+    display: flex;
+    align-items: center;
+    font: 400 10px/1.5 var(--font-sans);
+  }
+  .workspace__pair > span:not(.arrow) {
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+  .workspace__pair .arrow {
+    flex-shrink: 0;
+    margin: 0 6px;
   }
   .segment__actions {
     opacity: 1;
@@ -4688,6 +4745,23 @@ body,
   /* Full-width thumb targets on phones. */
   .persp__option {
     min-height: 44px;
+  }
+  .composer__field {
+    min-width: 0;
+  }
+  .composer__field-foot {
+    flex-wrap: wrap;
+    gap: 4px 8px;
+    font-size: 10px;
+  }
+  .composer__metadata {
+    gap: 6px 8px;
+  }
+  .composer__context {
+    display: inline-flex;
+  }
+  .composer__icons {
+    margin-left: auto;
   }
   .composer__buttons {
     width: 56px;
@@ -5906,4 +5980,27 @@ body,
   color: var(--fg-muted);
   line-height: 1.6;
   margin-top: 14px;
+}
+
+@media (max-width: 360px) {
+  .app-shell .vt-topnav {
+    padding: 0 10px;
+  }
+  .app-shell .vt-topnav__left,
+  .app-shell .vt-topnav__right {
+    gap: 0;
+  }
+  .app-shell .vt-mark {
+    gap: 6px;
+  }
+  .app-shell .vt-mark__name {
+    font-size: 13px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .workspace__toolbar,
+  .workspace__head,
+  .vt-topnav__toolbar-toggle i {
+    transition: none;
+  }
 }

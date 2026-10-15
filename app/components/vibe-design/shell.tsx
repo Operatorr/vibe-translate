@@ -108,6 +108,7 @@ export const SiteNav = ({
   onNavigate,
   onOpenPalette,
   account,
+  toolbarToggle,
 }: {
   theme: 'dark' | 'light'
   onToggleTheme: () => void
@@ -116,6 +117,11 @@ export const SiteNav = ({
   onOpenPalette: () => void
   // Right-hand account slot on the app route (AccountMenu).
   account?: React.ReactNode
+  toolbarToggle?: {
+    open: boolean
+    controls: string
+    onToggle: () => void
+  }
 }) => {
   const mobileNav = React.useRef<HTMLDetailsElement>(null)
   React.useEffect(() => {
@@ -178,16 +184,32 @@ export const SiteNav = ({
         </nav>
       </div>
       <div className="vt-topnav__right">
+        {toolbarToggle && (
+          <button
+            type="button"
+            className="vt-iconbtn vt-topnav__toolbar-toggle"
+            aria-label={
+              toolbarToggle.open ? 'Hide thread toolbar' : 'Show thread toolbar'
+            }
+            title={
+              toolbarToggle.open ? 'Hide thread toolbar' : 'Show thread toolbar'
+            }
+            aria-expanded={toolbarToggle.open}
+            aria-controls={toolbarToggle.controls}
+            onClick={toolbarToggle.onToggle}
+          >
+            <Icon name="chevron-up" />
+          </button>
+        )}
         {route === '/app' ? (
           <button
             type="button"
-            className="vt-cmdk"
+            className="vt-iconbtn"
             onClick={onOpenPalette}
             aria-label="Search or jump to"
+            title={`Search or jump to · ${MOD_KEY}K`}
           >
             <Icon name="search" />
-            <span>Search or jump to</span>
-            <kbd>{MOD_KEY === '⌘' ? '⌘K' : 'Ctrl K'}</kbd>
           </button>
         ) : route === '/auth' ? null : (
           <a

@@ -517,12 +517,21 @@ export const Composer = React.forwardRef<
             }}
           />
           <div className="composer__field-foot">
-            <span>
-              {chars} chars · ~{estimateTokens(shown)} tok
-              {recording && (
-                <span className="composer__rec"> · listening…</span>
-              )}
-            </span>
+            <div className="composer__metadata">
+              <span className="composer__counter">
+                {chars} chars · ~{estimateTokens(shown)} tok
+                {recording && (
+                  <span className="composer__rec"> · listening…</span>
+                )}
+              </span>
+              <span className="composer__context">
+                <span style={{ color: activeVibe?.color }}>
+                  {activeVibe?.label}
+                </span>
+                <span>·</span>
+                <span>T={temperature.toFixed(2)}</span>
+              </span>
+            </div>
             <div className="composer__icons">
               <button
                 type="button"

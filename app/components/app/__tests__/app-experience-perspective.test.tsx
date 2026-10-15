@@ -446,3 +446,80 @@ describe('AppExperience retry settings', () => {
     expect(unexpected).toEqual([])
   })
 })
+
+// The shell must keep its global controls usable while the mobile thread
+// toolbar is collapsed, and must restore the toolbar on desktop.
+function mobileViewport() {
+  let narrow = true
+  const listeners = new Set<() => void>()
+  vi.stubGlobal('matchMedia', (query: string) => ({
+    get matches() {
+      return query === '(max-width: 900px)' && narrow
+    },
+    media: query,
+    addEventListener: (_event: string, listener: () => void) => {
+      if (query === '(max-width: 900px)') listeners.add(listener)
+    },
+    removeEventListener: (_event: string, listener: () => void) => {
+      listeners.delete(listener)
+    },
+  }))
+  localStorage.setItem('vibe-translate:active-character:u1', 'a')
+  return {
+    desktop: () =>
+      act(() => {
+        narrow = false
+        listeners.forEach((listener) => listener())
+      }),
+  }
+}
+
+describe('AppExperience mobile thread toolbar', () => {
+  it('toggles from the keyboard without hiding global controls or losing focus', async () => {
+    mobileViewport()
+    const { user } = setup([aiko])
+    const toggle = await screen.findByRole('button', {
+      name: 'Hide thread toolbar',
+    })
+    const toolbar = document.getElementById(
+      toggle.getAttribute('aria-controls')!,
+    )!
+    expect(toggle.getAttribute('aria-expanded')).toBe('true')
+    expect(toolbar.hasAttribute('inert')).toBe(false)
+
+    toggle.focus()
+    await user.keyboard('{Enter}')
+    expect(toggle.getAttribute('aria-expanded')).toBe('false')
+    expect(toolbar.getAttribute('aria-hidden')).toBe('true')
+    expect(toolbar.hasAttribute('inert')).toBe(true)
+    expect(document.activeElement).toBe(toggle)
+    for (const name of ['Search or jump to', 'Toggle theme', 'Account']) {
+      expect(screen.getByRole('button', { name })).toBeDefined()
+    }
+
+    await user.keyboard(' ')
+    expect(toggle.getAttribute('aria-expanded')).toBe('true')
+    expect(toolbar.getAttribute('aria-hidden')).toBe('false')
+    expect(toolbar.hasAttribute('inert')).toBe(false)
+    expect(document.activeElement).toBe(toggle)
+  })
+
+  it('always reveals a collapsed toolbar when the viewport becomes desktop', async () => {
+    const viewport = mobileViewport()
+    const { user } = setup([aiko])
+    const toggle = await screen.findByRole('button', {
+      name: 'Hide thread toolbar',
+    })
+    const toolbar = document.getElementById(
+      toggle.getAttribute('aria-controls')!,
+    )!
+    await user.click(toggle)
+    expect(toolbar.hasAttribute('inert')).toBe(true)
+
+    viewport.desktop()
+    expect(toolbar.getAttribute('aria-hidden')).toBe('false')
+    expect(toolbar.hasAttribute('inert')).toBe(false)
+    expect(screen.queryByRole('button', { name: /thread toolbar/ })).toBeNull()
+    expect(screen.getByRole('button', { name: 'Share thread' })).toBeDefined()
+  })
+})

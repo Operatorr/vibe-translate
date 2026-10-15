@@ -49,6 +49,7 @@ import { copyText } from '@/lib/clipboard'
 import { initialsFor } from '@/lib/initials'
 
 import { AccountMenu } from './account-menu'
+
 import { CharacterPanel } from './character-panel'
 import { Composer, type ComposerHandle } from './composer'
 import {
@@ -204,6 +205,11 @@ export function AppExperience() {
   const fetchTts = useTtsFetch()
 
   // ---- ui state -----------------------------------------------------------
+  const [toolbarOpen, setToolbarOpen] = React.useState(true)
+  const toolbarId = React.useId()
+  const [narrow, setNarrow] = React.useState(
+    () => window.matchMedia(NARROW_QUERY).matches,
+  )
   const [pane, setPane] = React.useState<Pane>(() => {
     if (!window.matchMedia(NARROW_QUERY).matches) return 'workspace'
     return (
@@ -268,6 +274,7 @@ export function AppExperience() {
   React.useEffect(() => {
     const mq = window.matchMedia(NARROW_QUERY)
     const onChange = () => {
+      setNarrow(mq.matches)
       if (!mq.matches) setPane('workspace')
     }
     mq.addEventListener('change', onChange)
@@ -807,6 +814,11 @@ export function AppExperience() {
 
   // ---- derived ------------------------------------------------------------
   const activeVibe = vibes[vibeIdx] ?? vibes[0]
+  const targetRegion = char?.persona.region?.trim()
+  const targetLanguageLabel = char ? langName(char.targetLanguage) : ''
+  const targetToolbarLabel = narrow
+    ? `${targetLanguageLabel.replace(/\s*\([^)]*\)/g, '')}${targetRegion ? ` (${targetRegion})` : ''}`
+    : targetLanguageLabel
   const starred = threadList.filter((t) => t.starred)
   const recent = threadList.filter((t) => !t.starred)
   const pendingSend = pendingSends.get(composerContext)
@@ -845,6 +857,35 @@ export function AppExperience() {
     />
   )
 
+  const threadActions = thread && char && (
+    <div className="workspace__head-right">
+      <SharePopover
+        open={shareOpen}
+        onOpenChange={setShareOpen}
+        error={share.isError}
+        onRetry={() => void share.refetch()}
+        share={share.data}
+        loading={share.isPending || setShare.isPending}
+        onToggle={toggleShare}
+      />
+      <ThreadOptionsMenu
+        starred={thread.starred}
+        onToggleStar={toggleStar}
+        onDownload={exporter.download}
+        downloadDisabled={segList.length === 0}
+        onRename={startRename}
+        onArchive={archiveThread}
+        onDelete={removeThread}
+        onCopyMarkdown={exporter.copy}
+        copyPending={exporter.preparing}
+        onClearExplain={
+          explainOpenId ? () => setExplainOpenId(null) : undefined
+        }
+      />
+    </div>
+  )
+  const toolbarVisible = !narrow || toolbarOpen
+
   return (
     <div className="app-shell">
       <SiteNav
@@ -854,7 +895,20 @@ export function AppExperience() {
         onNavigate={frame.onNavigate}
         onOpenPalette={() => frame.setPaletteOpen(true)}
         account={<AccountMenu />}
+        toolbarToggle={
+          narrow && pane === 'workspace'
+            ? {
+                open: toolbarOpen,
+                controls: toolbarId,
+                onToggle: () => {
+                  if (toolbarOpen) setShareOpen(false)
+                  setToolbarOpen(!toolbarOpen)
+                },
+              }
+            : undefined
+        }
       />
+
       <div className="app-body" data-pane={pane}>
         {/* CHARACTERS sidebar */}
         <aside className="chars">
@@ -1039,81 +1093,80 @@ export function AppExperience() {
 
         {/* WORKSPACE */}
         <main className="workspace">
-          <div className="workspace__head">
-            <div className="workspace__head-left">
-              <button
-                type="button"
-                className="mobile-only mobile-back"
-                onClick={() => goPane('threads')}
-                aria-label="Back to threads"
-              >
-                <Icon name="chevron-left" />
-              </button>
-              <div className="workspace__title-block">
-                {renaming ? (
-                  <input
-                    className="workspace__rename"
-                    autoFocus
-                    value={renameDraft}
-                    aria-label="Thread title"
-                    onChange={(e) => setRenameDraft(e.target.value)}
-                    onBlur={() => finishRename(true)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') finishRename(true)
-                      if (e.key === 'Escape') finishRename(false)
-                    }}
-                  />
-                ) : (
-                  <h2
-                    className="workspace__title"
-                    onDoubleClick={startRename}
-                    title="Double-click to rename"
+          <div
+            className="workspace__toolbar"
+            id={toolbarId}
+            data-open={toolbarVisible}
+            inert={!toolbarVisible}
+            aria-hidden={!toolbarVisible}
+          >
+            <div className="workspace__toolbar-clip">
+              <div className="workspace__head">
+                <div className="workspace__head-left">
+                  <button
+                    type="button"
+                    className="mobile-only mobile-back"
+                    onClick={() => goPane('threads')}
+                    aria-label="Back to threads"
                   >
-                    {thread?.title ?? (char ? 'New translation' : 'Welcome')}
-                  </h2>
-                )}
-                {char && (
-                  <div className="workspace__pair">
-                    {FLAGS[char.sourceLanguage]} {langName(char.sourceLanguage)}
-                    <span className="arrow">→</span>
-                    {FLAGS[char.targetLanguage]} {langName(char.targetLanguage)}
-                    <span className="arrow">·</span>
-                    <span style={{ color: activeVibe?.color }}>
-                      {activeVibe?.label}
-                    </span>
-                    <span className="arrow">·</span>
-                    T={temp.toFixed(2)}
+                    <Icon name="chevron-left" />
+                  </button>
+                  <div className="workspace__title-block">
+                    {renaming ? (
+                      <input
+                        className="workspace__rename"
+                        autoFocus
+                        value={renameDraft}
+                        aria-label="Thread title"
+                        onChange={(e) => setRenameDraft(e.target.value)}
+                        onBlur={() => finishRename(true)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') finishRename(true)
+                          if (e.key === 'Escape') finishRename(false)
+                        }}
+                      />
+                    ) : (
+                      <h2
+                        className="workspace__title"
+                        onDoubleClick={startRename}
+                        title="Double-click to rename"
+                      >
+                        {thread?.title ??
+                          (char ? 'New translation' : 'Welcome')}
+                      </h2>
+                    )}
+                    {char && (
+                      <div className="workspace__pair">
+                        <span title={langName(char.sourceLanguage)}>
+                          {FLAGS[char.sourceLanguage]}{' '}
+                          {narrow
+                            ? langName(char.sourceLanguage).replace(
+                                /\s*\([^)]*\)/g,
+                                '',
+                              )
+                            : langName(char.sourceLanguage)}
+                        </span>
+                        <span className="arrow">→</span>
+                        <span title={targetToolbarLabel}>
+                          {FLAGS[char.targetLanguage]} {targetToolbarLabel}
+                        </span>
+                        {!narrow && (
+                          <>
+                            <span className="arrow">·</span>
+                            <span style={{ color: activeVibe?.color }}>
+                              {activeVibe?.label}
+                            </span>
+                            <span className="arrow">·</span>
+                            T={temp.toFixed(2)}
+                          </>
+                        )}
+                      </div>
+                    )}
                   </div>
-                )}
+                </div>
+                {threadActions}
               </div>
             </div>
-            {thread && char && (
-              <div className="workspace__head-right">
-                <SharePopover
-                  open={shareOpen}
-                  onOpenChange={setShareOpen}
-                  error={share.isError}
-                  onRetry={() => void share.refetch()}
-                  share={share.data}
-                  loading={share.isPending || setShare.isPending}
-                  onToggle={toggleShare}
-                />
-                <ThreadOptionsMenu
-                  starred={thread.starred}
-                  onToggleStar={toggleStar}
-                  onDownload={exporter.download}
-                  downloadDisabled={segList.length === 0}
-                  onRename={startRename}
-                  onArchive={archiveThread}
-                  onDelete={removeThread}
-                  onCopyMarkdown={exporter.copy}
-                  copyPending={exporter.preparing}
-                  onClearExplain={
-                    explainOpenId ? () => setExplainOpenId(null) : undefined
-                  }
-                />
-              </div>
-            )}
           </div>
 
           <div className="workspace__scroll" ref={scrollRef}>

@@ -18,6 +18,7 @@ const ICONS: Record<string, LucideIcon> = {
   'chevron-down': Icons.ChevronDown,
   'chevron-left': Icons.ChevronLeft,
   'chevron-right': Icons.ChevronRight,
+  'chevron-up': Icons.ChevronUp,
   copy: Icons.Copy,
   download: Icons.Download,
   expand: Icons.Expand,
