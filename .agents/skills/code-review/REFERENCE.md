@@ -1,261 +1,75 @@
-# Code Review Reference
+# Code Review Report
 
-Supporting templates, examples, and guidelines for the `code-review` skill.
+Use this structure for local output and the single GitHub summary comment. Findings belong to separate axes; severity definitions live in [SKILL.md](SKILL.md). List verified Low findings individually after higher-severity findings within each axis, marked non-blocking by default. Preserve their evidence, consequence, fix direction, and verification scenario; do not suppress them under a Medium cutoff. Nit findings are excluded.
 
-The review reports every Critical, High, and Medium finding it can prove from the code, with no cap on count. Low-severity and nitpick coverage belongs in `deep-review`.
-
-## Full Handoff Prompt Template
-
-Use this structure for every issue:
-
-````markdown
-**Handoff Prompt:**
-```
-In the file `RELATIVE_PATH`, around lines START-END:
-
-[What to change and why, referencing the specific problem.]
-
-[Exact implementation steps, including null checks, error handling, or edge cases.]
-
-[How the surrounding code should look after the change. Reference similar patterns elsewhere in the codebase if relevant.]
-
-After making the change:
-- Verify the fix by [specific test command or manual check]
-- Ensure no other call sites are broken
-- Run the project's linter/checks for the file
-
-Only modify the necessary lines. Do not reformat unrelated code.
-```
-````
-
-## Good Handoff Prompt Example
+Keep coverage concise but substantive: name the scenarios examined, not just how many tests passed.
 
 ```markdown
-In the file `src/services/AttendeeService.ts`, around lines 55-78:
-
-After calling `AttendeeService.getAttendeeByAttendeeId(eventId, attendeeIdCode)`, immediately check whether the returned value is null or undefined. If it is, return a 404 response with JSON body `{ error: "Attendee not found" }` instead of continuing execution.
-
-Only access `attendee.id`, `attendee.name`, `attendee.email`, or `attendee.company` after the null check passes.
-
-If `getAttendeeActivitiesDetailed` expects the internal `attendee.id` rather than `attendeeIdCode`, call it with `attendee.id` after the check.
-
-Follow the same error response pattern used in `EventController.getEventById`.
-
-After the change, add a unit test case for the "attendee not found" scenario.
-```
-
-## Severity Guidelines
-
-| Severity | When to Use | Example Issues |
-| --- | --- | --- |
-| Critical | Immediate data loss, security breach, production crash, auth bypass | SQL injection, missing auth on sensitive endpoint, crash in startup path |
-| High | Logic bug that breaks a core feature, missing critical error handling, major performance regression | Wrong calculation in pricing engine, payment race condition, N+1 query on hot path |
-| Medium | Maintainability issue likely to cause future bugs, missing tests for a concrete regression risk, minor behavior issue | Duplicate validation logic, magic values that affect behavior, missing edge-case test |
-| Low | Omitted; use only when an explicit project rule makes the issue merge-blocking | Required generated file is missing from a project that requires it |
-
-Rule of thumb: if you would ask for it to be fixed before merging, it is Medium or higher and belongs in the report. If you would let it merge and mention it in passing, leave it out.
-Do not include Low/Nit findings just to fill space, and do not drop a real Medium just to keep the report short.
-
-## Sample Review Output
-
-````markdown
-## High Issue: Missing null check on attendee lookup can cause runtime error
-
-**File:** `src/controllers/EventController.ts:62-75`
-**Category:** Bug
-
-**Problem:**
-`getAttendeeByAttendeeId` can return null when the attendee does not exist. The code immediately accesses `attendee.id` without checking, causing a potential 500 instead of a proper 404.
-
-**Impact:**
-Users will see generic server errors instead of clear "not found" messages, and the system will mask a predictable edge case as an unexpected failure.
-
-**Suggested Fix:**
-```diff
- const attendee = await AttendeeService.getAttendeeByAttendeeId(eventId, attendeeIdCode);
-+if (!attendee) {
-+  return { status: 404, body: JSON.stringify({ error: "Attendee not found" }) };
-+}
- const activities = await AttendeeService.getAttendeeActivitiesDetailed(eventId, attendeeIdCode);
-```
-
-**Handoff Prompt:**
-```
-In the file `src/controllers/EventController.ts`, around lines 62-75:
-
-After the line `const attendee = await AttendeeService.getAttendeeByAttendeeId(eventId, attendeeIdCode);`, add an immediate null/undefined check. If attendee is falsy, return a 404 response with JSON body `{ error: "Attendee not found" }`.
-
-Only proceed to call `getAttendeeActivitiesDetailed` and access attendee properties after the check passes.
-
-Use the same error response format as `getEventById`.
-
-Add a corresponding test case for the "attendee not found" path.
-```
-
-## Medium Issue: New activity aggregation has no test for the empty-activities case
-
-**File:** `src/services/AttendeeService.ts:88-104`
-**Category:** Testing
-
-**Problem:**
-`getAttendeeActivitiesDetailed` now reduces over `activities` to compute totals, but the only new test seeds three activities. An attendee with no activities hits `activities[0].eventId` and throws.
-
-**Impact:**
-Any attendee who has registered but not yet checked in will get a 500 from the activities endpoint, and nothing in CI would catch it.
-
-**Suggested Fix:**
-```diff
--  const eventId = activities[0].eventId;
-+  if (activities.length === 0) {
-+    return { activities: [], totalMinutes: 0 };
-+  }
-+  const eventId = activities[0].eventId;
-```
-
-**Handoff Prompt:**
-```
-In the file `src/services/AttendeeService.ts`, around lines 88-104:
-
-Return an empty result `{ activities: [], totalMinutes: 0 }` when `activities` is empty, before reading `activities[0]`.
-
-Then add a test in `src/services/__tests__/AttendeeService.test.ts` that seeds an attendee with zero activities and asserts the empty result is returned without throwing.
-```
-
-### PR Summary
-This PR adds attendee activity tracking to the event endpoint. The core direction is sound and follows existing patterns, but one High and one Medium issue should be fixed before merge.
-
-### Recommendations
-- [ ] Fix the null-check issue
-- [ ] Guard the empty-activities case and add its test
-
-### Coverage
-- Files reviewed: 4 of 4
-- Callers checked: `getAttendeeByAttendeeId` (2 call sites, both unaffected)
-
-### Statistics
-- Files changed: 4
-- Issues found: 2 (Critical: 0, High: 1, Medium: 1)
-- Checks run: `npm test -- AttendeeService`
-````
-
-## GitHub PR Comment Template
-
-Use this one-comment format when posting a review to a GitHub PR. Keep the summary and statistics visible, and wrap every material finding in its own collapsible section.
-
-````markdown
 # Code Review
 
-[Short overall assessment. State whether the PR looks mergeable, has blocking issues, or needs specific follow-up.]
+Scope: <base/merge-base SHA> → <head SHA>, or captured local snapshot.
+Comparison: <merge-base/direct/uncommitted/file-only>; <included/excluded changes>.
+Review mode: independent Standards/Spec reviewers plus main Bugs reviewer, or disclosed fallback.
 
-### Coverage
-- Files reviewed: X of Y
-- Callers checked: [symbols whose call sites were verified, or "none changed"]
+## Bugs
+<Findings ordered by severity, or no confirmed findings within reviewed scope.>
 
-### Statistics
-- Files changed: X
-- Issues found: Y (Critical: A, High: B, Medium: C)
-- Checks run: [commands or "not run"]
+## Standards
+<Findings, or none confirmed; name rule sources and any heuristic fallback.>
 
-### Findings
+## Spec
+<Findings, or none confirmed, or no spec available; name requirement sources.>
+<Compact requirement map, including partial/unclear coverage.>
 
+## Coverage and limits
+- Files: <reviewed count>/<total>; <excluded/unreviewed paths and reasons>.
+- Behavior traces: <entry point, ordinary/adverse inputs, result, evidence locations; partial setup and cleanup failure where applicable>.
+- Final adversarial check: <distinct scenario, result/evidence, or why none remains>.
+- Contracts/callers: <symbols and actual consumer paths inspected>.
+- Checks: <commands, pass/fail/not run and reasons; baseline vs new failures>.
+- Open questions / coverage gaps: <unreviewed paths/behavior families, reason, and highest-risk next trace, or none>.
+
+## Worst issue per axis
+- Bugs: <finding ID/severity, none confirmed, or incomplete>.
+- Standards: <finding ID/severity, none confirmed, or incomplete>.
+- Spec: <finding ID/severity, none confirmed, no spec available, or incomplete>.
+```
+
+## Finding shape
+
+```markdown
+### B1 — [High] Retried request applies the credit twice
+
+**Location:** `src/credits.ts:80-86` (reviewed head).
+**Evidence and trigger:** <request/event sequence; code trace and base/head causal link>.
+**Expected / actual:** <invariant or requirement versus observable behavior>.
+**Impact:** <who is affected and how>.
+**Fix direction:** <specific local remedy consistent with surrounding code>.
+**Verify:** <regression scenario and expected assertion; distinguish executed from proposed>.
+```
+
+Use `B`, `S`, and `P` identifiers for Bugs, Standards, and Spec. Standards findings also quote a rule with `path:line` or identify a smell as a judgement call with concrete evidence. Spec findings quote a requirement with `path:line` or a source URL and anchored quote. Cross-reference duplicate root causes rather than counting them twice. Use the shortest location range that identifies the cause; cite other files in the evidence.
+
+For GitHub, keep the scope, coverage, and per-axis conclusions visible; wrap individual findings in `<details>` under their respective axis:
+
+```markdown
 <details>
-<summary>[Severity] path/to/file.ext:line - short issue title</summary>
+<summary>B1 — [High] src/credits.ts:80 — Retried request applies the credit twice</summary>
 
-**Category:** Bug | Security | Logic | Reliability | Compatibility | Testing | Performance | Maintainability
-
-**Problem:**
-[Clear 1-2 sentence explanation of what is wrong and why it matters.]
-
-**Impact:**
-[Specific consequence if this is not fixed.]
-
-**Suggested Fix:**
-```diff
-[Exact unified diff, or a precise before/after code block if a diff is not practical.]
-```
-
-**Handoff Prompt:**
-```text
-In the file `path/to/file.ext`, around lines X-Y:
-
-[Detailed, self-contained instruction explaining the exact change needed, why it is required, edge cases to consider, and how to verify it.]
-
-Only modify the necessary lines. Keep unrelated code unchanged.
-```
+<Full finding body.>
 
 </details>
-````
+```
 
-If there are no findings, omit the `### Findings` section and say clearly that no blocking issues were found.
+No findings is an outcome, not a reason to omit the three axes or coverage. For example, `cancel while save is pending → late response ignored by request-id guard at editor.ts:144` is useful negative evidence. `All categories checked; 353 tests pass` does not show what behavior was reviewed.
 
-## GitHub CLI Commands
+## Delivery
 
-Check whether posting is available:
+When posting is authorized by the skill/user, check authentication, write the complete body to a unique temporary Markdown file, and post once:
 
 ```bash
-command -v gh
 gh auth status
+gh pr comment <pr-url> --body-file <temporary-markdown-path>
 ```
 
-Resolve PR metadata and diff:
-
-```bash
-gh pr view <url-or-number> --json title,body,author,baseRefName,headRefName,files,commits,url
-gh pr diff <url-or-number>
-```
-
-Post as a single PR comment:
-
-```bash
-tmp_review="$(mktemp -t code-review.XXXXXX.md)"
-# Write the final GitHub comment markdown to "$tmp_review" before posting.
-gh pr comment <url-or-number> --body-file "$tmp_review"
-```
-
-Terminal fallback when `gh` is missing or unauthenticated:
-
-```bash
-tmp_review="$(mktemp -t code-review.XXXXXX.md)"
-# Write the final GitHub comment markdown to "$tmp_review" before fallback handling.
-if ! command -v gh >/dev/null 2>&1; then
-  printf 'GitHub posting skipped: gh is not installed.\n\n'
-  cat "$tmp_review"
-elif ! gh auth status 2>/tmp/code-review-gh-auth.err; then
-  printf 'GitHub posting skipped: gh auth status failed.\n'
-  cat /tmp/code-review-gh-auth.err
-  printf '\n\n'
-  cat "$tmp_review"
-fi
-```
-
-Terminal fallback when posting fails:
-
-```bash
-tmp_review="$(mktemp -t code-review.XXXXXX.md)"
-# Write the final GitHub comment markdown to "$tmp_review" before posting.
-gh pr comment <url-or-number> --body-file "$tmp_review" 2>/tmp/code-review-gh-post.err || {
-  printf 'GitHub posting failed.\n'
-  cat /tmp/code-review-gh-post.err
-  printf '\n\n'
-  cat "$tmp_review"
-}
-```
-
-Create line-specific comments with the API:
-
-```bash
-gh api repos/OWNER/REPO/pulls/123/reviews \
-  -f event=COMMENT \
-  -f body="Overall review summary here" \
-  -f comments='[{"path":"src/file.ts","line":42,"body":"Specific comment here"}]'
-```
-
-## Pitfalls to Avoid
-
-- Do not flag every formatting issue unless `REVIEW.md` explicitly requires it.
-- Do not suggest massive refactors unless the PR itself is a refactor.
-- Do not provide vague feedback like "this could be better".
-- Do not stop reviewing once you have a few findings; every changed file gets the full checklist.
-- Do not report a finding you cannot point to specific lines for.
-- Do not include stale PR numbers, dates, or environment-specific details in reusable templates.
-- If the PR is good, say what is good. Positive signal builds trust.
+Use a file-writing tool or properly quoted heredoc for the body; do not interpolate Markdown into shell arguments. Return the comment URL on success. On failure, preserve the review locally and show the actual error. Never substitute an approval or multiple inline threads for the one-comment output.

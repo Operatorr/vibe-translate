@@ -2,7 +2,7 @@
 
 Copy this file to a target repository as `REVIEW.md` and customize it for that project.
 
-The `code-review` skill treats a repository's root `REVIEW.md` as the highest-priority source of review rules.
+The `code-review` skill uses a repository's root `REVIEW.md` as project-specific review guidance, alongside applicable agent instructions and standards. Customize the rules below; this starter template is not an automatic baseline for repositories that have not adopted it.
 
 ## Core Principles
 

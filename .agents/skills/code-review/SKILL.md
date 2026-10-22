@@ -1,229 +1,117 @@
 ---
 name: code-review
-description: "Perform a thorough single-pass code review for GitHub pull requests or local branch changes that aims to find every Critical, High, and Medium issue while skipping Low/Nit noise. Use for /code-review, standard PR reviews, current-branch reviews, and default review requests when the user has not asked for a deep, exhaustive, CodeRabbit-style, nitpick-level, or find-everything review. Report all material findings; use deep-review for per-file sub-agent fan-out, full scanner batteries, and nitpick coverage."
+description: "Review PRs, branch diffs, and uncommitted changes for concrete bugs, repository standards, and spec compliance using bounded independent review axes. Use for /code-review and normal review requests. Use deep-review for exhaustive per-file delegation, scanner batteries, and nitpick coverage."
 ---
 
 # Code Review
 
-Review like a careful senior engineer who is expected to catch the real problems in one sitting: understand the intent, read every changed file with enough surrounding context to verify behavior, walk a fixed checklist per file, and report every Critical, High, and Medium finding you can back with evidence.
+Find actionable faults without the cost of an exhaustive audit. Review three separate axes: **Bugs**, **Standards**, and **Spec**. The main reviewer owns Bugs and validates findings; at most two independent sub-agents own Standards and Spec. Passing tests are supporting evidence, never a substitute for tracing behavior.
 
-This is the default review skill for `/code-review`. It optimizes for **full recall of material issues with low noise**. There is no cap on findings: a non-trivial PR with 6 real Medium-or-higher issues should produce 6 findings. What it still leaves out is Low/Nit coverage, per-file sub-agent fan-out, and the linter/SAST battery, all of which belong to `deep-review`.
+## Boundaries
 
-## Use Cases
+- Review only unless the user asks for fixes. Do not merge as part of review unless separately requested.
+- Report all supported Critical, High, Medium, and Low findings, without a count target. Low means lower impact, not lower confidence; apply the same evidence requirements at every severity. Zero findings is valid after completing coverage. Skip cosmetic preferences and linter-enforced style.
+- One review round, at most two children, no recursive delegation, no per-file fan-out. Do not automatically invoke `deep-review` or repeat until clean.
+- Use configured, focused checks. No tool installations, broad scanner batteries, or expensive full suites by default. Spend effort on reachable failure scenarios and cross-file contracts. Include actionable Low findings encountered during these passes; do not add agents or a separate minor-issue sweep.
+- A direct GitHub PR URL permits one summary comment unless the user says "do not post", "review only", "don't comment", or "terminal only". PR numbers, branches, and local files remain terminal-only unless posting is explicitly requested. Children never post.
 
-```bash
-/code-review https://github.com/OWNER/REPO/pull/123
-/skill:code-review https://github.com/OWNER/REPO/pull/123
-Review PR #123
-Review the current branch against main
-Do a security-focused review of this PR
-Review these local changes but do not post to GitHub
-```
+## 1. Pin the target and scope
 
-## Principles
+Determine whether the user wants a PR, a branch comparison, uncommitted work, or named files. Never silently substitute one for another.
 
-- **Find every Critical, High, and Medium issue.** Missing a real bug is the failure mode to avoid. Do not stop after the first few findings, and do not cap the report.
-- **Evidence over speculation.** Every finding must be grounded in the diff or in code you actually read. If you suspect an issue but cannot confirm it from the code, either read more code to confirm it or leave it out. Do not pad with hedged guesses.
-- **Cover every changed file.** Each changed source file gets the full checklist below. Do not let a large file early in the diff exhaust your attention for later ones.
-- **Follow the blast radius.** When a signature, contract, schema, or shared helper changes, grep for its callers and check them. Broken callers outside the diff are in scope.
-- **Skip Low/Nit.** Naming, formatting, import order, wording, docs, and micro-refactors are out of scope unless an explicit project rule makes them merge-blocking.
-- **Do not fan out sub-agents or run the `deep-review` tool battery.** This is a single-agent review.
-- **Be specific and actionable.** Every finding includes the exact file/location, impact, and a concrete fix.
-- **Review only by default.** Do not edit code unless the user explicitly asks you to fix the issues.
-- Treat a direct GitHub PR URL as permission to post the completed review back to that PR, unless the user says not to post.
-- Keep local branch reviews, file-only reviews, and non-URL PR references terminal-only unless the user explicitly asks to post.
-- User wording such as "do not post", "review only", "don't comment", or "terminal only" overrides any posting permission.
+For a PR, resolve its URL, body, linked issues, base/head refs and SHAs, changed files, and commits using the host tools or `gh pr view`. Fetch/read the exact reviewed revisions; the current checkout may belong to another branch. Register the PR with thread-linking tools when available. Read the diff and surrounding source from the same snapshot.
 
-## Workflow
-
-Follow this process for every review.
-
-### Phase 1: Establish the Review Target
-
-Determine both the review target and the output destination. Review targets can be:
-
-1. A GitHub PR, e.g. `PR #123`
-2. The current branch against a base branch, usually `main` or `master`
-3. Uncommitted local changes
-4. A specific set of files
-
-Output destination rules:
-
-1. Direct GitHub PR URL, e.g. `https://github.com/OWNER/REPO/pull/123` — post one PR comment by default.
-2. GitHub PR number or shorthand, e.g. `PR #123` — print to terminal unless the user explicitly asks to post.
-3. Local branch, uncommitted, or file-only review — print to terminal unless the user explicitly asks to post and provides a PR target.
-4. Any explicit "do not post" wording — print to terminal only.
-
-For direct GitHub PR URLs with posting enabled, run `gh auth status` before resolving PR metadata. If `gh` is unavailable or auth fails, mark posting unavailable, continue terminal-only when the PR diff can still be gathered, and include the failure reason with the terminal review.
-
-For GitHub PRs, gather PR metadata and diff with `gh` when available. Use the PR URL when one was provided:
+For a branch comparison, use the user's fixed point. If neither the user nor PR metadata supplies a base, ask for it rather than guessing `main`. Resolve refs before delegation:
 
 ```bash
-gh auth status
-gh pr view <url-or-number> --json title,body,author,baseRefName,headRefName,files,commits,url
-gh pr diff <url-or-number>
+git rev-parse --verify '<fixed-point>^{commit}'
+git rev-parse --verify 'HEAD^{commit}'
+git merge-base <resolved-base-sha> <resolved-head-sha>
+git diff --name-status <merge-base-sha> <head-sha>
+git diff <merge-base-sha> <head-sha>
 ```
 
-For local branch reviews, inspect the merge base and diff:
+State that this compares from the merge base, equivalent to `<fixed-point>...HEAD`, and excludes staged and unstaged changes. Honor an explicitly requested direct/two-dot comparison instead.
 
-```bash
-git status --short
-git branch --show-current
-git merge-base HEAD origin/main 2>/dev/null || git merge-base HEAD main
-git diff <merge-base>...HEAD --name-status
-git diff <merge-base>...HEAD
-```
+For uncommitted work, inspect staged and unstaged diffs and untracked files (`git status --short`, `git diff HEAD`, and reads of relevant untracked files). Record HEAD and the captured patch/file contents so reviewers examine the same version. For file-only review, record paths and note when no baseline exists, so pre-existing issues cannot be distinguished.
 
-Adjust the base branch if the repository uses a different default branch.
+Stop on an invalid ref or empty requested diff before spawning reviewers. Do not discard local edits or switch a dirty checkout to gather a PR. If the target changes during review, disclose the reviewed snapshot and remaining delta; do not claim the latest revision was reviewed.
 
-Build a short **changed-file list** from `--name-status`: path, change type, and rough size. Skip lockfiles, generated, and vendored paths from manual review. This list drives Phase 4 and Phase 5.
+Build a file manifest including modifications, additions, deletions, and renames. Record exclusions explicitly. Generated/vendor/lockfile churn may be excluded from line-by-line reading, but inspect dependency/version changes, generated contracts, and removed consumers when behavior depends on them.
 
-### Phase 2: Gather Project Context
+**Complete when:** the exact scope, snapshot, comparison mode, and output destination are known.
 
-Read the changed files in full, not just the hunks, when the file is under roughly 500 lines; for larger files read the changed functions plus every function they call or are called by. Check project standards in this priority order:
+## 2. Gather evidence and dispatch independent axes
 
-1. `REVIEW.md` in the target repository root, if present
-2. `CLAUDE.md`, `.claude.md`, or equivalent agent instructions
-3. `CONTRIBUTING.md`, coding standards, architecture docs, ADRs
-4. Package/tooling files such as `package.json`, `pyproject.toml`, `go.mod`, `Cargo.toml`, etc.
-5. Existing nearby tests and similar implementations
+Read applicable agent instructions and repo review rules (`REVIEW.md`), standards (`CODING_STANDARDS.md`, `CONTRIBUTING.md`), architecture/ADRs, and package/test configuration. Repo-specific rules override generic heuristics, subject to higher-priority instructions. Cite source paths and lines rather than handing reviewers only a paraphrased digest.
 
-Treat the target repo's `REVIEW.md` as the highest-priority review rules.
+Find the spec from an explicit user path/link first, then the PR body and linked issues, commit issue references via the configured tracker, and matching documents under `docs/`, `specs/`, or `.scratch/`. Use actual requirement text, not requirements inferred from the implementation. Distinguish binding requirements from discussion or proposals. If sources conflict, report the ambiguity instead of choosing silently. If none is available, mark Spec **no spec available** and skip that child; do not block the bug review.
 
-Then build a small **caller index**: for every exported or shared symbol whose signature, return shape, or semantics the diff changes, run a read-only `git grep` for its usages and note the call sites you need to check in Phase 4.
+Build a compact context packet: pinned snapshot and how to read it, diff/manifest, source locations for rules and requirements, relevant tooling, and changed public/shared contracts. Do not include the author's reasoning, your suspected findings, or the other reviewer's conclusions.
 
-If this skill's bundled reference files are available, use them as support material:
+Resolve bundled references relative to this `SKILL.md`, not the target repo root. If a referenced file is missing, search the installed skill location once; if still absent, disclose an incomplete installation and use the axis/evidence requirements in this file as a fallback. Do not claim the full bundled workflow was followed.
 
-- `REFERENCE.md` — examples, output templates, severity guidance
-- `PROJECT_REVIEW_TEMPLATE.md` — starter `REVIEW.md` users can copy into a project
+Read [AXIS_PROMPTS.md](AXIS_PROMPTS.md) and launch one Standards reviewer and, when a spec exists, one Spec reviewer using those briefs. Prefer fresh contexts without inherited authoring history. Each reads source and returns findings plus coverage. Run them concurrently with the main bug review, within tool concurrency limits. If delegation is unavailable, perform separate passes yourself and disclose that they were not independent.
 
-### Phase 3: Run Available Checks
+**Complete when:** each available axis has its own evidence-based brief; a missing spec is explicit.
 
-Run the already-configured checks that directly cover the changed area:
+## 3. Hunt behavioral faults
 
-- Type checks
-- Unit tests for changed areas
-- Linters/format checks
+Read every changed first-party file, including deleted code and its surviving consumers. Read small files fully; for large files, read complete changed functions, relevant callers/callees, and enclosing state/cleanup logic. Prioritize risky paths but do not silently sample the rest.
 
-Do not install tools, invoke one-shot package downloads, run broad scanner batteries, or run expensive full-suite checks by default. If the right check is too expensive or unavailable, note that it was not run and continue with manual review. Any failing check that relates to the diff becomes a finding.
+Organize the review around **changed behaviors**, not a checklist tick per file. For each behavior:
 
-### Phase 4: Review Every File Against the Checklist
+1. Identify the entry point, valid inputs, intended invariant, and observable result.
+2. Trace at least one ordinary path and a plausible failure/boundary path through the actual implementation. Record the input or event sequence and file/line evidence. For a non-behavioral change, record why no execution trace applies.
+3. Follow changed signatures, return shapes, schemas, defaults, and semantics to callers and producers outside the diff. Search usages, then read them; a search hit is not caller verification. Check old data/clients and rolling deployment compatibility where relevant.
+4. Compare base and head to establish whether the patch introduces or exposes the defect. Do not label unrelated pre-existing debt as a regression.
+5. For changed code that acquires resources, changes external state, or performs multi-step work, trace partial initialization and teardown explicitly. Choose failure points before and after a side effect, then follow what remains initialized, what must be restored, and what the caller observes. Include a failure inside cleanup itself: can logging, result construction, journal/export, or one failed release prevent the remaining required cleanup? Check conditional assignment followed by unconditional reads, errors thrown before a protected helper is entered, cancellation, repeated cleanup, and preservation of the original error. A `finally` block or restore timer alone does not prove cleanup completes. Use a source trace or safe mocked failure; do not run live destructive operations to test recovery.
+6. Read tests for those paths: inspect assertions, mocks, fixtures, and omitted branches. Ask what realistic input would fail despite the current tests passing.
 
-Work through the changed-file list one file at a time. For each file, walk every category below and write down what you checked, even when the answer is "nothing found". Then check the call sites recorded in the caller index for that file's changed symbols.
+Use the applicable fault probes below to choose counterexamples, not to manufacture findings:
 
-1. **Intent** — What is this file's change trying to accomplish, and does the code actually do that? Compare against the PR description, issue, or commit messages.
-2. **Correctness** — logic errors, inverted conditions, off-by-one, wrong operator or variable, broken edge cases (empty, zero, negative, unicode, very large, concurrent), race conditions, bad state transitions, incorrect error propagation, wrong async/await or promise handling, mutation of shared state.
-3. **Security** — auth/authz on every new or changed entry point, injection (SQL, shell, template, path), unsafe input handling, secrets or credentials in code or logs, SSRF, XSS, unsafe deserialization, insecure defaults, missing rate limiting on sensitive actions, privilege escalation, sensitive data in logs or responses.
-4. **Reliability** — unhandled errors, swallowed exceptions, missing retries or timeouts on external calls, non-idempotent operations that can be retried, null/undefined handling, resource cleanup (files, connections, listeners, subscriptions), partial-failure behavior, unbounded loops or recursion.
-5. **Data & API compatibility** — migrations (reversibility, locking, data backfill), schema changes, response-shape or contract changes, breaking changes to public functions, serialization format changes, feature flags and rollout safety.
-6. **Testing** — new behavior with no test, changed behavior whose existing test still passes only because it does not cover the change, tests that assert nothing meaningful, tests that were deleted or weakened, untested error paths.
-7. **Performance** — N+1 queries, hot-path regressions, unnecessary expensive work, missing pagination or batching, sync work in async paths, unbounded memory growth, blocking I/O on request paths.
-8. **Maintainability** — only concrete complexity, duplication, or inconsistency that is likely to cause bugs. Reserve this for Medium; if it is only cosmetic, drop it.
+- **Boundaries and logic:** absent versus empty versus zero/false, first/last item, inclusive/exclusive bounds, duplicate identifiers, ordering, units/timezones, parser/serializer round trips.
+- **State and concurrency:** stale responses, duplicate events/retries, concurrent writers, interrupted transitions, cache invalidation, reset/unmount cleanup, transaction boundaries and partial writes. Trace a concrete interleaving when relevant.
+- **Trust boundaries:** follow untrusted data to sensitive operations; verify object/tenant ownership, server-side authorization, injection protection, and data returned/logged. Confirm upstream guards before claiming they are missing.
+- **Failures and resources:** apply the partial-initialization/teardown trace above; check rejected dependencies, timeout/cancellation, rollback, leaked listeners/connections, swallowed errors, and whether retry repeats a side effect.
+- **Compatibility and scale:** old records/payloads, migrations/defaults, removed exports/routes/configuration, pagination, bounded memory, and query/work growth on a reachable hot path.
+- **User-visible behavior:** loading/empty/error states, navigation, input and accessibility behavior when touched; inspect the rendered UI when needed to substantiate a visual claim.
 
-For large PRs, review the highest-risk files first (auth, data access, migrations, shared helpers, public APIs), then continue through every remaining file. Do not sample. If the change is genuinely too large to review every file with care in one pass, say so explicitly in the report, list which files were reviewed and which were not, and recommend `/deep-review` for the remainder.
+Keep a compact internal coverage ledger: `behavior → files/callers → normal case → adverse case → evidence/result → gaps`. Checklists and test counts alone do not satisfy it. For a large diff, identify behavior families and prioritize their risk before detailed reading. Historical or diagnostic scripts are still executable code; their labels do not justify exclusion. If scale, an explicit user budget, or missing infrastructure prevents full coverage, record the actual unreviewed paths/families, why they remain, and the highest-risk next trace. Deliver a prominently labelled partial review; recommend deep review for those areas without launching it. One round limits repeated review cycles, not the review to an arbitrary few minutes.
 
-### Phase 5: Coverage Check Before Writing
+Run targeted configured checks after identifying the important scenarios, or concurrently if they do not interfere. Prefer a focused reproduction when a candidate is uncertain; use a temporary location or isolated checkout for probes, without modifying the user's working tree. Do not require an executable test when a complete source trace proves the fault. Distinguish baseline/environment failures from failures caused by the patch.
 
-Before producing output, do one structured re-scan:
+**Complete when:** every in-scope changed behavior has a trace or an explicit gap, and affected contracts have been checked at their consumers.
 
-1. **File coverage** — confirm every file in the changed-file list was reviewed. Any substantial file with zero findings gets a second look at Correctness, Security, and Testing.
-2. **Category coverage** — if the whole review has no Security findings, re-read every new or changed entry point, input parser, and data access path. If it has no Testing findings, confirm each new behavior actually has a test.
-3. **Caller coverage** — confirm every entry in the caller index was checked.
-4. **Evidence check** — for each finding, confirm you can point to the exact lines that prove it. Drop anything you cannot.
-5. **Severity check** — apply the severity scale below consistently across all findings. Demote anything that is really Low/Nit and remove it.
+## 4. Verify candidates and close coverage
 
-Suppression rules:
+Treat all findings, including child output and check failures, as hypotheses until verified:
 
-- Omit Low/Nit findings.
-- Report missing tests only when a specific new or changed behavior clearly needs coverage.
-- Do not report issues that require assumptions about undocumented product requirements.
-- Do not summarize minor issues as a list; leave them for `deep-review`.
+- Re-read the exact reviewed lines and relevant guard/caller. Try to disprove the claim: can the input reach this path, does another layer handle it, is the behavior deliberate, or does the spec permit it?
+- Require a concrete trigger, expected versus actual behavior (or cited rule/requirement breach), observable consequence, and a local fix direction. Do not invent precise patches against unread code.
+- For Bugs, establish the changed-code causal link. For Standards, verify the quoted rule applies; label smell-based observations as judgement calls. For Spec, verify the requirement citation and implementation trace.
+- Separate unresolved potentially material concerns into **Open questions / coverage gaps**, with the missing evidence. Do not present them as confirmed bugs or silently turn uncertainty into a clean verdict.
+- For a confirmed defect, search the changed code and directly related helpers for the same failure pattern. Inspect each match before listing affected variants; do not assume copied controllers behave identically. Keep this a targeted sibling check, not a repository-wide audit.
+- Deduplicate the same root cause. If it affects multiple axes, put the full finding in its primary axis and cross-reference it in the others; preserve each axis's conclusion.
 
-## Severity Scale
+Before concluding, regardless of finding count, challenge the highest-risk remaining behavior with one additional counterexample not covered by its existing tests or an already-confirmed finding. Record the scenario and result (or why no distinct behavior remains). This is one bounded adversarial check, not a loop driven by finding count; finding one bug is not a stopping condition.
 
-- **Critical** — security vulnerability, data loss, production crash, auth bypass, major regression, leaked secret
-- **High** — logic bug, missing critical error handling, broken feature, serious performance issue, breaking API/contract change, broken caller outside the diff
-- **Medium** — missing test for a concrete regression risk, maintainability risk likely to cause future bugs, minor behavior issue, error path that degrades badly
-- **Low/Nit** — out of scope for `code-review`; use only for explicit project-rule violations that should block merge
+**Complete when:** candidates are confirmed, rejected with evidence, or explicitly unresolved; every manifest entry is accounted for. A partial or blocked axis cannot be reported as clean.
 
-Rule of thumb: if you would ask for it to be fixed before merging, it is Medium or higher and belongs in the report. If you would let it merge and mention it in passing, leave it out.
+## 5. Report and deliver
 
-## Output Format
+Read [REFERENCE.md](REFERENCE.md) for the compact report and posting template. Keep **Bugs**, **Standards**, and **Spec** as separate sections, ordered by severity within each. Retain verified Low findings below higher-severity findings in their axis, labelled non-blocking where applicable; do not silently discard them during aggregation or replace them with a count. Close with the worst confirmed issue **per axis**, or `none confirmed`, `no spec available`, or `incomplete` as applicable. Do not blend the axes into an overall score or let one passing axis cancel another's failure.
 
-Start with a short overall assessment. Then list every finding from highest to lowest severity. Do not cap the number of findings.
+Each finding includes severity, exact path/lines, evidence, trigger/consequence, fix direction, and how to verify. Quote the rule or requirement for Standards/Spec. A suggested patch or implementation handoff is optional when useful or requested, not mandatory boilerplate.
 
-For every issue, use this format:
+Severity reflects actual impact and reachability:
 
-````markdown
-## [Severity] Issue: [Short descriptive title]
+- **Critical:** reachable severe compromise, widespread outage, or irreversible data loss.
+- **High:** broken core flow, serious authorization/data-integrity fault, or material compatibility/performance regression.
+- **Medium:** material malfunction or rule/requirement breach that meaningfully impairs a supported flow. Missing tests qualify only for a named material regression scenario or explicit repo requirement; prefer reporting the underlying bug with its regression test.
+- **Low:** verified minor behavioral defect or explicit rule/requirement violation with a concrete consequence, such as a localized control remaining untranslated or ambiguous download names without data loss. Non-blocking by default, unless an applicable repo rule makes it blocking. Assess impact rather than treating these examples as fixed severity assignments.
+- **Nit:** cosmetic preference, stylistic polish, or speculative cleanup without a concrete consequence; omit from normal review. Use `deep-review` for nitpick coverage. Do not inflate severity to retain it.
 
-**File:** `path/to/file.ext:line-range`
-**Category:** Bug | Security | Logic | Reliability | Compatibility | Testing | Performance | Maintainability
+Include snapshot/scope, reviewed versus excluded/unreviewed files, representative behavior traces and callers checked, check results, and unresolved limits. Say **no confirmed findings within the reviewed scope**, not "safe to merge" based on green CI. Never claim guaranteed bug detection.
 
-**Problem:**
-[Clear 1-2 sentence explanation of what is wrong and why it matters.]
-
-**Impact:**
-[Specific consequence if this is not fixed.]
-
-**Suggested Fix:**
-```diff
-[Exact unified diff, or a precise before/after code block if a diff is not practical.]
-```
-
-**Handoff Prompt:**
-```
-In the file `path/to/file.ext`, around lines X-Y:
-
-[Detailed, self-contained instruction explaining the exact change needed, why it is required, edge cases to consider, and how to verify it. Reference relevant project patterns if applicable.]
-
-Only modify the necessary lines. Keep unrelated code unchanged.
-```
-````
-
-After all issues, include:
-
-```markdown
-### PR Summary
-[2-4 sentence overview of the change and overall assessment.]
-
-### Recommendations
-- [ ] Highest-priority fixes before merge
-- [ ] Tests to add or run
-- [ ] Optional improvements
-
-### Coverage
-- Files reviewed: X of Y (list any skipped files and why)
-- Callers checked: [symbols whose call sites were verified, or "none changed"]
-
-### Statistics
-- Files changed: X
-- Issues found: Y (Critical: A, High: B, Medium: C)
-- Checks run: [commands or "not run"]
-```
-
-If no issues are found, say so clearly, list what was checked in the Coverage block, and include a brief positive summary of what looked good.
-
-## GitHub PR Posting
-
-When posting is permitted, use one normal PR comment by default. Do not create inline comments unless the user explicitly asks for them.
-
-Posting workflow:
-
-1. Run `gh auth status`.
-2. If auth fails or `gh` is unavailable, print the full review to the terminal and include the failure reason.
-3. Resolve PR metadata with `gh pr view <url-or-number> --json title,body,author,baseRefName,headRefName,files,commits,url`.
-4. Generate the same findings and overall assessment you would produce for a terminal review.
-5. Write the GitHub comment body to a temporary Markdown file.
-6. Post with `gh pr comment <url-or-number> --body-file <tmp-review.md>`.
-7. If posting fails, print the full review to the terminal and include the posting error.
-
-The posted comment must include the summary, coverage, and statistics at the top, followed by one collapsible `<details>` section per finding. Each `<summary>` line must use:
-
-```markdown
-[Severity] File:line - issue title
-```
-
-Each details section must include the problem, impact, suggested fix, and handoff prompt. See `REFERENCE.md` for the exact GitHub comment template and fallback commands.
-
-For terminal-only reviews, use the standard output format above.
+When posting is permitted, post one summary comment with a temporary Markdown body file (`gh pr comment <url> --body-file <path>`). Recheck the PR head before posting and disclose if it moved. Do not post inline comments or submit an approval unless explicitly asked. If authentication or posting fails, return the full review locally with the error; do not claim it was posted.
