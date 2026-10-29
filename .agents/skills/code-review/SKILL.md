@@ -1,6 +1,6 @@
 ---
 name: code-review
-description: "Review PRs, branch diffs, and uncommitted changes for concrete bugs, repository standards, and spec compliance using bounded independent review axes. Use for /code-review and normal review requests. Use deep-review for exhaustive per-file delegation, scanner batteries, and nitpick coverage."
+description: "Review PRs, branch diffs, and uncommitted changes for concrete bugs, repository standards, and spec compliance using bounded independent review axes. Use for /code-review and normal review requests. Use deep-review for exhaustive per-file delegation and scanner batteries."
 ---
 
 # Code Review
@@ -110,7 +110,7 @@ Severity reflects actual impact and reachability:
 - **High:** broken core flow, serious authorization/data-integrity fault, or material compatibility/performance regression.
 - **Medium:** material malfunction or rule/requirement breach that meaningfully impairs a supported flow. Missing tests qualify only for a named material regression scenario or explicit repo requirement; prefer reporting the underlying bug with its regression test.
 - **Low:** verified minor behavioral defect or explicit rule/requirement violation with a concrete consequence, such as a localized control remaining untranslated or ambiguous download names without data loss. Non-blocking by default, unless an applicable repo rule makes it blocking. Assess impact rather than treating these examples as fixed severity assignments.
-- **Nit:** cosmetic preference, stylistic polish, or speculative cleanup without a concrete consequence; omit from normal review. Use `deep-review` for nitpick coverage. Do not inflate severity to retain it.
+- **Nit:** cosmetic preference, stylistic polish, or speculative cleanup without a concrete consequence; omit it. `deep-review` omits it too. Do not inflate severity to retain it.
 
 Include snapshot/scope, reviewed versus excluded/unreviewed files, representative behavior traces and callers checked, check results, and unresolved limits. Say **no confirmed findings within the reviewed scope**, not "safe to merge" based on green CI. Never claim guaranteed bug detection.
 

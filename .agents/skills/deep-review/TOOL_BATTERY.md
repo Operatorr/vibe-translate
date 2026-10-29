@@ -25,10 +25,8 @@ Run tools in preference order. When a tool is not installed, use the one-shot ru
 | Dockerfile | Hadolint | `docker run --rm -i hadolint/hadolint < Dockerfile` if docker present, else ask |
 | Terraform/IaC | Checkov | `uvx checkov -f <file>` |
 | YAML | yamllint | `uvx yamllint <paths>` |
-| Markdown | markdownlint | `npx --yes markdownlint-cli <paths>` |
 | Multi-language SAST | Semgrep | `uvx semgrep --config auto <paths>` |
 | Secrets | Gitleaks | system `gitleaks detect`; else `docker run --rm -v "$PWD:/repo" zricethezav/gitleaks detect --source=/repo`; else ask |
-| Prose/grammar | LanguageTool, Vale | `npx --yes` where a runner exists; else rely on the sub-agent grammar pass |
 
 ## Install policy
 
@@ -54,10 +52,10 @@ severity: <advisory; orchestrator normalizes in Phase 5>
 
 Category mapping:
 
-- lint style/format → **Style/Nitpicks** or **Maintainability**
+- lint rule flagging a probable defect (unused result, floating promise, unreachable code, shadowed variable) → **Correctness** or **Maintainability**
+- lint style/format rule (quotes, spacing, ordering, naming case) → **drop**; formatting and naming style belong to the project's linter or formatter, and deep-review does not report nitpicks
 - type error → **Correctness**
 - SAST finding → **Security**
 - secret detected → **Critical / Security**
-- prose/grammar → **Grammar & prose** (usually Nitpick)
 
 In Phase 5, a tool finding and an LLM finding at the same location describing the same defect merge into one entry tagged `confirmed-by-tool` (higher confidence). A tool finding with no LLM counterpart is kept as its own finding.
